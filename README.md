@@ -208,7 +208,7 @@ auto-py-to-exe
 
 ### 5. Advanced 탭 - Hidden Imports 추가 ⚠️ 필수
 
-**v3.3 업데이트**: threading, contextlib 관련 모듈 추가
+**v3.4 업데이트**: threading, contextlib 관련 모듈 추가
 
 ```
 # Socket.IO / Engine.IO
@@ -260,8 +260,8 @@ flask.json
 
 ```
 output/
-└── 사내메신저v3.1/
-    ├── 사내메신저v3.1.exe  # 실행 파일
+└── 사내메신저v3.4/
+    ├── 사내메신저v3.4.exe  # 실행 파일
     ├── static/             # 웹 리소스
     ├── templates/          # HTML 템플릿
     ├── app/                # 백엔드 모듈
@@ -273,7 +273,7 @@ output/
 ### 대안: spec 파일 직접 사용
 
 ```powershell
-cd "d:\google antigravity\사내 메신저"
+cd "your folder\사내 메신저"
 pyinstaller messenger.spec
 ```
 
@@ -327,3 +327,4 @@ DEFAULT_PORT = 5000     # 서버 포트
 | `gevent` (권장) | 수백~수천 명 | `pip install gevent gevent-websocket` |
 | `eventlet` | 수백 명 | `pip install eventlet` |
 | `threading` | 5~10명 | 기본 포함 |
+
