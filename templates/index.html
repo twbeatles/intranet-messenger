@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔒 사내 메신저 (E2E 암호화)</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/js/socket.io.min.js"></script>
+    <script src="/static/js/crypto-js.min.js"></script>
+</head>
+
+<body>
+    <!-- 인증 화면 -->
+    <div id="authContainer" class="auth-container">
+        <div class="auth-box">
+            <h1>🔒 사내 메신저</h1>
+            <p class="subtitle">종단간 암호화로 안전하게 소통하세요</p>
+            <div style="text-align:center;"><span class="encryption-badge">🔒 E2E 암호화 적용</span></div>
+            <div id="authError" class="error-message hidden"></div>
+
+            <!-- 로그인 폼 -->
+            <form id="loginForm" onsubmit="return false;">
+                <div class="form-group">
+                    <label>아이디</label>
+                    <input type="text" id="loginUsername" placeholder="아이디를 입력하세요" required>
+                </div>
+                <div class="form-group">
+                    <label>비밀번호</label>
+                    <input type="password" id="loginPassword" placeholder="비밀번호를 입력하세요" required>
+                </div>
+                <button type="button" class="btn btn-primary" id="loginBtn">로그인</button>
+            </form>
+
+            <!-- 회원가입 폼 -->
+            <form id="registerForm" class="hidden" onsubmit="return false;">
+                <div class="form-group">
+                    <label>아이디</label>
+                    <input type="text" id="regUsername" placeholder="3자 이상" required>
+                </div>
+                <div class="form-group">
+                    <label>비밀번호</label>
+                    <input type="password" id="regPassword" placeholder="4자 이상" required>
+                </div>
+                <div class="form-group">
+                    <label>닉네임</label>
+                    <input type="text" id="regNickname" placeholder="표시될 이름">
+                </div>
+                <button type="button" class="btn btn-primary" id="registerBtn">회원가입</button>
+            </form>
+
+            <div class="auth-switch">
+                <span id="switchToRegisterWrap">계정이 없으신가요? <a href="javascript:void(0)"
+                        id="showRegister">회원가입</a></span>
+                <span id="switchToLoginWrap" style="display:none">이미 계정이 있으신가요? <a href="javascript:void(0)"
+                        id="showLogin">로그인</a></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메인 앱 -->
+    <div id="appContainer" class="app-container">
+        <!-- 사이드바 -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>🔒 대화</h2>
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="searchInput" placeholder="대화 검색...">
+                </div>
+            </div>
+            <div class="room-list" id="roomList"></div>
+            <div class="online-section" id="onlineSection">
+                <h4><span class="dot"></span> 온라인 사용자</h4>
+                <div class="online-users-list" id="onlineUsersList"></div>
+            </div>
+            <div class="user-section">
+                <div class="user-avatar clickable" id="userAvatar" title="프로필 수정"></div>
+                <div class="user-info clickable" id="userInfoClick" title="프로필 수정">
+                    <div class="user-name" id="userName"></div>
+                    <div class="user-status">온라인</div>
+                </div>
+                <div class="user-actions">
+                    <button class="icon-btn" id="helpBtn" title="도움말">❓</button>
+                    <button class="icon-btn" id="settingsBtn" title="화면 설정">🎨</button>
+                    <button class="icon-btn" id="profileBtn" title="프로필 수정">👤</button>
+                    <button class="icon-btn" id="newChatBtn" title="새 대화">➕</button>
+                    <button class="icon-btn" id="logoutBtn" title="로그아웃">🚪</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 채팅 영역 -->
+        <div class="chat-area" id="chatArea">
+            <div class="empty-state" id="emptyState">
+                <span class="empty-icon">💬</span>
+                <h3>대화를 선택하세요</h3>
+                <p>왼쪽에서 대화를 선택하거나 새 대화를 시작하세요</p>
+            </div>
+
+            <div id="chatContent" class="chat-content hidden">
+                <div class="chat-header">
+                    <button class="icon-btn mobile-menu-btn" id="mobileMenuBtn">☰</button>
+                    <div class="chat-header-info">
+                        <div class="chat-header-avatar" id="chatAvatar"></div>
+                        <div>
+                            <div class="chat-header-name" id="chatName">🔒</div>
+                            <div class="chat-header-status" id="chatStatus"></div>
+                        </div>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button class="icon-btn" id="roomSettingsBtn" title="설정">⚙</button>
+                        <div class="dropdown-menu" id="roomSettingsMenu">
+                            <div class="dropdown-item" id="editRoomNameBtn">✏ 대화방 이름 변경</div>
+                            <div class="dropdown-item" id="pinRoomBtn">📌 <span id="pinRoomText">상단 고정</span></div>
+                            <div class="dropdown-item" id="muteRoomBtn">🔕 <span id="muteRoomText">알림 끄기</span></div>
+                            <div class="dropdown-item" id="viewMembersBtn">👥 멤버 보기</div>
+                        </div>
+                        <button class="icon-btn" id="inviteBtn" title="초대">👤➕</button>
+                        <button class="icon-btn" id="leaveRoomBtn" title="나가기">🚪</button>
+                    </div>
+                </div>
+                <div class="messages-container drop-zone" id="messagesContainer">
+                    <div class="drop-overlay" id="dropOverlay">
+                        <div class="drop-overlay-content">
+                            <div class="drop-overlay-icon">📁</div>
+                            <div class="drop-overlay-text">파일을 놓아 업로드</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="typing-indicator hidden" id="typingIndicator"></div>
+                <div id="replyPreview" class="hidden"></div>
+                <div class="chat-input-container">
+                    <div class="encryption-notice">🔒 메시지는 종단간 암호화됩니다</div>
+                    <div class="chat-input-wrapper">
+                        <div class="chat-input-actions">
+                            <button class="icon-btn" id="emojiBtn">😊</button>
+                            <button class="icon-btn" id="attachBtn">📎</button>
+                            <input type="file" id="fileInput" style="display:none;">
+                            <div class="emoji-picker" id="emojiPicker"></div>
+                        </div>
+                        <div class="mention-autocomplete hidden" id="mentionAutocomplete"></div>
+                        <textarea class="chat-input" id="messageInput" placeholder="메시지를 입력하세요... (@로 멘션)"
+                            rows="1"></textarea>
+                        <button class="send-btn" id="sendBtn">✉</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 새 대화 모달 -->
+    <div class="modal-overlay" id="newChatModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>새 대화 시작</h3>
+                <button class="modal-close" id="closeNewChatModal">✕</button>
+            </div>
+            <div class="form-group">
+                <label>대화방 이름 (그룹 채팅 시)</label>
+                <input type="text" id="roomName" placeholder="대화방 이름">
+            </div>
+            <div class="form-group"><label>참여자 선택</label></div>
+            <div class="user-list" id="userList"></div>
+            <button class="btn btn-primary" id="createRoomBtn" style="margin-top:16px;">대화 시작</button>
+        </div>
+    </div>
+
+    <!-- 초대 모달 -->
+    <div class="modal-overlay" id="inviteModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>멤버 초대</h3>
+                <button class="modal-close" id="closeInviteModal">✕</button>
+            </div>
+            <div class="user-list" id="inviteUserList"></div>
+            <button class="btn btn-primary" id="confirmInviteBtn" style="margin-top:16px;">초대하기</button>
+        </div>
+    </div>
+
+    <!-- 멤버 보기 모달 -->
+    <div class="modal-overlay" id="membersModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>👥 대화방 멤버</h3>
+                <button class="modal-close" id="closeMembersModal">✕</button>
+            </div>
+            <div class="members-info" id="membersInfo">
+                <div class="members-count"></div>
+            </div>
+            <div class="user-list members-list" id="membersList"></div>
+            <div class="modal-footer" style="margin-top:16px; display:flex; gap:8px;">
+                <button class="btn btn-secondary" id="closeMembersBtn" style="flex:1;">닫기</button>
+                <button class="btn btn-danger" id="leaveFromMembersBtn" style="flex:1;">🚪 대화방 나가기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 프로필 수정 모달 -->
+    <div class="modal-overlay" id="profileModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>⚙ 프로필 수정</h3>
+                <button class="modal-close" id="closeProfileModal">✕</button>
+            </div>
+            <div class="profile-edit-content">
+                <div class="profile-image-section">
+                    <div class="profile-image-preview" id="profileImagePreview">
+                        <span id="profileInitial"></span>
+                    </div>
+                    <input type="file" id="profileImageInput" accept="image/*,.heic,.heif" style="display:none;">
+                    <div class="profile-image-buttons">
+                        <button class="btn btn-secondary" id="changeProfileImageBtn">📷 사진 변경</button>
+                        <button class="btn btn-danger" id="deleteProfileImageBtn">🗑 기본 이미지</button>
+                    </div>
+                </div>
+                <div class="profile-form">
+                    <div class="form-group">
+                        <label for="profileNickname">닉네임</label>
+                        <input type="text" id="profileNickname" maxlength="20" placeholder="닉네임 입력">
+                    </div>
+                    <div class="form-group">
+                        <label for="profileStatusMessage">상태 메시지</label>
+                        <input type="text" id="profileStatusMessage" maxlength="100" placeholder="상태 메시지 (선택사항)">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="margin-top:16px; display:flex; gap:8px;">
+                <button class="btn btn-secondary" id="cancelProfileBtn" style="flex:1;">취소</button>
+                <button class="btn btn-primary" id="saveProfileBtn" style="flex:1;">💾 저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 설정 모달 -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3>🎨 화면 설정</h3>
+                <button class="modal-close" id="closeSettingsModal">✕</button>
+            </div>
+            <div class="settings-content">
+                <!-- 테마 모드 -->
+                <div class="settings-section">
+                    <div class="settings-section-title">테마 모드</div>
+                    <div class="theme-toggle">
+                        <button class="theme-toggle-btn" data-theme="dark">🌙 다크</button>
+                        <button class="theme-toggle-btn" data-theme="light">☀️ 라이트</button>
+                        <button class="theme-toggle-btn" data-theme="system">💻 시스템</button>
+                    </div>
+                </div>
+
+                <!-- 테마 색상 -->
+                <div class="settings-section">
+                    <div class="settings-section-title">테마 색상</div>
+                    <div class="color-palette">
+                        <div class="color-option" data-color="emerald" title="Emerald"></div>
+                        <div class="color-option" data-color="ocean" title="Ocean"></div>
+                        <div class="color-option" data-color="purple" title="Purple"></div>
+                        <div class="color-option" data-color="rose" title="Rose"></div>
+                        <div class="color-option" data-color="orange" title="Orange"></div>
+                        <div class="color-option" data-color="cyan" title="Cyan"></div>
+                        <div class="color-option" data-color="yellow" title="Yellow"></div>
+                        <div class="color-option" data-color="indigo" title="Indigo"></div>
+                        <div class="color-option" data-color="teal" title="Teal"></div>
+                        <div class="color-option" data-color="pink" title="Pink"></div>
+                    </div>
+                </div>
+
+                <!-- 채팅 배경 -->
+                <div class="settings-section">
+                    <div class="settings-section-title">채팅 배경</div>
+                    <div class="bg-options">
+                        <div class="bg-option" data-bg="none" title="없음">✕</div>
+                        <div class="bg-option" data-bg="dots" title="도트"></div>
+                        <div class="bg-option" data-bg="grid" title="그리드"></div>
+                        <div class="bg-option" data-bg="gradient1" title="그라데이션"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="margin-top:16px;">
+                <button class="btn btn-secondary" id="resetSettingsBtn" style="margin-right:8px;">기본값</button>
+                <button class="btn btn-primary" id="closeSettingsBtn">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 도움말 모달 -->
+    <div class="modal-overlay" id="helpModal">
+        <div class="modal" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3>❓ 도움말</h3>
+                <button class="modal-close" id="closeHelpModal">✕</button>
+            </div>
+            <div class="help-content" style="max-height: 400px; overflow-y: auto;">
+                <div class="help-section">
+                    <h4>🔐 종단간 암호화 (E2E)</h4>
+                    <p>모든 메시지는 종단간 암호화되어 서버에서도 내용을 볼 수 없습니다.</p>
+                </div>
+                <div class="help-section">
+                    <h4>💬 기본 사용법</h4>
+                    <ul>
+                        <li><b>새 대화</b>: ➕ 버튼으로 새 대화 시작</li>
+                        <li><b>메시지 전송</b>: Enter 키 또는 ✉ 버튼</li>
+                        <li><b>줄바꿈</b>: Shift + Enter</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h4>🏷 @멘션</h4>
+                    <p>메시지 입력 중 <code>@</code> 입력 후 닉네임 선택으로 특정 사용자 언급</p>
+                </div>
+                <div class="help-section">
+                    <h4>📁 파일 업로드</h4>
+                    <ul>
+                        <li><b>드래그앤드롭</b>: 파일을 채팅창에 끌어놓기</li>
+                        <li><b>붙여넣기</b>: Ctrl+V로 이미지 붙여넣기</li>
+                        <li><b>첨부</b>: 📎 버튼 클릭</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h4>🖼 이미지 보기</h4>
+                    <p>이미지 클릭 시 전체화면 보기. ←→ 키로 탐색, ESC로 닫기</p>
+                </div>
+                <div class="help-section">
+                    <h4>↩ 답장</h4>
+                    <p>메시지에 마우스를 올려 ↩ 버튼 클릭으로 답장</p>
+                </div>
+                <div class="help-section">
+                    <h4>🎨 테마 설정</h4>
+                    <p>🎨 버튼으로 다크/라이트 모드, 색상, 배경 변경</p>
+                </div>
+            </div>
+            <div class="modal-footer" style="margin-top:16px;">
+                <button class="btn btn-primary" id="closeHelpBtn">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 연결 상태 표시 -->
+    <div class="connection-status" id="connectionStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">연결 중...</span>
+    </div>
+
+    <!-- 이미지 라이트박스 -->
+    <div class="lightbox" id="lightbox">
+        <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+        <button class="lightbox-nav lightbox-prev" onclick="prevImage()">◀</button>
+        <img class="lightbox-content" id="lightboxImage" src="" alt="">
+        <button class="lightbox-nav lightbox-next" onclick="nextImage()">▶</button>
+    </div>
+
+    <script src="/static/js/storage.js"></script>
+    <script src="/static/js/notification.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>
