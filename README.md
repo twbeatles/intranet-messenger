@@ -1,6 +1,32 @@
-# 🔒 사내 웹메신저 v3.0
+# 🔒 사내 웹메신저 v3.4
 
 Flask + Socket.IO + PyQt6 기반의 **종단간 암호화(E2E)** 사내 웹 메신저 시스템입니다.
+
+## ✨ v3.4 업데이트
+
+- 🏷 **@멘션 기능**: `@닉네임` 자동완성, 그룹채팅에서 특정 사용자 호출
+- 🖼 **이미지 라이트박스**: 이미지 클릭 시 전체화면, 키보드 탐색 (←→ESC)
+- 🔔 **토스트 알림**: success/error/warning/info 타입별 스타일 알림
+- 📁 **드래그앤드롭**: 파일을 채팅창에 끌어서 업로드, 이미지 붙여넣기 지원
+- ↩ **메시지 답장**: 메시지 hover 시 답장 버튼, 답장 미리보기
+- 🖼 **다양한 이미지 형식**: WebP, HEIC, BMP, TIFF, SVG, ICO 지원
+- 🐛 **버그 수정**: Enter 키 충돌, 라이트박스 UX 개선
+
+## ✨ v3.3 업데이트
+
+- 🎨 **테마 커스터마이징**: 10가지 색상 프리셋 (Emerald, Ocean, Purple 등)
+- 🌗 **라이트/다크 모드**: 시스템 설정 연동 + 수동 선택
+- 🖼 **채팅 배경**: 도트, 그리드, 그라데이션 패턴
+- 👤 **프로필 관리**: 닉네임 변경, 프로필 사진, 상태 메시지
+- ⚡ **성능 최적화**: broadcast 제거, 방 목록 캐싱, 다중 세션 지원
+- 🔐 **E2E 복호화 개선**: 10명 이상 채팅방 안정성 향상
+
+## ✨ v3.1 업데이트
+
+- 🚀 **고성능 동시 접속**: gevent 비동기 드라이버로 수십~수백 명 동시 접속 지원
+- ⚡ **연결 안정성 향상**: ping_timeout 120초, 끊김 방지 최적화
+- 📊 **성능 설정 분리**: config.py에서 동시 접속 관련 설정 관리
+- 🔧 **Redis 메시지 큐 지원**: 대규모 배포 시 확장 가능
 
 ## ✨ v3.0 업데이트
 
@@ -19,6 +45,17 @@ Flask + Socket.IO + PyQt6 기반의 **종단간 암호화(E2E)** 사내 웹 메�
 - ✅ 시스템 폰트만 사용 (외부 웹폰트 없음)
 - ✅ 외부 CDN, API 호출 없음
 - ✅ SQLite 로컬 데이터베이스
+
+## 🌐 브라우저 호환성
+
+| 브라우저 | 최소 버전 | 권장 버전 |
+|---------|----------|----------|
+| Chrome | 55+ | 최신 |
+| Edge | 79+ | 최신 |
+| Firefox | 52+ | 최신 |
+| Safari | 11+ | 최신 |
+
+> ⚠️ **Internet Explorer는 지원하지 않습니다.**
 
 ## 주요 기능
 
@@ -45,9 +82,18 @@ Flask + Socket.IO + PyQt6 기반의 **종단간 암호화(E2E)** 사내 웹 메�
 
 ## 📦 설치
 
+### 기본 설치
 ```powershell
 pip install flask flask-socketio simple-websocket pycryptodome pyqt6 cryptography
 ```
+
+### 고성능 동시 접속 지원 (권장)
+```powershell
+pip install flask flask-socketio pycryptodome pyqt6 cryptography gevent gevent-websocket
+```
+
+> ⚠️ **참고**: `gevent`를 설치하면 수십~수백 명의 동시 접속을 안정적으로 처리할 수 있습니다.
+> 설치하지 않으면 `threading` 모드로 동작하며, 동시 접속이 제한됩니다.
 
 ## 🚀 실행
 
@@ -124,7 +170,7 @@ python certs/generate_cert.py
 ### 1. 사전 준비
 
 ```powershell
-pip install auto-py-to-exe
+pip install auto-py-to-exe pyinstaller
 ```
 
 ### 2. 실행
@@ -140,6 +186,7 @@ auto-py-to-exe
 | Script Location | `server.py` 선택 |
 | Onefile/One Directory | **One Directory** 선택 |
 | Console Window | **Window Based (No Console)** 선택 |
+| Output Directory | 원하는 출력 폴더 선택 |
 
 ### 4. Additional Files 추가 ⚠️ 중요
 
@@ -161,12 +208,33 @@ auto-py-to-exe
 
 ### 5. Advanced 탭 - Hidden Imports 추가 ⚠️ 필수
 
+**v3.3 업데이트**: threading, contextlib 관련 모듈 추가
+
 ```
+# Socket.IO / Engine.IO
 engineio.async_drivers.threading
+engineio.async_drivers.gevent
+engineio.async_drivers.gevent_uwsgi
 simple_websocket
 flask_socketio
 socketio
 engineio
+
+# gevent (고성능 동시 접속)
+gevent
+gevent.monkey
+gevent.pywsgi
+gevent.socket
+gevent.ssl
+gevent.local
+gevent.queue
+gevent.event
+gevent.lock
+geventwebsocket
+geventwebsocket.handler
+geventwebsocket.websocket
+
+# 암호화
 cryptography
 cryptography.hazmat.primitives.kdf.pbkdf2
 cryptography.hazmat.backends
@@ -175,8 +243,11 @@ Crypto.Cipher
 Crypto.Cipher.AES
 Crypto.Random
 Crypto.Util.Padding
+
+# Flask / Werkzeug
 werkzeug
 werkzeug.routing
+werkzeug.serving
 jinja2
 flask.json
 ```
@@ -189,8 +260,8 @@ flask.json
 
 ```
 output/
-└── 사내메신저v3/
-    ├── 사내메신저v3.exe    # 실행 파일
+└── 사내메신저v3.1/
+    ├── 사내메신저v3.1.exe  # 실행 파일
     ├── static/             # 웹 리소스
     ├── templates/          # HTML 템플릿
     ├── app/                # 백엔드 모듈
@@ -206,13 +277,38 @@ cd "d:\google antigravity\사내 메신저"
 pyinstaller messenger.spec
 ```
 
+---
+
 ## ⚠️ 패키징 주의사항
 
 1. **폴더 구조 유지**: `static/`, `templates/`, `app/`, `gui/`, `certs/` 폴더 반드시 포함
-2. **Hidden Imports**: Socket.IO, Crypto, Flask 관련 모듈 누락 시 실행 오류 발생
+2. **Hidden Imports**: Socket.IO, Crypto, Flask, **gevent** 관련 모듈 누락 시 실행 오류 발생
 3. **config.py**: 루트에 반드시 포함 (패키징 후 설정 변경 가능)
 4. **One Directory 권장**: One File은 리소스 접근 문제 발생 가능
 5. **오류 시**: `build/`, `dist/` 폴더 삭제 후 `pyinstaller messenger.spec --clean` 실행
+6. **gevent 미설치 시**: gevent 없이 패키징하면 `threading` 모드로 동작 (동시 접속 제한)
+
+---
+
+## ⚙️ 설정 파일 (config.py)
+
+패키징 후에도 `config.py`를 수정하여 설정 변경 가능:
+
+```python
+# 비동기 모드: 'gevent' (권장), 'eventlet', 'threading'
+ASYNC_MODE = 'gevent'
+
+# Socket.IO 설정
+PING_TIMEOUT = 120      # 연결 타임아웃 (초)
+PING_INTERVAL = 25      # 핑 간격 (초)
+MAX_CONNECTIONS = 0     # 동시 연결 제한 (0 = 무제한)
+
+# HTTPS 설정
+USE_HTTPS = False       # True로 변경 시 HTTPS 활성화
+DEFAULT_PORT = 5000     # 서버 포트
+```
+
+---
 
 ## ⚠️ 기타 주의사항
 
@@ -220,3 +316,14 @@ pyinstaller messenger.spec
 - HTTPS 사용 시 SSL 인증서가 자동 생성됩니다 (cryptography 라이브러리 필요)
 - **사내망에서 외부 인터넷 없이 완전히 독립 동작합니다**
 - **기존 v2.5 사용자**: `messenger.db`를 삭제하고 새로 시작해야 합니다 (비밀번호 해시 호환성)
+- **gevent 설치 권장**: 수십 명 이상 동시 접속 시 필수
+
+---
+
+## 📊 성능 비교
+
+| 비동기 모드 | 동시 접속 | 설치 필요 |
+|------------|----------|----------|
+| `gevent` (권장) | 수백~수천 명 | `pip install gevent gevent-websocket` |
+| `eventlet` | 수백 명 | `pip install eventlet` |
+| `threading` | 5~10명 | 기본 포함 |
