@@ -170,7 +170,7 @@ python server.py --cli
 
 ### spec 파일 사용 (권장)
 ```powershell
-cd "d:\google antigravity\사내 메신저"
+cd "your folder\사내 메신저"
 pyinstaller messenger.spec
 ```
 
@@ -222,3 +222,4 @@ DEFAULT_PORT = 5000         # 서버 포트
 - HTTPS 사용 시 SSL 인증서 자동 생성 (cryptography 필요)
 - **사내망에서 외부 인터넷 없이 완전히 독립 동작**
 - **gevent 설치 권장**: 수십 명 이상 동시 접속 시 필수
+
