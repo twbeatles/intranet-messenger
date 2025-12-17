@@ -317,3 +317,11 @@
 2025-12-16 14:51:28,226 - INFO - Profile updated broadcast: user_id=3, nickname=1234, image=profiles/3_20251216145127.jpg
 2025-12-16 14:51:33,633 - INFO - Profile updated broadcast: user_id=3, nickname=1234, image=None
 2025-12-16 14:51:34,398 - INFO - Profile updated broadcast: user_id=3, nickname=1234, image=None
+2025-12-17 10:10:09,925 - INFO - gevent 비동기 모드 활성화 (고성능 동시 접속 지원)
+2025-12-17 10:10:09,927 - WARNING - Socket.IO 초기화 경고: Invalid async_mode specified, 기본 모드로 재시도
+2025-12-17 10:10:10,313 - INFO - 데이터베이스 초기화 완료
+2025-12-17 10:10:10,313 - INFO - 사내 메신저 서버 v3.5 앱 초기화 완료
+2025-12-17 10:16:40,129 - INFO - gevent 비동기 모드 활성화 (고성능 동시 접속 지원)
+2025-12-17 10:16:40,130 - WARNING - Socket.IO 초기화 경고: Invalid async_mode specified, 기본 모드로 재시도
+2025-12-17 10:16:40,393 - INFO - 데이터베이스 초기화 완료
+2025-12-17 10:16:40,393 - INFO - 사내 메신저 서버 v3.5 앱 초기화 완료

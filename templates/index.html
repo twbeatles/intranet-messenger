@@ -92,10 +92,16 @@
 
         <!-- 채팅 영역 -->
         <div class="chat-area" id="chatArea">
-            <div class="empty-state" id="emptyState">
-                <span class="empty-icon">💬</span>
+            <div class="empty-state empty-state-enhanced" id="emptyState">
+                <div class="empty-illustration">💬</div>
                 <h3>대화를 선택하세요</h3>
-                <p>왼쪽에서 대화를 선택하거나 새 대화를 시작하세요</p>
+                <p>왼쪽에서 대화를 선택하거나<br>새 대화를 시작하세요</p>
+                <div class="empty-actions">
+                    <button class="btn btn-primary" onclick="openNewChatModal()">➕ 새 대화 시작</button>
+                </div>
+                <p style="margin-top:24px;font-size:12px;color:var(--text-muted);">
+                    <span class="kbd">Ctrl</span>+<span class="kbd">N</span> 으로 빠르게 시작
+                </p>
             </div>
 
             <div id="chatContent" class="chat-content hidden">
@@ -128,6 +134,7 @@
                         </div>
                     </div>
                 </div>
+                <button class="scroll-to-bottom-btn hidden" id="scrollToBottomBtn" title="맨 아래로">↓</button>
                 <div class="typing-indicator hidden" id="typingIndicator"></div>
                 <div id="replyPreview" class="hidden"></div>
                 <div class="chat-input-container">
@@ -328,6 +335,15 @@
                 <div class="help-section">
                     <h4>🎨 테마 설정</h4>
                     <p>🎨 버튼으로 다크/라이트 모드, 색상, 배경 변경</p>
+                </div>
+                <div class="help-section">
+                    <h4>⌨️ 키보드 단축키</h4>
+                    <ul>
+                        <li><b><span class="kbd">Ctrl</span>+<span class="kbd">K</span></b>: 대화 검색</li>
+                        <li><b><span class="kbd">Ctrl</span>+<span class="kbd">N</span></b>: 새 대화 시작</li>
+                        <li><b><span class="kbd">Ctrl</span>+<span class="kbd">F</span></b>: 대화 내 검색</li>
+                        <li><b><span class="kbd">ESC</span></b>: 모달/검색 닫기</li>
+                    </ul>
                 </div>
             </div>
             <div class="modal-footer" style="margin-top:16px;">

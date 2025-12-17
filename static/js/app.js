@@ -1,5 +1,5 @@
 /**
- * 사내 메신저 v3.3 메인 애플리케이션
+ * 사내 메신저 v3.5 메인 애플리케이션
  */
 
 // ============================================================================
@@ -46,6 +46,44 @@ function scheduleUpdate(updateFn) {
 }
 
 // ============================================================================
+// 유저별 프로필 색상
+// ============================================================================
+// 미리 정의된 HSL 색상 팔레트 (구별이 잘 되는 색상들)
+var userColorPalette = [
+    'hsl(210, 70%, 50%)',   // 파랑
+    'hsl(340, 70%, 50%)',   // 핑크
+    'hsl(150, 70%, 40%)',   // 초록
+    'hsl(25, 80%, 50%)',    // 주황
+    'hsl(270, 60%, 55%)',   // 보라
+    'hsl(180, 70%, 40%)',   // 청록
+    'hsl(45, 80%, 45%)',    // 노랑
+    'hsl(0, 70%, 50%)',     // 빨강
+    'hsl(240, 60%, 55%)',   // 남색
+    'hsl(320, 60%, 50%)',   // 마젠타
+    'hsl(90, 60%, 40%)',    // 라임
+    'hsl(200, 70%, 45%)'    // 하늘색
+];
+
+function getUserColor(userId) {
+    // 유저 ID를 기반으로 일관된 색상 인덱스 생성
+    var index = Math.abs(userId) % userColorPalette.length;
+    return userColorPalette[index];
+}
+
+// 아바타 HTML 생성 헬퍼 함수 (중복 코드 제거용)
+function createAvatarHtml(name, imagePath, userId, cssClass) {
+    cssClass = cssClass || 'message-avatar';
+    var initial = (name && name.length > 0) ? name[0].toUpperCase() : '?';
+    var color = getUserColor(userId || 0);
+
+    if (imagePath) {
+        return '<div class="' + cssClass + ' has-image"><img src="/uploads/' + imagePath + '" alt="프로필"></div>';
+    } else {
+        return '<div class="' + cssClass + '" style="background:' + color + '">' + initial + '</div>';
+    }
+}
+
+// ============================================================================
 // 토스트 알림 시스템
 // ============================================================================
 var toastContainer = null;
@@ -54,13 +92,15 @@ function initToast() {
     if (!toastContainer) {
         toastContainer = document.createElement('div');
         toastContainer.className = 'toast-container';
+        toastContainer.setAttribute('role', 'alert');
+        toastContainer.setAttribute('aria-live', 'polite');
         document.body.appendChild(toastContainer);
     }
 }
 
-function showToast(message, type, duration) {
+function showToast(message, type, duration, title) {
     type = type || 'info';
-    duration = duration || 3000;
+    duration = duration || 4000;
 
     initToast();
 
@@ -71,21 +111,52 @@ function showToast(message, type, duration) {
         info: 'ℹ️'
     };
 
+    var titles = {
+        success: '성공',
+        error: '오류',
+        warning: '주의',
+        info: '알림'
+    };
+
     var toast = document.createElement('div');
     toast.className = 'toast ' + type;
     toast.innerHTML = '<span class="toast-icon">' + icons[type] + '</span>' +
-        '<span class="toast-message">' + message + '</span>' +
-        '<button class="toast-close">✕</button>';
+        '<div class="toast-body">' +
+        '<div class="toast-title">' + (title || titles[type]) + '</div>' +
+        '<div class="toast-message">' + message + '</div>' +
+        '</div>' +
+        '<button class="toast-close" aria-label="닫기">✕</button>' +
+        '<div class="toast-progress" style="animation-duration:' + duration + 'ms;"></div>';
 
     toast.querySelector('.toast-close').onclick = function () {
         closeToast(toast);
     };
 
+    // 최대 5개까지만 표시
+    while (toastContainer.children.length >= 5) {
+        closeToast(toastContainer.firstChild);
+    }
+
     toastContainer.appendChild(toast);
 
-    setTimeout(function () {
+    var timeoutId = setTimeout(function () {
         closeToast(toast);
     }, duration);
+
+    // 마우스 오버 시 일시정지
+    toast.onmouseenter = function () {
+        clearTimeout(timeoutId);
+        var progress = toast.querySelector('.toast-progress');
+        if (progress) progress.style.animationPlayState = 'paused';
+    };
+
+    toast.onmouseleave = function () {
+        var progress = toast.querySelector('.toast-progress');
+        if (progress) progress.style.animationPlayState = 'running';
+        timeoutId = setTimeout(function () {
+            closeToast(toast);
+        }, 2000);
+    };
 
     return toast;
 }
@@ -100,6 +171,7 @@ function closeToast(toast) {
         }, 300);
     }
 }
+
 
 // ============================================================================
 // 답장 기능
@@ -201,7 +273,7 @@ function showMentionAutocomplete(query) {
             mentionSelectedIndex = 0;
             autocomplete.innerHTML = mentionUsers.map(function (user, i) {
                 return '<div class="mention-item' + (i === 0 ? ' selected' : '') + '" data-user-id="' + user.id + '">' +
-                    '<div class="mention-item-avatar">' + user.nickname[0].toUpperCase() + '</div>' +
+                    '<div class="mention-item-avatar">' + ((user.nickname && user.nickname.length > 0) ? user.nickname[0].toUpperCase() : '?') + '</div>' +
                     '<div class="mention-item-name">' + escapeHtml(user.nickname) + '</div>' +
                     '</div>';
             }).join('');
@@ -357,6 +429,10 @@ let currentRoomKey = null;
 let typingTimeout = null;
 let reconnectAttempts = 0;
 
+// 날짜 구분선 상태 (반복 방지)
+let lastDisplayedDate = null;
+let todayDividerShown = false;
+
 // 이모지 목록
 const emojis = ['😀', '😂', '😊', '😍', '🥰', '😎', '🤔', '😅', '😭', '😤', '👍', '👎', '❤️', '🔥', '✨', '🎉', '👏', '🙏', '💪', '🤝', '👋', '✅', '❌', '⭐', '💯', '🚀', '💡', '📌', '📝', '💬'];
 
@@ -370,7 +446,21 @@ document.addEventListener('DOMContentLoaded', function () {
     setupEventListeners();
     initEmojiPicker();
     initTheme();  // 테마 초기화
+    checkSession();  // 세션 체크 (새로고침 시 자동 로그인)
 });
+
+// 세션 체크 (새로고침 시 자동 로그인)
+async function checkSession() {
+    try {
+        const result = await api('/api/me');
+        if (result.logged_in && result.user) {
+            currentUser = result.user;
+            initApp();
+        }
+    } catch (err) {
+        console.log('세션 체크 실패, 로그인 필요');
+    }
+}
 
 function cacheElements() {
     const ids = [
@@ -440,6 +530,17 @@ function setupEventListeners() {
     // 나가기 & 로그아웃
     $('leaveRoomBtn').onclick = leaveRoom;
     $('logoutBtn').onclick = logout;
+
+    // 프로필 모달 이벤트
+    $('profileBtn').onclick = openProfileModal;
+    $('userAvatar').onclick = openProfileModal;
+    $('userInfoClick').onclick = openProfileModal;
+    $('closeProfileModal').onclick = closeProfileModal;
+    $('cancelProfileBtn').onclick = closeProfileModal;
+    $('saveProfileBtn').onclick = saveProfile;
+    $('changeProfileImageBtn').onclick = () => $('profileImageInput').click();
+    $('profileImageInput').onchange = handleProfileImageUpload;
+    $('deleteProfileImageBtn').onclick = deleteProfileImage;
 
     // 멤버 모달 이벤트
     $('closeMembersModal').onclick = () => $('membersModal').classList.remove('active');
@@ -511,6 +612,41 @@ function setupEventListeners() {
 
     // 드래그앤드롭 파일 업로드
     setupDragDrop();
+
+    // 스크롤 하단 버튼
+    var scrollBtn = $('scrollToBottomBtn');
+    if (scrollBtn) {
+        scrollBtn.onclick = scrollToBottom;
+    }
+
+    // 메시지 컨테이너 스크롤 감지
+    $('messagesContainer').addEventListener('scroll', handleMessagesScroll);
+}
+
+// ============================================================================
+// 스크롤 하단 버튼
+// ============================================================================
+function scrollToBottom() {
+    var container = $('messagesContainer');
+    if (!container) return;
+    container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+    });
+}
+
+function handleMessagesScroll() {
+    var container = $('messagesContainer');
+    var scrollBtn = $('scrollToBottomBtn');
+    if (!container || !scrollBtn) return;
+
+    // 스크롤이 맨 아래에서 150px 이상 떨어져 있으면 버튼 표시
+    var scrollFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (scrollFromBottom > 150) {
+        scrollBtn.classList.remove('hidden');
+    } else {
+        scrollBtn.classList.add('hidden');
+    }
 }
 
 // ============================================================================
@@ -601,12 +737,13 @@ async function uploadFile(file) {
         if (result.success) {
             var messageType = file.type.startsWith('image/') ? 'image' : 'file';
 
-            socket.emit('message', {
+            socket.emit('send_message', {
                 room_id: currentRoom.id,
                 content: '',
-                message_type: messageType,
+                type: messageType,
                 file_path: result.file_path,
                 file_name: result.file_name,
+                encrypted: false,
                 reply_to: replyingTo ? replyingTo.id : null
             });
 
@@ -737,13 +874,185 @@ async function logout() {
 }
 
 // ============================================================================
+// 프로필 관리
+// ============================================================================
+function openProfileModal() {
+    $('profileModal').classList.add('active');
+
+    // 현재 사용자 정보로 폼 채우기
+    $('profileNickname').value = currentUser.nickname || '';
+    $('profileStatusMessage').value = currentUser.status_message || '';
+
+    // 프로필 이미지 미리보기
+    updateProfilePreview();
+}
+
+function closeProfileModal() {
+    $('profileModal').classList.remove('active');
+}
+
+function updateProfilePreview() {
+    var preview = $('profileImagePreview');
+    var initial = $('profileInitial');
+
+    if (currentUser.profile_image) {
+        preview.innerHTML = '<img src="/uploads/' + currentUser.profile_image + '" alt="프로필">';
+        preview.classList.add('has-image');
+    } else {
+        preview.innerHTML = '<span id="profileInitial">' + (currentUser.nickname ? currentUser.nickname[0].toUpperCase() : '?') + '</span>';
+        preview.classList.remove('has-image');
+        preview.style.background = getUserColor(currentUser.id);
+    }
+}
+
+async function saveProfile() {
+    var nickname = $('profileNickname').value.trim();
+    var statusMessage = $('profileStatusMessage').value.trim();
+
+    if (nickname && nickname.length < 2) {
+        showToast('닉네임은 2자 이상이어야 합니다.', 'error');
+        return;
+    }
+
+    try {
+        var result = await api('/api/profile', {
+            method: 'PUT',
+            body: JSON.stringify({
+                nickname: nickname || null,
+                status_message: statusMessage || null
+            })
+        });
+
+        if (result.success) {
+            // 로컬 상태 업데이트
+            if (nickname) {
+                currentUser.nickname = nickname;
+                elements.userName.textContent = nickname;
+                elements.userAvatar.textContent = (nickname && nickname.length > 0) ? nickname[0].toUpperCase() : '?';
+            }
+
+            // 소켓으로 프로필 변경 알림
+            if (socket) {
+                socket.emit('profile_updated', {
+                    nickname: currentUser.nickname,
+                    profile_image: currentUser.profile_image
+                });
+            }
+
+            showToast('프로필이 저장되었습니다.', 'success');
+            closeProfileModal();
+            loadRooms();  // 대화방 목록 새로고침
+        } else {
+            showToast(result.error || '저장 실패', 'error');
+        }
+    } catch (err) {
+        console.error('프로필 저장 오류:', err);
+        showToast('프로필 저장에 실패했습니다.', 'error');
+    }
+}
+
+async function handleProfileImageUpload(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    // 파일 크기 체크 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('이미지 크기는 5MB 이하여야 합니다.', 'error');
+        return;
+    }
+
+    var formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        var response = await fetch('/api/profile/image', {
+            method: 'POST',
+            body: formData
+        });
+        var result = await response.json();
+
+        if (result.success) {
+            currentUser.profile_image = result.profile_image;
+            updateProfilePreview();
+
+            // 사이드바 아바타도 업데이트
+            elements.userAvatar.innerHTML = '<img src="/uploads/' + result.profile_image + '" alt="프로필">';
+            elements.userAvatar.classList.add('has-image');
+
+            // 소켓으로 프로필 변경 알림
+            if (socket) {
+                socket.emit('profile_updated', {
+                    nickname: currentUser.nickname,
+                    profile_image: currentUser.profile_image
+                });
+            }
+
+            showToast('프로필 사진이 업로드되었습니다.', 'success');
+        } else {
+            showToast(result.error || '업로드 실패', 'error');
+        }
+    } catch (err) {
+        console.error('프로필 이미지 업로드 오류:', err);
+        showToast('이미지 업로드에 실패했습니다.', 'error');
+    }
+
+    // 파일 입력 초기화
+    e.target.value = '';
+}
+
+async function deleteProfileImage() {
+    if (!currentUser.profile_image) {
+        showToast('삭제할 프로필 사진이 없습니다.', 'info');
+        return;
+    }
+
+    if (!confirm('프로필 사진을 삭제하시겠습니까?')) return;
+
+    try {
+        var result = await api('/api/profile/image', { method: 'DELETE' });
+
+        if (result.success) {
+            currentUser.profile_image = null;
+            updateProfilePreview();
+
+            // 사이드바 아바타도 업데이트
+            elements.userAvatar.innerHTML = (currentUser.nickname && currentUser.nickname.length > 0) ? currentUser.nickname[0].toUpperCase() : '?';
+            elements.userAvatar.classList.remove('has-image');
+
+            // 소켓으로 프로필 변경 알림
+            if (socket) {
+                socket.emit('profile_updated', {
+                    nickname: currentUser.nickname,
+                    profile_image: null
+                });
+            }
+
+            showToast('프로필 사진이 삭제되었습니다.', 'success');
+        } else {
+            showToast(result.error || '삭제 실패', 'error');
+        }
+    } catch (err) {
+        console.error('프로필 이미지 삭제 오류:', err);
+        showToast('삭제에 실패했습니다.', 'error');
+    }
+}
+
+// ============================================================================
 // 앱 초기화
 // ============================================================================
 function initApp() {
     elements.authContainer.style.display = 'none';
     elements.appContainer.classList.add('active');
     elements.userName.textContent = currentUser.nickname;
-    elements.userAvatar.textContent = currentUser.nickname[0].toUpperCase();
+
+    // 프로필 이미지가 있으면 표시, 없으면 이니셜 표시
+    if (currentUser.profile_image) {
+        elements.userAvatar.innerHTML = '<img src="/uploads/' + currentUser.profile_image + '" alt="프로필">';
+        elements.userAvatar.classList.add('has-image');
+    } else {
+        elements.userAvatar.textContent = (currentUser.nickname && currentUser.nickname.length > 0) ? currentUser.nickname[0].toUpperCase() : '?';
+        elements.userAvatar.style.background = getUserColor(currentUser.id);
+    }
 
     // 알림 권한 요청
     if (window.MessengerNotification) {
@@ -846,16 +1155,11 @@ function renderRoomList() {
         var pinnedClass = room.pinned ? 'pinned' : '';
         var pinnedIcon = room.pinned ? '<span class="pin-icon">📌</span>' : '';
 
-        // 프로필 이미지 처리
-        var avatarHtml = '';
-        if (room.type === 'direct' && room.partner && room.partner.profile_image) {
-            avatarHtml = '<div class="room-avatar has-image"><img src="/uploads/' + room.partner.profile_image + '" alt="프로필"></div>';
-        } else {
-            var avatar = room.type === 'direct' && room.partner
-                ? room.partner.nickname[0].toUpperCase()
-                : (room.name || '그')[0].toUpperCase();
-            avatarHtml = '<div class="room-avatar">' + avatar + '</div>';
-        }
+        // 프로필 이미지 및 색상 처리 (헬퍼 함수 사용)
+        var avatarUserId = room.type === 'direct' && room.partner ? room.partner.id : room.id;
+        var avatarName = room.type === 'direct' && room.partner ? room.partner.nickname : (room.name || '그');
+        var avatarImage = room.type === 'direct' && room.partner ? room.partner.profile_image : null;
+        var avatarHtml = createAvatarHtml(avatarName, avatarImage, avatarUserId, 'room-avatar');
 
         var unreadBadge = room.unread_count > 0 ? '<span class="unread-badge">' + room.unread_count + '</span>' : '';
 
@@ -906,7 +1210,17 @@ async function openRoom(room) {
     try {
         const result = await api(`/api/rooms/${room.id}/messages`);
         currentRoomKey = result.encryption_key;
-        renderMessages(result.messages);
+
+        // 현재 사용자의 마지막 읽은 메시지 ID 찾기
+        var lastReadId = 0;
+        if (result.members) {
+            var currentMember = result.members.find(m => m.id === currentUser.id);
+            if (currentMember) {
+                lastReadId = currentMember.last_read_message_id || 0;
+            }
+        }
+
+        renderMessages(result.messages, lastReadId);
 
         if (result.messages.length > 0) {
             socket.emit('message_read', {
@@ -925,7 +1239,7 @@ async function openRoom(room) {
         if (window.MessengerStorage) {
             const cached = await MessengerStorage.getCachedMessages(room.id);
             if (cached.length > 0) {
-                renderMessages(cached);
+                renderMessages(cached, 0);
             }
         }
     }
@@ -959,32 +1273,53 @@ function formatDateLabel(dateStr) {
     return (msgDate.getMonth() + 1) + '월 ' + msgDate.getDate() + '일';
 }
 
-function renderMessages(messages) {
+function renderMessages(messages, lastReadId) {
     elements.messagesContainer.innerHTML = '';
     let lastDate = null;
     var todayStr = new Date().toISOString().split('T')[0];
-    var todayDividerShown = false;
+    var localTodayDividerShown = false;
+    var unreadDividerShown = false;
 
     messages.forEach(msg => {
-        const msgDate = msg.created_at.split('T')[0];
+        const msgDate = msg.created_at.split(' ')[0] || msg.created_at.split('T')[0];
 
         // 날짜가 바뀌었고, (오늘이 아니거나, 오늘인데 아직 구분선이 없는 경우)
         if (msgDate !== lastDate) {
             var isToday = msgDate === todayStr;
 
             // 오늘이면 첫 메시지에서만 구분선 표시
-            if (!isToday || (isToday && !todayDividerShown)) {
+            if (!isToday || (isToday && !localTodayDividerShown)) {
                 lastDate = msgDate;
                 const divider = document.createElement('div');
                 divider.className = 'date-divider';
+                divider.setAttribute('data-date', msgDate);
                 divider.innerHTML = `<span>${formatDateLabel(msgDate)}</span>`;
                 elements.messagesContainer.appendChild(divider);
 
-                if (isToday) todayDividerShown = true;
+                if (isToday) localTodayDividerShown = true;
             }
         }
+
+        // 읽지 않은 메시지 구분선 표시 (첫 번째 읽지 않은 메시지 앞에)
+        if (!unreadDividerShown && lastReadId > 0 && msg.id > lastReadId && msg.sender_id !== currentUser.id) {
+            var unreadDivider = document.createElement('div');
+            unreadDivider.className = 'unread-divider';
+            unreadDivider.innerHTML = '<span>여기서부터 읽지 않음</span>';
+            elements.messagesContainer.appendChild(unreadDivider);
+            unreadDividerShown = true;
+        }
+
         appendMessage(msg);
     });
+
+    // 읽지 않은 메시지가 있으면 해당 위치로 스크롤
+    if (unreadDividerShown) {
+        var unreadDiv = document.querySelector('.unread-divider');
+        if (unreadDiv) {
+            unreadDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return; // scrollToBottom 하지 않음
+        }
+    }
 
     scrollToBottom();
 }
@@ -1014,18 +1349,21 @@ function appendMessage(msg) {
 
     var unreadHtml = msg.unread_count > 0 ? '<span class="unread-count">' + msg.unread_count + '</span>' : '';
 
-    // 프로필 이미지 처리
-    var avatarHtml = '';
-    if (msg.sender_image) {
-        avatarHtml = '<div class="message-avatar has-image"><img src="/uploads/' + msg.sender_image + '" alt="프로필"></div>';
-    } else {
-        avatarHtml = '<div class="message-avatar">' + msg.sender_name[0].toUpperCase() + '</div>';
-    }
+    // 프로필 이미지 및 색상 처리 (헬퍼 함수 사용)
+    var avatarHtml = createAvatarHtml(msg.sender_name, msg.sender_image, msg.sender_id, 'message-avatar');
 
-    // 답장 버튼
+    // 답장 버튼 및 자신의 메시지인 경우 수정/삭제 버튼 추가
     var actionsHtml = '<div class="message-actions">' +
-        '<button class="message-action-btn" onclick="replyToMessage(' + msg.id + ')" title="답장">↩</button>' +
-        '</div>';
+        '<button class="message-action-btn" onclick="replyToMessage(' + msg.id + ')" title="답장">↩</button>';
+
+    // 자신의 메시지인 경우 수정/삭제 버튼 추가 (텍스트 메시지만)
+    if (isSent && msg.message_type !== 'image' && msg.message_type !== 'file') {
+        actionsHtml += '<button class="message-action-btn edit-btn" onclick="editMessage(' + msg.id + ')" title="수정">✏</button>';
+    }
+    if (isSent) {
+        actionsHtml += '<button class="message-action-btn delete-btn" onclick="deleteMessage(' + msg.id + ')" title="삭제">🗑</button>';
+    }
+    actionsHtml += '</div>';
 
     // 답장 원본 메시지 표시
     var replyHtml = '';
@@ -1068,13 +1406,95 @@ function replyToMessage(messageId) {
     }
 }
 
-function scrollToMessage(messageId) {
+function scrollToMessage(messageId, retryCount) {
+    retryCount = retryCount || 0;
     var msgEl = document.querySelector('[data-message-id="' + messageId + '"]');
+
     if (msgEl) {
         // 스크롤 이동
         msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
         // 하이라이트 효과
+        msgEl.classList.add('highlight');
+        setTimeout(function () {
+            msgEl.classList.remove('highlight');
+        }, 2000);
+    } else if (retryCount < 5) {
+        // 메시지가 아직 DOM에 없으면 지연 후 재시도 (새 메시지 답장 시)
+        setTimeout(function () {
+            scrollToMessage(messageId, retryCount + 1);
+        }, 100);
+    }
+}
+
+// ============================================================================
+// 메시지 수정/삭제
+// ============================================================================
+function editMessage(messageId) {
+    var msgEl = document.querySelector('[data-message-id="' + messageId + '"]');
+    if (!msgEl || !msgEl._messageData) return;
+
+    var msg = msgEl._messageData;
+
+    // 현재 메시지 내용 복호화
+    var currentContent = currentRoomKey && msg.encrypted ? E2E.decrypt(msg.content, currentRoomKey) : msg.content;
+
+    // 수정할 내용 입력받기
+    var newContent = prompt('메시지 수정:', currentContent);
+    if (newContent === null || newContent.trim() === '' || newContent === currentContent) return;
+
+    // 암호화하여 서버로 전송
+    var encryptedContent = currentRoomKey ? E2E.encrypt(newContent.trim(), currentRoomKey) : newContent.trim();
+    socket.emit('edit_message', {
+        message_id: messageId,
+        room_id: currentRoom.id,
+        content: encryptedContent,
+        encrypted: !!currentRoomKey
+    });
+}
+
+function deleteMessage(messageId) {
+    if (!confirm('이 메시지를 삭제하시겠습니까?')) return;
+
+    socket.emit('delete_message', {
+        message_id: messageId,
+        room_id: currentRoom.id
+    });
+}
+
+function handleMessageDeleted(data) {
+    var msgEl = document.querySelector('[data-message-id="' + data.message_id + '"]');
+    if (msgEl) {
+        // 삭제 애니메이션
+        msgEl.style.transition = 'opacity 0.3s, transform 0.3s';
+        msgEl.style.opacity = '0';
+        msgEl.style.transform = 'translateX(-20px)';
+        setTimeout(function () {
+            msgEl.remove();
+        }, 300);
+    }
+
+    // 대화방 목록 새로고침 (마지막 메시지 업데이트)
+    loadRooms();
+}
+
+function handleMessageEdited(data) {
+    var msgEl = document.querySelector('[data-message-id="' + data.message_id + '"]');
+    if (msgEl && msgEl._messageData) {
+        // 메시지 데이터 업데이트
+        msgEl._messageData.content = data.content;
+        msgEl._messageData.encrypted = data.encrypted;
+
+        // 복호화
+        var decrypted = currentRoomKey && data.encrypted ? E2E.decrypt(data.content, currentRoomKey) : data.content;
+
+        // 메시지 버블 업데이트
+        var bubble = msgEl.querySelector('.message-bubble');
+        if (bubble) {
+            bubble.innerHTML = parseMentions(escapeHtml(decrypted)) + ' <span class="edited-indicator">(수정됨)</span>';
+        }
+
+        // 수정 하이라이트 효과
         msgEl.classList.add('highlight');
         setTimeout(function () {
             msgEl.classList.remove('highlight');
@@ -1148,6 +1568,28 @@ async function handleFileUpload(e) {
 // ============================================================================
 function handleNewMessage(msg) {
     if (currentRoom && msg.room_id === currentRoom.id) {
+        // 메시지 날짜 확인 (날짜 구분선 중복 방지)
+        const msgDate = msg.created_at.split(' ')[0] || msg.created_at.split('T')[0];
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        // 기존에 표시된 날짜 구분선 확인
+        const existingDivider = elements.messagesContainer.querySelector('.date-divider[data-date="' + msgDate + '"]');
+
+        // 날짜가 바뀌었고 해당 날짜의 구분선이 없는 경우에만 추가
+        if (!existingDivider) {
+            const isToday = msgDate === todayStr;
+            // 오늘 날짜 구분선이 이미 있는지 추가 확인
+            const todayDividerExists = elements.messagesContainer.querySelector('.date-divider[data-date="' + todayStr + '"]');
+
+            if (!isToday || !todayDividerExists) {
+                const divider = document.createElement('div');
+                divider.className = 'date-divider';
+                divider.setAttribute('data-date', msgDate);
+                divider.innerHTML = '<span>' + formatDateLabel(msgDate) + '</span>';
+                elements.messagesContainer.appendChild(divider);
+            }
+        }
+
         appendMessage(msg);
         scrollToBottom();
         socket.emit('message_read', { room_id: currentRoom.id, message_id: msg.id });
@@ -1219,7 +1661,7 @@ function handleUserProfileUpdated(data) {
                     avatarEl.classList.add('has-image');
                 } else if (data.nickname) {
                     avatarEl.classList.remove('has-image');
-                    avatarEl.textContent = data.nickname[0].toUpperCase();
+                    avatarEl.textContent = (data.nickname && data.nickname.length > 0) ? data.nickname[0].toUpperCase() : '?';
                 }
             }
         });
@@ -1273,12 +1715,16 @@ async function loadOnlineUsers() {
             return;
         }
 
-        elements.onlineUsersList.innerHTML = users.map(u => `
-            <div class="online-user" data-user-id="${u.id}" title="${escapeHtml(u.nickname)}">
-                ${u.nickname[0].toUpperCase()}
-                <span class="online-user-tooltip">${escapeHtml(u.nickname)}</span>
+        elements.onlineUsersList.innerHTML = users.map(u => {
+            var initial = (u.nickname && u.nickname.length > 0) ? u.nickname[0].toUpperCase() : '?';
+            var name = u.nickname || '사용자';
+            return `
+            <div class="online-user" data-user-id="${u.id}" title="${escapeHtml(name)}">
+                ${initial}
+                <span class="online-user-tooltip">${escapeHtml(name)}</span>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         elements.onlineUsersList.querySelectorAll('.online-user').forEach(el => {
             el.onclick = async () => {
@@ -1299,8 +1745,8 @@ async function loadOnlineUsers() {
     }
 }
 
-// 30초마다 새로고침
-setInterval(loadOnlineUsers, 30000);
+// 30초마다 새로고침 (메모리 관리 시스템 등록)
+registerInterval(setInterval(loadOnlineUsers, 30000));
 
 // ============================================================================
 // 모달
@@ -1308,16 +1754,22 @@ setInterval(loadOnlineUsers, 30000);
 async function openNewChatModal() {
     try {
         const result = await api('/api/users');
-        elements.userList.innerHTML = result.map(u => `
+        elements.userList.innerHTML = result.map(u => {
+            var initial = (u.nickname && u.nickname.length > 0) ? u.nickname[0].toUpperCase() : '?';
+            var avatarHtml = u.profile_image
+                ? `<div class="user-item-avatar has-image"><img src="/uploads/${u.profile_image}" alt="프로필"></div>`
+                : `<div class="user-item-avatar">${initial}</div>`;
+            return `
             <div class="user-item" data-user-id="${u.id}">
-                <div class="user-item-avatar">${u.nickname[0].toUpperCase()}</div>
+                ${avatarHtml}
                 <div class="user-item-info">
-                    <div class="user-item-name">${escapeHtml(u.nickname)}</div>
+                    <div class="user-item-name">${escapeHtml(u.nickname || '사용자')}</div>
                     <div class="user-item-status ${u.status}">${u.status === 'online' ? '온라인' : '오프라인'}</div>
                 </div>
                 <input type="checkbox" class="user-checkbox">
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         elements.userList.querySelectorAll('.user-item').forEach(el => {
             el.onclick = () => {
@@ -1365,15 +1817,21 @@ async function openInviteModal() {
 
         elements.inviteUserList.innerHTML = result
             .filter(u => !memberIds.includes(u.id))
-            .map(u => `
+            .map(u => {
+                var initial = (u.nickname && u.nickname.length > 0) ? u.nickname[0].toUpperCase() : '?';
+                var avatarHtml = u.profile_image
+                    ? `<div class="user-item-avatar has-image"><img src="/uploads/${u.profile_image}" alt="프로필"></div>`
+                    : `<div class="user-item-avatar">${initial}</div>`;
+                return `
                 <div class="user-item" data-user-id="${u.id}">
-                    <div class="user-item-avatar">${u.nickname[0].toUpperCase()}</div>
+                    ${avatarHtml}
                     <div class="user-item-info">
-                        <div class="user-item-name">${escapeHtml(u.nickname)}</div>
+                        <div class="user-item-name">${escapeHtml(u.nickname || '사용자')}</div>
                     </div>
                     <input type="checkbox" class="user-checkbox">
                 </div>
-            `).join('');
+            `;
+            }).join('');
 
         elements.inviteUserList.querySelectorAll('.user-item').forEach(el => {
             el.onclick = () => {
@@ -1499,20 +1957,26 @@ async function viewMembers() {
             const sortedMembers = result.members.sort((a, b) => {
                 if (a.status === 'online' && b.status !== 'online') return -1;
                 if (a.status !== 'online' && b.status === 'online') return 1;
-                return a.nickname.localeCompare(b.nickname);
+                var nameA = a.nickname || '';
+                var nameB = b.nickname || '';
+                return nameA.localeCompare(nameB);
             });
 
             elements.membersList.innerHTML = sortedMembers.map(m => {
                 const isMe = m.id === currentUser.id;
                 const statusClass = m.status === 'online' ? 'online' : 'offline';
                 const statusText = m.status === 'online' ? '🟢 온라인' : '⚪ 오프라인';
+                const initial = (m.nickname && m.nickname.length > 0) ? m.nickname[0].toUpperCase() : '?';
+                const avatarHtml = m.profile_image
+                    ? `<div class="user-item-avatar ${statusClass} has-image"><img src="/uploads/${m.profile_image}" alt="프로필"></div>`
+                    : `<div class="user-item-avatar ${statusClass}">${initial}</div>`;
 
                 return `
                     <div class="user-item member-item ${statusClass}">
-                        <div class="user-item-avatar ${statusClass}">${m.nickname[0].toUpperCase()}</div>
+                        ${avatarHtml}
                         <div class="user-item-info">
                             <div class="user-item-name">
-                                ${escapeHtml(m.nickname)}
+                                ${escapeHtml(m.nickname || '사용자')}
                                 ${isMe ? '<span class="me-badge">(나)</span>' : ''}
                             </div>
                             <div class="user-item-status ${statusClass}">${statusText}</div>
@@ -1561,29 +2025,61 @@ function handleMessageContextMenu(e) {
 
     e.preventDefault();
 
+    // 기존 컨텍스트 메뉴 제거
+    document.querySelectorAll('.message-context-menu').forEach(m => m.remove());
+
     const msgId = msgEl.dataset.messageId;
     const isSent = msgEl.classList.contains('sent');
 
+    const menu = document.createElement('div');
+    menu.className = 'message-context-menu';
+
+    // 보낸 메시지: 복사, 삭제
+    // 받은 메시지: 복사, 답장
     if (isSent) {
-        const menu = document.createElement('div');
-        menu.className = 'message-context-menu';
         menu.innerHTML = `
             <div class="context-menu-item" data-action="copy">📋 복사</div>
+            <div class="context-menu-item" data-action="reply">↩️ 답장</div>
             <div class="context-menu-item danger" data-action="delete">🗑 삭제</div>
         `;
-        menu.style.left = e.clientX + 'px';
-        menu.style.top = e.clientY + 'px';
-        document.body.appendChild(menu);
+    } else {
+        menu.innerHTML = `
+            <div class="context-menu-item" data-action="copy">📋 복사</div>
+            <div class="context-menu-item" data-action="reply">↩️ 답장</div>
+        `;
+    }
 
-        menu.querySelector('[data-action="copy"]').onclick = async () => {
-            const bubble = msgEl.querySelector('.message-bubble');
-            if (bubble) {
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    document.body.appendChild(menu);
+
+    // 복사 버튼
+    menu.querySelector('[data-action="copy"]').onclick = async () => {
+        const bubble = msgEl.querySelector('.message-bubble');
+        if (bubble) {
+            try {
                 await navigator.clipboard.writeText(bubble.textContent);
+                showToast('메시지가 복사되었습니다.', 'success');
+            } catch (err) {
+                console.error('복사 실패:', err);
             }
-            menu.remove();
-        };
+        }
+        menu.remove();
+    };
 
-        menu.querySelector('[data-action="delete"]').onclick = async () => {
+    // 답장 버튼
+    menu.querySelector('[data-action="reply"]').onclick = () => {
+        if (msgEl._messageData) {
+            setReplyTo(msgEl._messageData);
+            elements.messageInput.focus();
+        }
+        menu.remove();
+    };
+
+    // 삭제 버튼 (보낸 메시지만)
+    const deleteBtn = menu.querySelector('[data-action="delete"]');
+    if (deleteBtn) {
+        deleteBtn.onclick = async () => {
             if (confirm('메시지를 삭제하시겠습니까?')) {
                 try {
                     const result = await api(`/api/messages/${msgId}`, { method: 'DELETE' });
@@ -1599,6 +2095,7 @@ function handleMessageContextMenu(e) {
         };
     }
 }
+
 
 // ============================================================================
 // 검색
@@ -1619,20 +2116,24 @@ function handleSearch(e) {
     // 임시로 필터링된 목록 표시
     elements.roomList.innerHTML = filtered.map(room => {
         const isActive = currentRoom && currentRoom.id === room.id;
-        const avatar = room.type === 'direct' && room.partner
-            ? room.partner.nickname[0].toUpperCase()
-            : (room.name || '그')[0].toUpperCase();
         const name = room.name || (room.type === 'direct' && room.partner ? room.partner.nickname : '대화방');
+
+        // 프로필 이미지/색상 처리 (헬퍼 함수 사용)
+        var avatarUserId = room.type === 'direct' && room.partner ? room.partner.id : room.id;
+        var avatarName = room.type === 'direct' && room.partner ? room.partner.nickname : (room.name || '그');
+        var avatarImage = room.type === 'direct' && room.partner ? room.partner.profile_image : null;
+        var avatarHtml = createAvatarHtml(avatarName, avatarImage, avatarUserId, 'room-avatar');
 
         return `
             <div class="room-item ${isActive ? 'active' : ''}" data-room-id="${room.id}">
-                <div class="room-avatar">${avatar}</div>
+                ${avatarHtml}
                 <div class="room-info">
                     <div class="room-name">${escapeHtml(name)} 🔒</div>
                 </div>
             </div>
         `;
     }).join('');
+
 
     document.querySelectorAll('.room-item').forEach(el => {
         el.onclick = () => {
@@ -1770,201 +2271,6 @@ async function copyToClipboard(text) {
     }
 }
 
-// ============================================================================
-// 프로필 관리
-// ============================================================================
-function openProfileModal() {
-    if (!currentUser) return;
-
-    var preview = $('profileImagePreview');
-    var initial = $('profileInitial');
-
-    // 프로필 이미지 표시
-    if (currentUser.profile_image) {
-        preview.innerHTML = '<img src="/uploads/' + currentUser.profile_image + '" alt="프로필">';
-        preview.classList.add('has-image');
-    } else {
-        preview.classList.remove('has-image');
-        initial.textContent = currentUser.nickname ? currentUser.nickname[0].toUpperCase() : 'U';
-    }
-
-    // 현재 정보 채우기
-    $('profileNickname').value = currentUser.nickname || '';
-    $('profileStatusMessage').value = currentUser.status_message || '';
-
-    $('profileModal').classList.add('active');
-}
-
-function closeProfileModal() {
-    $('profileModal').classList.remove('active');
-}
-
-async function saveProfile() {
-    var nickname = $('profileNickname').value.trim();
-    var statusMessage = $('profileStatusMessage').value.trim();
-
-    if (nickname && nickname.length < 2) {
-        showToast('닉네임은 2자 이상이어야 합니다.', 'warning');
-        return;
-    }
-
-    try {
-        var result = await api('/api/profile', {
-            method: 'PUT',
-            body: JSON.stringify({
-                nickname: nickname || undefined,
-                status_message: statusMessage || undefined
-            })
-        });
-
-        if (result.success) {
-            // 로컬 사용자 정보 업데이트
-            if (nickname) {
-                currentUser.nickname = nickname;
-                elements.userName.textContent = nickname;
-                elements.userAvatar.textContent = nickname[0].toUpperCase();
-            }
-            if (statusMessage !== undefined) {
-                currentUser.status_message = statusMessage;
-            }
-
-            // 소켓으로 다른 사용자들에게 알림
-            if (socket) {
-                socket.emit('profile_updated', {
-                    nickname: currentUser.nickname,
-                    profile_image: currentUser.profile_image
-                });
-            }
-
-            closeProfileModal();
-            showToast('프로필이 업데이트되었습니다.', 'success');
-        } else {
-            showToast(result.error || '프로필 업데이트에 실패했습니다.', 'error');
-        }
-    } catch (err) {
-        console.error('프로필 저장 오류:', err);
-        showToast('프로필 저장에 실패했습니다.', 'error');
-    }
-}
-
-async function handleProfileImageUpload(e) {
-    var file = e.target.files[0];
-    if (!file) return;
-
-    // 파일 크기 체크 (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-        showToast('파일 크기는 5MB 이하여야 합니다.', 'warning');
-        return;
-    }
-
-    // 이미지 타입 체크 (MIME 타입 또는 확장자)
-    var allowedImageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff', 'image/svg+xml', 'image/x-icon'];
-    var allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'ico', 'svg', 'heic', 'heif'];
-    var ext = file.name.split('.').pop().toLowerCase();
-
-    if (!file.type.startsWith('image/') && allowedExtensions.indexOf(ext) === -1) {
-        showToast('이미지 파일만 업로드 가능합니다. (PNG, JPG, GIF, WEBP, BMP, HEIC 등)', 'warning');
-        return;
-    }
-
-    var formData = new FormData();
-    formData.append('file', file);
-
-    try {
-        var response = await fetch('/api/profile/image', {
-            method: 'POST',
-            body: formData
-        });
-
-        var result = await response.json();
-
-        if (result.success) {
-            currentUser.profile_image = result.profile_image;
-
-            // 미리보기 업데이트
-            var preview = $('profileImagePreview');
-            preview.innerHTML = '<img src="/uploads/' + result.profile_image + '" alt="프로필">';
-            preview.classList.add('has-image');
-
-            // 사이드바 아바타 업데이트
-            updateUserAvatar();
-
-            // 소켓으로 알림
-            if (socket) {
-                socket.emit('profile_updated', {
-                    nickname: currentUser.nickname,
-                    profile_image: result.profile_image
-                });
-            }
-
-            showToast('프로필 사진이 변경되었습니다.', 'success');
-        } else {
-            showToast(result.error || '사진 업로드에 실패했습니다.', 'error');
-        }
-    } catch (err) {
-        console.error('프로필 사진 업로드 오류:', err);
-        showToast('사진 업로드에 실패했습니다.', 'error');
-    }
-
-    // 입력 초기화
-    e.target.value = '';
-}
-
-async function deleteProfileImage() {
-    if (!currentUser.profile_image) {
-        showToast('삭제할 프로필 사진이 없습니다.', 'warning');
-        return;
-    }
-
-    if (!confirm('프로필 사진을 기본 이미지로 변경하시겠습니까?')) {
-        return;
-    }
-
-    try {
-        var result = await api('/api/profile/image', { method: 'DELETE' });
-
-        if (result.success) {
-            currentUser.profile_image = null;
-
-            // 미리보기 업데이트
-            var preview = $('profileImagePreview');
-            preview.innerHTML = '<span id="profileInitial">' + currentUser.nickname[0].toUpperCase() + '</span>';
-            preview.classList.remove('has-image');
-
-            // 사이드바 아바타 업데이트
-            updateUserAvatar();
-
-            // 소켓으로 알림
-            if (socket) {
-                socket.emit('profile_updated', {
-                    nickname: currentUser.nickname,
-                    profile_image: null
-                });
-            }
-
-            showToast('프로필 사진이 기본 이미지로 변경되었습니다.', 'success');
-        } else {
-            showToast(result.error || '삭제에 실패했습니다.', 'error');
-        }
-    } catch (err) {
-        console.error('프로필 사진 삭제 오류:', err);
-        showToast('삭제에 실패했습니다.', 'error');
-    }
-}
-
-function updateUserAvatar() {
-    if (!currentUser) return;
-
-    var avatar = elements.userAvatar;
-    if (currentUser.profile_image) {
-        avatar.innerHTML = '<img src="/uploads/' + currentUser.profile_image + '" alt="프로필">';
-        avatar.classList.add('has-image');
-    } else {
-        avatar.classList.remove('has-image');
-        avatar.innerHTML = '';
-        avatar.textContent = currentUser.nickname ? currentUser.nickname[0].toUpperCase() : 'U';
-    }
-}
 
 // ============================================================================
 // 테마 관리
@@ -2079,3 +2385,342 @@ if (window.matchMedia) {
         }
     });
 }
+
+// ============================================================================
+// [NEW] 메모리 누수 방지 - Interval 관리
+// ============================================================================
+var activeIntervals = [];
+
+function registerInterval(intervalId) {
+    activeIntervals.push(intervalId);
+    return intervalId;
+}
+
+function clearAllIntervals() {
+    activeIntervals.forEach(function (id) {
+        clearInterval(id);
+    });
+    activeIntervals = [];
+}
+
+// 페이지 언로드 시 정리
+window.addEventListener('beforeunload', function () {
+    clearAllIntervals();
+    if (socket) {
+        socket.disconnect();
+    }
+});
+
+// ============================================================================
+// [NEW] 키보드 단축키
+// ============================================================================
+document.addEventListener('keydown', function (e) {
+    // 입력 중일 때는 단축키 비활성화
+    var activeEl = document.activeElement;
+    var isInputActive = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
+    // ESC: 모달 닫기
+    if (e.key === 'Escape') {
+        var activeModals = document.querySelectorAll('.modal-overlay.active');
+        if (activeModals.length > 0) {
+            activeModals[activeModals.length - 1].classList.remove('active');
+            e.preventDefault();
+            return;
+        }
+        // 대화 내 검색 닫기
+        var chatSearch = document.getElementById('chatSearchOverlay');
+        if (chatSearch && chatSearch.classList.contains('active')) {
+            chatSearch.classList.remove('active');
+            e.preventDefault();
+            return;
+        }
+    }
+
+    // Ctrl 조합 단축키
+    if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+        // Ctrl+K: 검색 포커스
+        if (e.key === 'k' || e.key === 'K' || e.key === 'ㅏ') {
+            var searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.focus();
+                e.preventDefault();
+            }
+            return;
+        }
+
+        // Ctrl+N: 새 대화
+        if (e.key === 'n' || e.key === 'N' || e.key === 'ㅜ') {
+            if (!isInputActive) {
+                openNewChatModal();
+                e.preventDefault();
+            }
+            return;
+        }
+
+        // Ctrl+F: 대화 내 검색
+        if (e.key === 'f' || e.key === 'F' || e.key === 'ㄹ') {
+            if (currentRoom) {
+                openChatSearch();
+                e.preventDefault();
+            }
+            return;
+        }
+    }
+});
+
+// ============================================================================
+// [NEW] 대화 내 검색 기능
+// ============================================================================
+var chatSearchMatches = [];
+var chatSearchCurrentIndex = 0;
+
+function openChatSearch() {
+    var overlay = document.getElementById('chatSearchOverlay');
+    if (!overlay) {
+        // 오버레이 생성
+        overlay = document.createElement('div');
+        overlay.id = 'chatSearchOverlay';
+        overlay.className = 'chat-search-overlay';
+        overlay.innerHTML = `
+            <input type="text" class="chat-search-input" id="chatSearchInput" placeholder="메시지 검색..." aria-label="메시지 검색">
+            <div class="chat-search-nav">
+                <span class="chat-search-count" id="chatSearchCount">0/0</span>
+                <button class="icon-btn" onclick="chatSearchPrev()" title="이전" aria-label="이전 결과">▲</button>
+                <button class="icon-btn" onclick="chatSearchNext()" title="다음" aria-label="다음 결과">▼</button>
+            </div>
+            <button class="icon-btn" onclick="closeChatSearch()" title="닫기" aria-label="검색 닫기">✕</button>
+        `;
+
+        var chatContent = document.getElementById('chatContent');
+        if (chatContent) {
+            chatContent.insertBefore(overlay, chatContent.firstChild);
+        }
+
+        document.getElementById('chatSearchInput').addEventListener('input', debounce(doChatSearch, 300));
+        document.getElementById('chatSearchInput').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    chatSearchPrev();
+                } else {
+                    chatSearchNext();
+                }
+                e.preventDefault();
+            }
+        });
+    }
+
+    overlay.classList.add('active');
+    document.getElementById('chatSearchInput').focus();
+}
+
+function closeChatSearch() {
+    var overlay = document.getElementById('chatSearchOverlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+        // 하이라이트 제거
+        document.querySelectorAll('.search-highlight').forEach(function (el) {
+            var parent = el.parentNode;
+            parent.replaceChild(document.createTextNode(el.textContent), el);
+            parent.normalize();
+        });
+        chatSearchMatches = [];
+        chatSearchCurrentIndex = 0;
+    }
+}
+
+function doChatSearch() {
+    var query = document.getElementById('chatSearchInput').value.trim().toLowerCase();
+    var countEl = document.getElementById('chatSearchCount');
+
+    // 기존 하이라이트 제거
+    document.querySelectorAll('.search-highlight').forEach(function (el) {
+        var parent = el.parentNode;
+        parent.replaceChild(document.createTextNode(el.textContent), el);
+        parent.normalize();
+    });
+
+    chatSearchMatches = [];
+    chatSearchCurrentIndex = 0;
+
+    if (query.length < 2) {
+        countEl.textContent = '0/0';
+        return;
+    }
+
+    // 메시지에서 검색
+    var messages = document.querySelectorAll('.message-bubble');
+    messages.forEach(function (bubble) {
+        var text = bubble.textContent;
+        if (text.toLowerCase().includes(query)) {
+            chatSearchMatches.push(bubble.closest('.message'));
+        }
+    });
+
+    if (chatSearchMatches.length > 0) {
+        chatSearchCurrentIndex = 0;
+        highlightCurrentMatch();
+    }
+
+    countEl.textContent = chatSearchMatches.length > 0
+        ? (chatSearchCurrentIndex + 1) + '/' + chatSearchMatches.length
+        : '0/0';
+}
+
+function highlightCurrentMatch() {
+    // 모든 하이라이트 클래스 제거
+    document.querySelectorAll('.message.search-current').forEach(function (el) {
+        el.classList.remove('search-current');
+    });
+
+    if (chatSearchMatches.length > 0) {
+        var current = chatSearchMatches[chatSearchCurrentIndex];
+        current.classList.add('search-current');
+        current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // 임시 하이라이트 효과
+        current.classList.add('highlight');
+        setTimeout(function () {
+            current.classList.remove('highlight');
+        }, 2000);
+    }
+
+    var countEl = document.getElementById('chatSearchCount');
+    if (countEl) {
+        countEl.textContent = chatSearchMatches.length > 0
+            ? (chatSearchCurrentIndex + 1) + '/' + chatSearchMatches.length
+            : '0/0';
+    }
+}
+
+function chatSearchNext() {
+    if (chatSearchMatches.length === 0) return;
+    chatSearchCurrentIndex = (chatSearchCurrentIndex + 1) % chatSearchMatches.length;
+    highlightCurrentMatch();
+}
+
+function chatSearchPrev() {
+    if (chatSearchMatches.length === 0) return;
+    chatSearchCurrentIndex = (chatSearchCurrentIndex - 1 + chatSearchMatches.length) % chatSearchMatches.length;
+    highlightCurrentMatch();
+}
+
+// ============================================================================
+// [NEW] 오프라인 상태 감지 및 배너
+// ============================================================================
+var offlineBanner = null;
+var isOnline = navigator.onLine;
+
+function initOfflineBanner() {
+    if (!offlineBanner) {
+        offlineBanner = document.createElement('div');
+        offlineBanner.className = 'offline-banner';
+        offlineBanner.innerHTML = `
+            <span>⚠️ 인터넷 연결이 끊어졌습니다</span>
+            <button class="retry-btn" onclick="retryConnection()">다시 연결</button>
+        `;
+        document.body.insertBefore(offlineBanner, document.body.firstChild);
+    }
+
+    window.addEventListener('online', function () {
+        isOnline = true;
+        offlineBanner.classList.remove('visible');
+        showToast('인터넷 연결이 복구되었습니다.', 'success');
+        // 소켓 재연결
+        if (socket && !socket.connected) {
+            socket.connect();
+        }
+    });
+
+    window.addEventListener('offline', function () {
+        isOnline = false;
+        offlineBanner.classList.add('visible');
+    });
+}
+
+function retryConnection() {
+    if (navigator.onLine) {
+        offlineBanner.classList.remove('visible');
+        if (socket && !socket.connected) {
+            socket.connect();
+            showToast('재연결 시도 중...', 'info');
+        }
+    } else {
+        showToast('아직 오프라인 상태입니다.', 'warning');
+    }
+}
+
+// 초기화 시 오프라인 배너 설정
+initOfflineBanner();
+
+// ============================================================================
+// [NEW] 스크롤 버튼 새 메시지 배지
+// ============================================================================
+var newMessageCount = 0;
+
+function updateScrollBadge() {
+    var scrollBtn = document.getElementById('scrollToBottomBtn');
+    if (!scrollBtn) return;
+
+    var badge = scrollBtn.querySelector('.scroll-badge');
+
+    if (newMessageCount > 0 && !scrollBtn.classList.contains('hidden')) {
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'scroll-badge';
+            scrollBtn.appendChild(badge);
+        }
+        badge.textContent = newMessageCount > 99 ? '99+' : newMessageCount;
+    } else if (badge) {
+        badge.remove();
+    }
+}
+
+// 스크롤이 하단에 도달하면 카운트 초기화
+if (elements.messagesContainer) {
+    elements.messagesContainer.addEventListener('scroll', function () {
+        var container = elements.messagesContainer;
+        var isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+        if (isAtBottom) {
+            newMessageCount = 0;
+            updateScrollBadge();
+        }
+    });
+}
+
+// ============================================================================
+// [NEW] 스켈레톤 로딩
+// ============================================================================
+function showRoomListSkeleton() {
+    var html = '';
+    for (var i = 0; i < 5; i++) {
+        html += `
+            <div class="skeleton-room">
+                <div class="skeleton skeleton-avatar"></div>
+                <div style="flex:1">
+                    <div class="skeleton skeleton-line short" style="margin-bottom:8px"></div>
+                    <div class="skeleton skeleton-line medium"></div>
+                </div>
+            </div>
+        `;
+    }
+    if (elements.roomList) {
+        elements.roomList.innerHTML = html;
+    }
+}
+
+function showMessagesSkeleton() {
+    var html = '';
+    for (var i = 0; i < 8; i++) {
+        var isLeft = i % 3 !== 0;
+        html += `
+            <div class="skeleton-message" style="justify-content:${isLeft ? 'flex-start' : 'flex-end'}">
+                ${isLeft ? '<div class="skeleton skeleton-avatar" style="width:36px;height:36px"></div>' : ''}
+                <div class="skeleton skeleton-bubble"></div>
+            </div>
+        `;
+    }
+    if (elements.messagesContainer) {
+        elements.messagesContainer.innerHTML = html;
+    }
+}
+
