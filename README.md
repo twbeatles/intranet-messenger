@@ -1,18 +1,18 @@
-# 🔒 사내 웹메신저 v3.4
+# 🔒 사내 웹메신저 v3.5
 
 Flask + Socket.IO + PyQt6 기반의 **종단간 암호화(E2E)** 사내 웹 메신저 시스템입니다.
 
+## ✨ v3.5 업데이트
+
+- 🎨 **랜덤 프로필 색상**: 유저마다 고유한 아바타 색상 (12가지 팔레트)
+- 🔄 **새로고침 로그인 유지**: /api/me 세션 체크로 자동 로그인 복원
+- ↩️ **답장 하이라이트 개선**: 새 메시지에도 즉시 하이라이트 적용
+- ✏️ **메시지 수정/삭제**: 자신의 메시지 수정 및 삭제 기능
+- 📍 **읽지 않은 메시지 표시**: "여기서부터 읽지 않음" 구분선
+- ⬇️ **스크롤 하단 버튼**: 채팅창 하단으로 빠르게 이동
+- 📷 **프로필 사진 리팩토링**: 통합 헬퍼 함수로 코드 개선
+
 ## ✨ v3.4 업데이트
-
-- 🏷 **@멘션 기능**: `@닉네임` 자동완성, 그룹채팅에서 특정 사용자 호출
-- 🖼 **이미지 라이트박스**: 이미지 클릭 시 전체화면, 키보드 탐색 (←→ESC)
-- 🔔 **토스트 알림**: success/error/warning/info 타입별 스타일 알림
-- 📁 **드래그앤드롭**: 파일을 채팅창에 끌어서 업로드, 이미지 붙여넣기 지원
-- ↩ **메시지 답장**: 메시지 hover 시 답장 버튼, 답장 미리보기
-- 🖼 **다양한 이미지 형식**: WebP, HEIC, BMP, TIFF, SVG, ICO 지원
-- 🐛 **버그 수정**: Enter 키 충돌, 라이트박스 UX 개선
-
-## ✨ v3.3 업데이트
 
 - 🎨 **테마 커스터마이징**: 10가지 색상 프리셋 (Emerald, Ocean, Purple 등)
 - 🌗 **라이트/다크 모드**: 시스템 설정 연동 + 수동 선택
@@ -208,7 +208,7 @@ auto-py-to-exe
 
 ### 5. Advanced 탭 - Hidden Imports 추가 ⚠️ 필수
 
-**v3.4 업데이트**: threading, contextlib 관련 모듈 추가
+**v3.3 업데이트**: threading, contextlib 관련 모듈 추가
 
 ```
 # Socket.IO / Engine.IO
@@ -260,8 +260,8 @@ flask.json
 
 ```
 output/
-└── 사내메신저v3.4/
-    ├── 사내메신저v3.4.exe  # 실행 파일
+└── 사내메신저v3.1/
+    ├── 사내메신저v3.1.exe  # 실행 파일
     ├── static/             # 웹 리소스
     ├── templates/          # HTML 템플릿
     ├── app/                # 백엔드 모듈
@@ -273,7 +273,7 @@ output/
 ### 대안: spec 파일 직접 사용
 
 ```powershell
-cd "your folder\사내 메신저"
+cd "d:\google antigravity\사내 메신저"
 pyinstaller messenger.spec
 ```
 
@@ -327,4 +327,3 @@ DEFAULT_PORT = 5000     # 서버 포트
 | `gevent` (권장) | 수백~수천 명 | `pip install gevent gevent-websocket` |
 | `eventlet` | 수백 명 | `pip install eventlet` |
 | `threading` | 5~10명 | 기본 포함 |
-
