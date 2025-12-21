@@ -89,14 +89,24 @@ def create_app():
         template_folder=template_folder
     )
     
-    # 설정
-    app.config['SECRET_KEY'] = secrets.token_hex(32)
+    # 설정 - SECRET_KEY 영구 저장 (새로고침 시 세션 유지)
+    secret_key_file = os.path.join(BASE_DIR, '.secret_key')
+    if os.path.exists(secret_key_file):
+        with open(secret_key_file, 'r') as f:
+            app.config['SECRET_KEY'] = f.read().strip()
+    else:
+        new_key = secrets.token_hex(32)
+        with open(secret_key_file, 'w') as f:
+            f.write(new_key)
+        app.config['SECRET_KEY'] = new_key
+    
     app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
     app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
     app.config['SESSION_COOKIE_SECURE'] = USE_HTTPS  # HTTPS일 때만 True
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=SESSION_TIMEOUT_HOURS)
+    app.config['SESSION_PERMANENT'] = True  # 영구 세션 활성화
     
     # Socket.IO 초기화 - 비동기 모드 선택
     # 우선순위: gevent > eventlet > threading

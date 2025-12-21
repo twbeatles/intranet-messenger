@@ -15,7 +15,7 @@ from app.models import (
     add_room_member, leave_room_db, update_room_name, get_room_by_id,
     pin_room, mute_room, get_online_users, delete_message, edit_message,
     search_messages, log_access, get_unread_count, update_user_profile,
-    get_user_by_id, is_room_member
+    get_user_by_id, is_room_member, get_db
 )
 from app.utils import sanitize_input, allowed_file
 
@@ -36,6 +36,15 @@ def register_routes(app):
     @app.route('/')
     def index():
         return render_template('index.html')
+    
+    @app.route('/api/me')
+    def get_current_user():
+        """현재 로그인된 사용자 정보 반환 (새로고침 시 세션 체크용)"""
+        if 'user_id' in session:
+            user = get_user_by_id(session['user_id'])
+            if user:
+                return jsonify({'logged_in': True, 'user': user})
+        return jsonify({'logged_in': False})
     
     @app.route('/api/register', methods=['POST'])
     def register():
@@ -62,6 +71,7 @@ def register_routes(app):
         data = request.json
         user = authenticate_user(data.get('username', ''), data.get('password', ''))
         if user:
+            session.permanent = True  # 세션 영구화 (새로고침 시 유지)
             session['user_id'] = user['id']
             session['username'] = user['username']
             session['nickname'] = user.get('nickname', user['username'])  # 성능 최적화용 캐싱
@@ -278,9 +288,34 @@ def register_routes(app):
         
         return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
     
-    @app.route('/uploads/<filename>')
+    @app.route('/uploads/<path:filename>')
     def uploaded_file(filename):
-        return send_from_directory(UPLOAD_FOLDER, filename)
+        # 경로 트래버설 공격 방지
+        # 1. 파일명 정제
+        safe_filename = secure_filename(os.path.basename(filename))
+        
+        # 2. 하위 디렉토리 경로 처리 (profiles/ 등)
+        if '/' in filename:
+            subdir = os.path.dirname(filename)
+            # 허용된 하위 디렉토리만 접근 가능
+            allowed_subdirs = ['profiles']
+            if subdir not in allowed_subdirs:
+                return jsonify({'error': '접근이 거부되었습니다.'}), 403
+            safe_path = os.path.join(subdir, safe_filename)
+        else:
+            safe_path = safe_filename
+        
+        # 3. 최종 경로 검증
+        full_path = os.path.realpath(os.path.join(UPLOAD_FOLDER, safe_path))
+        if not full_path.startswith(os.path.realpath(UPLOAD_FOLDER)):
+            logger.warning(f"Path traversal attempt: {filename}")
+            return jsonify({'error': '잘못된 경로입니다.'}), 400
+        
+        # 4. 파일 존재 확인
+        if not os.path.isfile(full_path):
+            return jsonify({'error': '파일을 찾을 수 없습니다.'}), 404
+        
+        return send_from_directory(os.path.dirname(full_path), os.path.basename(full_path))
     
     # Service Worker
     @app.route('/sw.js')

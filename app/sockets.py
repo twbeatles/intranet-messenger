@@ -4,6 +4,8 @@ Socket.IO 이벤트 핸들러 (성능 최적화 버전)
 """
 
 import logging
+import time
+import traceback
 from threading import Lock
 from flask import session, request
 from flask_socketio import emit, join_room, leave_room
@@ -11,7 +13,7 @@ from flask_socketio import emit, join_room, leave_room
 from app.models import (
     update_user_status, get_user_by_id, is_room_member,
     create_message, update_last_read, get_unread_count, server_stats,
-    get_user_rooms
+    get_user_rooms, edit_message, delete_message
 )
 
 logger = logging.getLogger(__name__)
@@ -29,8 +31,6 @@ cache_lock = Lock()
 
 def get_user_room_ids(user_id):
     """사용자의 방 ID 목록 (캐시 사용)"""
-    import time
-    
     with cache_lock:
         cached = user_cache.get(user_id)
         # 캐시가 있고 5분 이내면 사용
@@ -182,8 +182,12 @@ def register_socket_events(socketio):
                 emit('new_message', message, room=f'room_{room_id}')
                 # broadcast 대신 해당 방 멤버들의 모든 세션에 전송
                 emit('room_updated', {'room_id': room_id}, room=f'room_{room_id}')
+                logger.debug(f"Message sent: room={room_id}, user={session['user_id']}, type={message_type}")
+            else:
+                logger.warning(f"Message creation failed: room={room_id}, user={session['user_id']}")
+                emit('error', {'message': '메시지 저장에 실패했습니다.'})
         except Exception as e:
-            logger.error(f"Send message error: {e}")
+            logger.error(f"Send message error: {e}\n{traceback.format_exc()}")
             emit('error', {'message': '메시지 전송에 실패했습니다.'})
     
     @socketio.on('message_read')
@@ -269,3 +273,56 @@ def register_socket_events(socketio):
                 logger.info(f"Profile updated broadcast: user_id={user_id}, nickname={nickname}, image={profile_image}")
         except Exception as e:
             logger.error(f"Profile update broadcast error: {e}")
+
+    # 메시지 수정
+    @socketio.on('edit_message')
+    def handle_edit_message(data):
+        try:
+            if 'user_id' not in session:
+                return
+            
+            message_id = data.get('message_id')
+            content = data.get('content', '').strip()
+            encrypted = data.get('encrypted', True)
+            
+            if not message_id or not content:
+                emit('error', {'message': '잘못된 요청입니다.'})
+                return
+            
+            success, error_msg, room_id = edit_message(message_id, session['user_id'], content)
+            if success:
+                emit('message_edited', {
+                    'message_id': message_id,
+                    'content': content,
+                    'encrypted': encrypted
+                }, room=f'room_{room_id}')
+            else:
+                emit('error', {'message': error_msg})
+        except Exception as e:
+            logger.error(f"Edit message error: {e}")
+            emit('error', {'message': '메시지 수정에 실패했습니다.'})
+
+    # 메시지 삭제
+    @socketio.on('delete_message')
+    def handle_delete_message(data):
+        try:
+            if 'user_id' not in session:
+                return
+            
+            message_id = data.get('message_id')
+            
+            if not message_id:
+                emit('error', {'message': '잘못된 요청입니다.'})
+                return
+            
+            success, result = delete_message(message_id, session['user_id'])
+            if success:
+                room_id = result
+                emit('message_deleted', {
+                    'message_id': message_id
+                }, room=f'room_{room_id}')
+            else:
+                emit('error', {'message': result})
+        except Exception as e:
+            logger.error(f"Delete message error: {e}")
+            emit('error', {'message': '메시지 삭제에 실패했습니다.'})

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-PyQt6 GUI - 서버 관리 창
+PyQt6 GUI - 서버 관리 창 v3.7
+- HiDPI 디스플레이 지원
+- 토스트 알림 시스템
 """
 
 import os
@@ -9,12 +11,16 @@ import socket
 import winreg
 from datetime import datetime
 
+# HiDPI 지원 (PyQt6 import 전에 설정)
+os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
+os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QSystemTrayIcon, QMenu, QTextEdit,
-    QSpinBox, QCheckBox, QGroupBox, QTabWidget
+    QSpinBox, QCheckBox, QGroupBox, QTabWidget, QGraphicsOpacityEffect
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QSettings
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QSettings, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QPixmap, QPainter
 
 # 부모 디렉토리에서 import
@@ -86,6 +92,56 @@ class ServerThread(QThread):
     
     def stop(self):
         self.running = False
+
+
+class ToastWidget(QLabel):
+    """토스트 알림 위젯"""
+    
+    def __init__(self, parent=None, message: str = "", toast_type: str = "info", duration: int = 3000):
+        super().__init__(parent)
+        self.duration = duration
+        
+        # 타입별 스타일
+        styles = {
+            "success": ("✅", "#22C55E", "#0F3D0F"),
+            "error": ("❌", "#EF4444", "#3D0F0F"),
+            "warning": ("⚠️", "#F59E0B", "#3D2E0F"),
+            "info": ("ℹ️", "#3B82F6", "#0F1D3D")
+        }
+        icon, border_color, bg_color = styles.get(toast_type, styles["info"])
+        
+        self.setText(f"{icon} {message}")
+        self.setStyleSheet(f'''
+            QLabel {{
+                background-color: {bg_color};
+                color: #F8FAFC;
+                border: 1px solid {border_color};
+                border-radius: 8px;
+                padding: 12px 20px;
+                font-size: 13px;
+                font-weight: 500;
+            }}
+        ''')
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.adjustSize()
+        
+        # 페이드 효과
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+        self.opacity_effect.setOpacity(1.0)
+        
+        # 자동 숨김 타이머
+        QTimer.singleShot(duration, self._start_fade_out)
+    
+    def _start_fade_out(self):
+        """페이드 아웃 애니메이션 시작"""
+        self.fade_anim = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_anim.setDuration(300)
+        self.fade_anim.setStartValue(1.0)
+        self.fade_anim.setEndValue(0.0)
+        self.fade_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self.fade_anim.finished.connect(self.deleteLater)
+        self.fade_anim.start()
 
 
 class ServerWindow(QMainWindow):
@@ -422,6 +478,7 @@ class ServerWindow(QMainWindow):
         self.status_label.setStyleSheet('font-size: 14px; color: #10B981;')
         
         self.add_log('서버가 시작되었습니다.')
+        self.show_toast('서버가 시작되었습니다', 'success')
         self.tray_icon.showMessage(APP_NAME, '서버가 시작되었습니다.', QSystemTrayIcon.MessageIcon.Information, 2000)
     
     def stop_server(self):
@@ -438,10 +495,24 @@ class ServerWindow(QMainWindow):
         self.status_label.setStyleSheet('font-size: 14px; color: #94A3B8;')
         
         self.add_log('서버가 중지되었습니다.')
+        self.show_toast('서버가 중지되었습니다', 'warning')
     
-    def add_log(self, message):
+    def add_log(self, message: str):
+        """로그 추가"""
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.log_text.append(f'[{timestamp}] {message}')
+    
+    def show_toast(self, message: str, toast_type: str = "info", duration: int = 3000):
+        """토스트 알림 표시
+        
+        Args:
+            message: 알림 메시지
+            toast_type: 알림 타입 (success, error, warning, info)
+            duration: 표시 시간 (ms)
+        """
+        toast = ToastWidget(self, message, toast_type, duration)
+        toast.move(self.width() - toast.width() - 20, 60)
+        toast.show()
     
     def update_urls(self):
         port = self.port_spin.value()

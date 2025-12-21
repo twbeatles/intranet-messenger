@@ -1380,9 +1380,12 @@ function appendMessage(msg) {
             '</div>';
     }
 
+    // sender_name null 체크
+    var senderName = msg.sender_name || '사용자';
+
     div.innerHTML = avatarHtml +
         '<div class="message-content">' +
-        '<div class="message-sender">' + escapeHtml(msg.sender_name) + '</div>' +
+        '<div class="message-sender">' + escapeHtml(senderName) + '</div>' +
         replyHtml +
         content +
         '<div class="message-meta">' +

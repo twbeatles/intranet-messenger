@@ -1,19 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 # ============================================================================
-# 사내 메신저 v3.6 PyInstaller Spec 파일
+# 사내 메신저 v3.7 PyInstaller Spec 파일
 # 
 # 사용법:
 #   pyinstaller messenger.spec
 # 또는:
 #   auto-py-to-exe에서 이 파일 선택
 #
-# v3.6 업데이트:
-#   - 키보드 단축키 (Ctrl+K, Ctrl+N, Ctrl+F, ESC)
-#   - 토스트 알림 개선 (스택형, 진행률)
-#   - 대화 내 검색 기능
-#   - 오프라인 지원 강화
-#   - 메모리 누수 방지
-#   - 접근성 개선
+# v3.7 업데이트:
+#   - HiDPI 디스플레이 지원
+#   - 토스트 알림 시스템 (서버 시작/중지)
+#   - 타입 힌트 및 코드 품질 개선
+#   - 소켓 통신 에러 처리 강화
+#   - 레거시 파일 정리 (messenger_server.py 삭제)
 # ============================================================================
 
 import os
@@ -129,6 +128,7 @@ a = Analysis(
         'os',
         'sys',
         'uuid',
+        'traceback',  # v3.7: 에러 로깅 강화
     ],
     hookspath=['.'],
     hooksconfig={},
@@ -164,7 +164,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='사내메신저v3.6',
+    name='사내메신저v3.7',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -190,7 +190,7 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='사내메신저v3.6',
+    name='사내메신저v3.7',
 )
 
 # ============================================================================
@@ -200,7 +200,7 @@ coll = COLLECT(
 #    pyinstaller messenger.spec --clean
 #
 # 2. 빌드 후 확인 사항:
-#    - dist/사내메신저v3.6/ 폴더의 static/, templates/ 확인
+#    - dist/사내메신저v3.7/ 폴더의 static/, templates/ 확인
 #    - 실행 파일 더블클릭으로 GUI 정상 동작 확인
 #
 # 3. 오류 발생 시:

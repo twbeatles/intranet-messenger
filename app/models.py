@@ -61,16 +61,16 @@ def get_db_context():
         if conn:
             try:
                 conn.rollback()
-            except:
-                pass
+            except Exception as rollback_err:
+                logger.warning(f"Rollback failed: {rollback_err}")
         logger.error(f"Database error: {e}")
         raise
     finally:
         if conn:
             try:
                 conn.close()
-            except:
-                pass
+            except Exception as close_err:
+                logger.warning(f"Connection close failed: {close_err}")
 
 
 def init_db():
@@ -152,6 +152,7 @@ def init_db():
         )
     ''')
     
+    
     conn.commit()
     conn.close()
     logger.info("데이터베이스 초기화 완료")
@@ -160,8 +161,17 @@ def init_db():
 # ============================================================================
 # 사용자 관리
 # ============================================================================
-def create_user(username, password, nickname=None):
-    """사용자 생성"""
+def create_user(username: str, password: str, nickname: str | None = None) -> int | None:
+    """사용자 생성
+    
+    Args:
+        username: 사용자 아이디
+        password: 비밀번호 (평문)
+        nickname: 닉네임 (없으면 username 사용)
+    
+    Returns:
+        생성된 사용자 ID 또는 None (이미 존재하는 경우)
+    """
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -172,13 +182,25 @@ def create_user(username, password, nickname=None):
         conn.commit()
         return cursor.lastrowid
     except sqlite3.IntegrityError:
+        logger.warning(f"Username already exists: {username}")
+        return None
+    except Exception as e:
+        logger.error(f"Create user error: {e}")
         return None
     finally:
         conn.close()
 
 
-def authenticate_user(username, password):
-    """사용자 인증"""
+def authenticate_user(username: str, password: str) -> dict | None:
+    """사용자 인증
+    
+    Args:
+        username: 사용자 아이디
+        password: 비밀번호 (평문)
+    
+    Returns:
+        사용자 정보 dict 또는 None (인증 실패)
+    """
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -195,8 +217,15 @@ def authenticate_user(username, password):
         conn.close()
 
 
-def get_user_by_id(user_id):
-    """ID로 사용자 조회"""
+def get_user_by_id(user_id: int) -> dict | None:
+    """ID로 사용자 조회
+    
+    Args:
+        user_id: 사용자 ID
+    
+    Returns:
+        사용자 정보 dict 또는 None
+    """
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -260,8 +289,8 @@ def update_user_profile(user_id, nickname=None, profile_image=None, status_messa
                 if 'status_message' not in schema:
                     cursor.execute('ALTER TABLE users ADD COLUMN status_message TEXT')
                     conn.commit()
-            except Exception:
-                pass
+            except Exception as schema_err:
+                logger.debug(f"Schema check/update for status_message: {schema_err}")
             updates.append('status_message = ?')
             values.append(status_message)
         
@@ -371,46 +400,52 @@ def get_user_rooms(user_id):
     """사용자의 대화방 목록"""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT r.*, 
-               (SELECT COUNT(*) FROM room_members WHERE room_id = r.id) as member_count,
-               (SELECT m.content FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) as last_message,
-               (SELECT m.created_at FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) as last_message_time,
-               (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id AND m.id > rm.last_read_message_id) as unread_count,
-               rm.pinned, rm.muted
-        FROM rooms r
-        JOIN room_members rm ON r.id = rm.room_id
-        WHERE rm.user_id = ?
-        ORDER BY rm.pinned DESC, last_message_time DESC NULLS LAST
-    ''', (user_id,))
-    rooms = cursor.fetchall()
-    
-    result = []
-    for room in rooms:
-        room_dict = dict(room)
-        if room_dict['type'] == 'direct':
-            cursor.execute('''
-                SELECT u.id, u.nickname, u.profile_image, u.status
-                FROM users u
-                JOIN room_members rm ON u.id = rm.user_id
-                WHERE rm.room_id = ? AND u.id != ?
-            ''', (room_dict['id'], user_id))
-            partner = cursor.fetchone()
-            if partner:
-                room_dict['partner'] = dict(partner)
-                room_dict['name'] = partner['nickname']
-        else:
-            cursor.execute('''
-                SELECT u.id, u.nickname, u.profile_image
-                FROM users u
-                JOIN room_members rm ON u.id = rm.user_id
-                WHERE rm.room_id = ?
-            ''', (room_dict['id'],))
-            room_dict['members'] = [dict(m) for m in cursor.fetchall()]
-        result.append(room_dict)
-    
-    conn.close()
-    return result
+    try:
+        cursor.execute('''
+            SELECT r.*, 
+                   (SELECT COUNT(*) FROM room_members WHERE room_id = r.id) as member_count,
+                   (SELECT m.content FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) as last_message,
+                   (SELECT m.created_at FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) as last_message_time,
+                   (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id AND m.id > rm.last_read_message_id) as unread_count,
+                   rm.pinned, rm.muted
+            FROM rooms r
+            JOIN room_members rm ON r.id = rm.room_id
+            WHERE rm.user_id = ?
+            ORDER BY rm.pinned DESC, last_message_time DESC NULLS LAST
+        ''', (user_id,))
+        rooms = cursor.fetchall()
+        
+        result = []
+        for room in rooms:
+            room_dict = dict(room)
+            if room_dict['type'] == 'direct':
+                cursor.execute('''
+                    SELECT u.id, u.nickname, u.profile_image, u.status
+                    FROM users u
+                    JOIN room_members rm ON u.id = rm.user_id
+                    WHERE rm.room_id = ? AND u.id != ?
+                ''', (room_dict['id'], user_id))
+                partner = cursor.fetchone()
+                if partner:
+                    room_dict['partner'] = dict(partner)
+                    room_dict['name'] = partner['nickname']
+            else:
+                cursor.execute('''
+                    SELECT u.id, u.nickname, u.profile_image
+                    FROM users u
+                    JOIN room_members rm ON u.id = rm.user_id
+                    WHERE rm.room_id = ?
+                ''', (room_dict['id'],))
+                room_dict['members'] = [dict(m) for m in cursor.fetchall()]
+            result.append(room_dict)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Get user rooms error: {e}")
+        return []
+    finally:
+        conn.close()
+
 
 
 def get_room_members(room_id):
@@ -691,3 +726,8 @@ def search_messages(user_id, query):
     results = cursor.fetchall()
     conn.close()
     return [dict(r) for r in results]
+
+    results = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in results]
+
