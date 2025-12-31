@@ -1,4 +1,4 @@
-/* 사내 메신저 v3.2 스타일시트 - 테마 시스템 */
+/* 사내 메신저 v4.0 스타일시트 - 테마 시스템 */
 
 /* ============================================
    다크 모드 (기본)
@@ -219,7 +219,7 @@ body {
 .form-group input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    box-shadow: 0 0 0 3px var(--primary-light), 0 0 20px var(--primary-light);
 }
 
 .btn {
@@ -240,6 +240,12 @@ body {
 
 .btn-primary:hover {
     background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--primary-light);
+}
+
+.btn-primary:active {
+    transform: translateY(0) scale(0.98);
 }
 
 .auth-switch {
@@ -713,10 +719,15 @@ body {
     background: var(--bg-light);
     word-break: break-word;
     line-height: 1.5;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--border);
 }
 
 .message.sent .message-bubble {
     background: var(--primary);
+    color: white;
+    border-color: transparent;
+    box-shadow: 0 2px 4px var(--primary-light);
 }
 
 .message-meta {
@@ -3006,4 +3017,633 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+
+/* ============================================================================
+   [v4.0] 공지 배너
+   ============================================================================ */
+.pinned-banner {
+    background: linear-gradient(90deg, var(--primary-light), rgba(255, 255, 255, 0.05));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.pinned-banner::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--primary);
+}
+
+.pinned-banner:hover {
+    background: linear-gradient(90deg, var(--primary-light), rgba(255, 255, 255, 0.1));
+    transform: translateX(2px);
+}
+
+.pinned-icon {
+    font-size: 14px;
+}
+
+.pinned-content {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pinned-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.pinned-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================================================
+   [v4.0] 리액션 스타일
+   ============================================================================ */
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.reaction-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.reaction-item:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+}
+
+.reaction-item.my-reaction {
+    background: var(--primary-light);
+    border-color: var(--primary);
+}
+
+.reaction-count {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.reaction-picker {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    display: flex;
+    gap: 4px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.15s;
+}
+
+.message:hover .reaction-picker,
+.reaction-picker:hover {
+    opacity: 1;
+    visibility: visible;
+}
+
+.reaction-picker-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: transform 0.15s;
+}
+
+.reaction-picker-btn:hover {
+    background: var(--bg-dark);
+    transform: scale(1.2);
+}
+
+/* ============================================================================
+   [v4.0] 투표 스타일
+   ============================================================================ */
+.poll-container {
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin: 8px 0;
+    max-width: 400px;
+}
+
+.poll-question {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.poll-option {
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s;
+}
+
+.poll-option:hover {
+    border-color: var(--primary);
+}
+
+.poll-option.selected {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.poll-option-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: var(--primary-light);
+    transition: width 0.3s ease;
+    z-index: 0;
+}
+
+.poll-option-text {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.poll-option-percent {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.poll-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.poll-option-input {
+    margin-bottom: 8px;
+}
+
+.poll-option-input input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-dark);
+    color: var(--text);
+}
+
+.checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+/* ============================================================================
+   [v4.0] 파일 저장소 스타일
+   ============================================================================ */
+.file-filter-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.file-tab {
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.file-tab:hover {
+    border-color: var(--primary);
+}
+
+.file-tab.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.file-storage-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    transition: background 0.2s;
+}
+
+.file-item:hover {
+    background: var(--bg-dark);
+}
+
+.file-item-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.file-item-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+}
+
+.file-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-item-name {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-item-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.file-item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.empty-files {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+/* ============================================================================
+   [v4.0] 알림 설정 스타일
+   ============================================================================ */
+.notification-settings .setting-item {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.notification-settings .setting-item:last-child {
+    border-bottom: none;
+}
+
+.notification-settings label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+/* ============================================================================
+   [v4.0] 타이핑 애니메이션 개선
+   ============================================================================ */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.typing-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.typing-dots span {
+    width: 6px;
+    height: 6px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    animation: typingBounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dots span:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.typing-dots span:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+.typing-dots span:nth-child(3) {
+    animation-delay: 0s;
+}
+
+@keyframes typingBounce {
+
+    0%,
+    80%,
+    100% {
+        transform: scale(0.6);
+        opacity: 0.5;
+    }
+
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* ============================================================================
+   [v4.0] 관리자 배지
+   ============================================================================ */
+.admin-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #1a1a1a;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+}
+
+/* ============================================================================
+   [v4.0] 드롭다운 구분선
+   ============================================================================ */
+.dropdown-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+}
+
+/* ============================================================================
+   [v4.0] 폼 레이아웃
+   ============================================================================ */
+.form-row {
+    display: flex;
+    gap: 12px;
+}
+
+.form-row .form-group {
+    flex: 1;
+}
+
+/* ============================================================================
+   [v4.0] 버튼 변형
+   ============================================================================ */
+.btn-sm {
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.btn-secondary {
+    background: var(--secondary);
+    color: var(--text);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-light);
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+/* ============================================================================
+   [v4.0] 검색 결과
+   ============================================================================ */
+.search-results {
+    padding: 8px 0;
+}
+
+.search-result-item {
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.search-result-item:hover {
+    background: var(--bg-dark);
+}
+
+.search-result-room {
+    font-size: 12px;
+    color: var(--primary);
+    margin-bottom: 4px;
+}
+
+.search-result-content {
+    font-size: 14px;
+    color: var(--text);
+}
+
+.search-result-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* ============================================================================
+   [v4.0] 커스텀 스크롤바
+   ============================================================================ */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.3);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(156, 163, 175, 0.5);
+}
+
+/* ============================================================================
+   [v4.0] 모달 애니메이션 개선
+   ============================================================================ */
+.modal-overlay {
+    transition: opacity 0.2s ease, visibility 0.2s;
+}
+
+.modal {
+    transform: scale(0.95);
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity: 0;
+}
+
+.modal-overlay.active .modal {
+    opacity: 1;
+}
+
+/* 시스템 메시지 */
+.message.system {
+    justify-content: center;
+    margin: 12px 0;
+    width: 100%;
+    padding: 0;
+}
+
+.message.system .message-content {
+    max-width: 100%;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+}
+
+.message.system .message-bubble {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 6px 16px;
+    border-radius: 100px;
+    box-shadow: none;
+    border: none;
+    text-align: center;
+}
+
+[data-theme="dark"] .message.system .message-bubble {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-muted);
+}
+
+.message.system .message-avatar,
+.message.system .message-meta,
+.message.system .message-sender,
+.message.system .message-actions {
+    display: none !important;
+}
+
+/* [v4.1] 모달 탭 스타일 */
+.modal-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+}
+
+.modal-tab {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.modal-tab:hover {
+    background: var(--bg-secondary);
+    color: var(--text);
+}
+
+.modal-tab.active {
+    background: var(--primary);
+    color: white;
+}
+
+/* 탭 콘텐츠 */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* 계정 보안 섹션 */
+.security-section {
+    margin-bottom: 20px;
+}
+
+.security-section h4 {
+    margin-bottom: 12px;
+    font-size: 15px;
+}
+
+.danger-zone {
+    padding: 16px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
 }

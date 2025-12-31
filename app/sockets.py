@@ -238,7 +238,16 @@ def register_socket_events(socketio):
         try:
             room_id = data.get('room_id')
             new_name = data.get('name')
-            if room_id and new_name:
+            if room_id and new_name and 'user_id' in session:
+                # 시스템 메시지 생성
+                nickname = session.get('nickname', '사용자')
+                content = f"{nickname}님이 방 이름을 '{new_name}'(으)로 변경했습니다."
+                sys_msg = create_message(room_id, session['user_id'], content, 'system')
+                
+                # 시스템 메시지 전송
+                if sys_msg:
+                    emit('new_message', sys_msg, room=f'room_{room_id}')
+                
                 emit('room_name_updated', {'room_id': room_id, 'name': new_name}, room=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Room name update broadcast error: {e}")
@@ -326,3 +335,92 @@ def register_socket_events(socketio):
         except Exception as e:
             logger.error(f"Delete message error: {e}")
             emit('error', {'message': '메시지 삭제에 실패했습니다.'})
+
+    # ============================================================================
+    # v4.0 추가 이벤트
+    # ============================================================================
+    
+    # 리액션 업데이트
+    @socketio.on('reaction_updated')
+    def handle_reaction_updated(data):
+        try:
+            room_id = data.get('room_id')
+            message_id = data.get('message_id')
+            reactions = data.get('reactions', [])
+            
+            if room_id and message_id:
+                emit('reaction_updated', {
+                    'message_id': message_id,
+                    'reactions': reactions
+                }, room=f'room_{room_id}')
+        except Exception as e:
+            logger.error(f"Reaction update broadcast error: {e}")
+    
+    # 투표 업데이트
+    @socketio.on('poll_updated')
+    def handle_poll_updated(data):
+        try:
+            room_id = data.get('room_id')
+            poll = data.get('poll')
+            
+            if room_id and poll:
+                emit('poll_updated', {
+                    'poll': poll
+                }, room=f'room_{room_id}')
+        except Exception as e:
+            logger.error(f"Poll update broadcast error: {e}")
+    
+    # 투표 생성
+    @socketio.on('poll_created')
+    def handle_poll_created(data):
+        try:
+            room_id = data.get('room_id')
+            poll = data.get('poll')
+            
+            if room_id and poll:
+                emit('poll_created', {
+                    'poll': poll
+                }, room=f'room_{room_id}')
+        except Exception as e:
+            logger.error(f"Poll created broadcast error: {e}")
+    
+    # 공지 업데이트
+    @socketio.on('pin_updated')
+    def handle_pin_updated(data):
+        try:
+            room_id = data.get('room_id')
+            pins = data.get('pins', [])
+            
+            if room_id and 'user_id' in session:
+                # 시스템 메시지 생성
+                nickname = session.get('nickname', '사용자')
+                content = f"{nickname}님이 공지사항을 업데이트했습니다."
+                sys_msg = create_message(room_id, session['user_id'], content, 'system')
+                
+                if sys_msg:
+                    emit('new_message', sys_msg, room=f'room_{room_id}')
+                
+                emit('pin_updated', {
+                    'room_id': room_id,
+                    'pins': pins
+                }, room=f'room_{room_id}')
+        except Exception as e:
+            logger.error(f"Pin update broadcast error: {e}")
+    
+    # 관리자 변경
+    @socketio.on('admin_updated')
+    def handle_admin_updated(data):
+        try:
+            room_id = data.get('room_id')
+            user_id = data.get('user_id')
+            is_admin = data.get('is_admin')
+            
+            if room_id and user_id is not None:
+                emit('admin_updated', {
+                    'room_id': room_id,
+                    'user_id': user_id,
+                    'is_admin': is_admin
+                }, room=f'room_{room_id}')
+        except Exception as e:
+            logger.error(f"Admin update broadcast error: {e}")
+

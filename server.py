@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-사내 메신저 v3.0 서버
+사내 메신저 v4.1 서버
 HTTPS + Socket.IO + Flask
 """
 
@@ -10,6 +10,11 @@ import sys
 # 현재 디렉토리를 경로에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
+
+# [v4.1] GUI 모드에서는 gevent 비활성화 (PyQt6 충돌 방지)
+# 이 설정은 app/__init__.py의 monkey patching 전에 적용되어야 함
+if len(sys.argv) <= 1 or sys.argv[1] != '--cli':
+    os.environ['SKIP_GEVENT_PATCH'] = '1'
 
 from config import (
     USE_HTTPS, DEFAULT_PORT, SSL_CERT_PATH, SSL_KEY_PATH, SSL_DIR

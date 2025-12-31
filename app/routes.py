@@ -15,7 +15,15 @@ from app.models import (
     add_room_member, leave_room_db, update_room_name, get_room_by_id,
     pin_room, mute_room, get_online_users, delete_message, edit_message,
     search_messages, log_access, get_unread_count, update_user_profile,
-    get_user_by_id, is_room_member, get_db
+    get_user_by_id, is_room_member, get_db,
+    # v4.0 추가 기능
+    pin_message, unpin_message, get_pinned_messages,
+    create_poll, get_poll, get_room_polls, vote_poll, get_user_votes, close_poll,
+    add_room_file, get_room_files, delete_room_file,
+    add_reaction, remove_reaction, toggle_reaction, get_message_reactions, get_messages_reactions,
+    set_room_admin, is_room_admin, get_room_admins, advanced_search,
+    # v4.1 추가 기능
+    change_password, delete_user
 )
 from app.utils import sanitize_input, allowed_file
 
@@ -413,3 +421,269 @@ def register_routes(app):
         if success:
             return jsonify({'success': True})
         return jsonify({'error': '프로필 이미지 삭제에 실패했습니다.'}), 500
+    
+    # ============================================================================
+    # 공지사항 (Pinned Messages) API
+    # ============================================================================
+    @app.route('/api/rooms/<int:room_id>/pins')
+    def get_room_pins(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        pins = get_pinned_messages(room_id)
+        return jsonify(pins)
+    
+    @app.route('/api/rooms/<int:room_id>/pins', methods=['POST'])
+    def create_pin(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        data = request.json
+        message_id = data.get('message_id')
+        content = sanitize_input(data.get('content', ''), max_length=500)
+        
+        if not message_id and not content:
+            return jsonify({'error': '고정할 메시지 또는 내용을 입력해주세요.'}), 400
+        
+        pin_id = pin_message(room_id, session['user_id'], message_id, content)
+        if pin_id:
+            return jsonify({'success': True, 'pin_id': pin_id})
+        return jsonify({'error': '공지 고정에 실패했습니다.'}), 500
+    
+    @app.route('/api/rooms/<int:room_id>/pins/<int:pin_id>', methods=['DELETE'])
+    def delete_pin(room_id, pin_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        if unpin_message(pin_id, session['user_id'], room_id):
+            return jsonify({'success': True})
+        return jsonify({'error': '공지 해제에 실패했습니다.'}), 500
+    
+    # ============================================================================
+    # 투표 (Polls) API
+    # ============================================================================
+    @app.route('/api/rooms/<int:room_id>/polls')
+    def get_polls(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        polls = get_room_polls(room_id)
+        for poll in polls:
+            poll['my_votes'] = get_user_votes(poll['id'], session['user_id'])
+        return jsonify(polls)
+    
+    @app.route('/api/rooms/<int:room_id>/polls', methods=['POST'])
+    def create_poll_route(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        data = request.json
+        question = sanitize_input(data.get('question', ''), max_length=200)
+        options = data.get('options', [])
+        multiple_choice = data.get('multiple_choice', False)
+        anonymous = data.get('anonymous', False)
+        
+        if not question:
+            return jsonify({'error': '질문을 입력해주세요.'}), 400
+        if len(options) < 2:
+            return jsonify({'error': '최소 2개의 옵션이 필요합니다.'}), 400
+        
+        options = [sanitize_input(opt, max_length=100) for opt in options[:10]]
+        
+        poll_id = create_poll(room_id, session['user_id'], question, options, multiple_choice, anonymous)
+        if poll_id:
+            poll = get_poll(poll_id)
+            return jsonify({'success': True, 'poll': poll})
+        return jsonify({'error': '투표 생성에 실패했습니다.'}), 500
+    
+    @app.route('/api/polls/<int:poll_id>/vote', methods=['POST'])
+    def vote_poll_route(poll_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        data = request.json
+        option_id = data.get('option_id')
+        
+        if not option_id:
+            return jsonify({'error': '옵션을 선택해주세요.'}), 400
+        
+        success, error = vote_poll(poll_id, option_id, session['user_id'])
+        if success:
+            poll = get_poll(poll_id)
+            poll['my_votes'] = get_user_votes(poll_id, session['user_id'])
+            return jsonify({'success': True, 'poll': poll})
+        return jsonify({'error': error}), 400
+    
+    @app.route('/api/polls/<int:poll_id>/close', methods=['POST'])
+    def close_poll_route(poll_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        if close_poll(poll_id, session['user_id']):
+            return jsonify({'success': True})
+        return jsonify({'error': '투표 마감에 실패했습니다.'}), 403
+    
+    # ============================================================================
+    # 파일 저장소 (Room Files) API
+    # ============================================================================
+    @app.route('/api/rooms/<int:room_id>/files')
+    def get_files(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        file_type = request.args.get('type')  # 'image', 'file', etc.
+        files = get_room_files(room_id, file_type)
+        return jsonify(files)
+    
+    @app.route('/api/rooms/<int:room_id>/files/<int:file_id>', methods=['DELETE'])
+    def delete_file_route(room_id, file_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        success, file_path = delete_room_file(file_id, session['user_id'])
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': '파일 삭제 권한이 없습니다.'}), 403
+    
+    # ============================================================================
+    # 리액션 (Reactions) API
+    # ============================================================================
+    @app.route('/api/messages/<int:message_id>/reactions')
+    def get_reactions(message_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        reactions = get_message_reactions(message_id)
+        return jsonify(reactions)
+    
+    @app.route('/api/messages/<int:message_id>/reactions', methods=['POST'])
+    def add_reaction_route(message_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        data = request.json
+        emoji = data.get('emoji', '')
+        if not emoji or len(emoji) > 10:
+            return jsonify({'error': '유효하지 않은 이모지입니다.'}), 400
+        
+        success, action = toggle_reaction(message_id, session['user_id'], emoji)
+        if success:
+            reactions = get_message_reactions(message_id)
+            return jsonify({'success': True, 'action': action, 'reactions': reactions})
+        return jsonify({'error': '리액션 추가에 실패했습니다.'}), 500
+    
+    # ============================================================================
+    # 관리자 권한 (Admin) API
+    # ============================================================================
+    @app.route('/api/rooms/<int:room_id>/admins')
+    def get_admins(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        admins = get_room_admins(room_id)
+        return jsonify(admins)
+    
+    @app.route('/api/rooms/<int:room_id>/admins', methods=['POST'])
+    def set_admin_route(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        if not is_room_admin(room_id, session['user_id']):
+            return jsonify({'error': '관리자 권한이 필요합니다.'}), 403
+        
+        data = request.json
+        target_user_id = data.get('user_id')
+        is_admin = data.get('is_admin', True)
+        
+        if not target_user_id:
+            return jsonify({'error': '사용자를 선택해주세요.'}), 400
+        
+        if set_room_admin(room_id, target_user_id, is_admin):
+            return jsonify({'success': True})
+        return jsonify({'error': '관리자 설정에 실패했습니다.'}), 500
+    
+    @app.route('/api/rooms/<int:room_id>/admin-check')
+    def check_admin(room_id):
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        is_admin = is_room_admin(room_id, session['user_id'])
+        return jsonify({'is_admin': is_admin})
+    
+    # ============================================================================
+    # 고급 검색 API
+    # ============================================================================
+    @app.route('/api/search/advanced', methods=['POST'])
+    def advanced_search_route():
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        data = request.json
+        results = advanced_search(
+            user_id=session['user_id'],
+            query=data.get('query'),
+            room_id=data.get('room_id'),
+            sender_id=data.get('sender_id'),
+            date_from=data.get('date_from'),
+            date_to=data.get('date_to'),
+            file_only=data.get('file_only', False)
+        )
+        return jsonify(results)
+
+    # ============================================================================
+    # [v4.1] 계정 보안 라우트
+    # ============================================================================
+    @app.route('/api/me/password', methods=['PUT'])
+    def update_password():
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+            
+        data = request.json
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        
+        if not current_password or not new_password:
+            return jsonify({'error': '입력값이 부족합니다.'}), 400
+            
+        if len(new_password) < 4:
+            return jsonify({'error': '비밀번호는 4자 이상이어야 합니다.'}), 400
+            
+        success, error = change_password(session['user_id'], current_password, new_password)
+        
+        if success:
+            log_access(session['user_id'], 'change_password', request.remote_addr, request.user_agent.string)
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': error}), 400
+
+    @app.route('/api/me', methods=['DELETE'])
+    def delete_account():
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+            
+        data = request.json
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({'error': '비밀번호를 입력해주세요.'}), 400
+            
+        success, error = delete_user(session['user_id'], password)
+        
+        if success:
+            log_access(session['user_id'], 'delete_account', request.remote_addr, request.user_agent.string)
+            session.clear()
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': error}), 400

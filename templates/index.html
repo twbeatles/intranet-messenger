@@ -121,10 +121,21 @@
                             <div class="dropdown-item" id="pinRoomBtn">📌 <span id="pinRoomText">상단 고정</span></div>
                             <div class="dropdown-item" id="muteRoomBtn">🔕 <span id="muteRoomText">알림 끄기</span></div>
                             <div class="dropdown-item" id="viewMembersBtn">👥 멤버 보기</div>
+                            <div class="dropdown-divider"></div>
+                            <div class="dropdown-item" id="createPollBtn2">📋 투표 만들기</div>
+                            <div class="dropdown-item" id="viewFilesBtn">📁 파일 저장소</div>
+                            <div class="dropdown-item" id="viewPinsBtn">📌 공지 보기</div>
+                            <div class="dropdown-item" id="adminSettingsBtn">👑 관리자 설정</div>
                         </div>
                         <button class="icon-btn" id="inviteBtn" title="초대">👤➕</button>
                         <button class="icon-btn" id="leaveRoomBtn" title="나가기">🚪</button>
                     </div>
+                </div>
+                <!-- 공지 배너 -->
+                <div class="pinned-banner hidden" id="pinnedBanner">
+                    <span class="pinned-icon">📌</span>
+                    <span class="pinned-content" id="pinnedContent">공지사항이 여기에 표시됩니다</span>
+                    <button class="pinned-close" id="closePinnedBanner">✕</button>
                 </div>
                 <div class="messages-container drop-zone" id="messagesContainer">
                     <div class="drop-overlay" id="dropOverlay">
@@ -210,31 +221,68 @@
                 <h3>⚙ 프로필 수정</h3>
                 <button class="modal-close" id="closeProfileModal">✕</button>
             </div>
-            <div class="profile-edit-content">
-                <div class="profile-image-section">
-                    <div class="profile-image-preview" id="profileImagePreview">
-                        <span id="profileInitial"></span>
+            <div class="modal-tabs">
+                <button class="modal-tab active" data-tab="profile">프로필 정보</button>
+                <button class="modal-tab" data-tab="security">계정 보안</button>
+            </div>
+
+            <!-- 탭 1: 프로필 정보 -->
+            <div id="tab-profile" class="tab-content active">
+                <div class="profile-edit-content">
+                    <div class="profile-image-section">
+                        <div class="profile-image-preview" id="profileImagePreview">
+                            <span id="profileInitial"></span>
+                        </div>
+                        <input type="file" id="profileImageInput" accept="image/*,.heic,.heif" style="display:none;">
+                        <div class="profile-image-buttons">
+                            <button class="btn btn-secondary" id="changeProfileImageBtn">📷 사진 변경</button>
+                            <button class="btn btn-danger" id="deleteProfileImageBtn">🗑 기본 이미지</button>
+                        </div>
                     </div>
-                    <input type="file" id="profileImageInput" accept="image/*,.heic,.heif" style="display:none;">
-                    <div class="profile-image-buttons">
-                        <button class="btn btn-secondary" id="changeProfileImageBtn">📷 사진 변경</button>
-                        <button class="btn btn-danger" id="deleteProfileImageBtn">🗑 기본 이미지</button>
+                    <div class="profile-form">
+                        <div class="form-group">
+                            <label for="profileNickname">닉네임</label>
+                            <input type="text" id="profileNickname" maxlength="20" placeholder="닉네임 입력">
+                        </div>
+                        <div class="form-group">
+                            <label for="profileStatusMessage">상태 메시지</label>
+                            <input type="text" id="profileStatusMessage" maxlength="100" placeholder="상태 메시지 (선택사항)">
+                        </div>
                     </div>
                 </div>
-                <div class="profile-form">
-                    <div class="form-group">
-                        <label for="profileNickname">닉네임</label>
-                        <input type="text" id="profileNickname" maxlength="20" placeholder="닉네임 입력">
-                    </div>
-                    <div class="form-group">
-                        <label for="profileStatusMessage">상태 메시지</label>
-                        <input type="text" id="profileStatusMessage" maxlength="100" placeholder="상태 메시지 (선택사항)">
-                    </div>
+                <div class="modal-footer" style="margin-top:16px;">
+                    <button class="btn btn-primary" id="saveProfileBtn">💾 저장</button>
                 </div>
             </div>
-            <div class="modal-footer" style="margin-top:16px; display:flex; gap:8px;">
-                <button class="btn btn-secondary" id="cancelProfileBtn" style="flex:1;">취소</button>
-                <button class="btn btn-primary" id="saveProfileBtn" style="flex:1;">💾 저장</button>
+
+            <!-- 탭 2: 계정 보안 -->
+            <div id="tab-security" class="tab-content">
+                <div class="security-section">
+                    <h4>🔒 비밀번호 변경</h4>
+                    <div class="form-group">
+                        <label>현재 비밀번호</label>
+                        <input type="password" id="currentPassword" placeholder="현재 비밀번호">
+                    </div>
+                    <div class="form-group">
+                        <label>새 비밀번호</label>
+                        <input type="password" id="newPassword" placeholder="새 비밀번호 (4자 이상)">
+                    </div>
+                    <div class="form-group">
+                        <label>새 비밀번호 확인</label>
+                        <input type="password" id="newPasswordConfirm" placeholder="새 비밀번호 확인">
+                    </div>
+                    <button class="btn btn-primary" id="changePasswordBtn">비밀번호 변경</button>
+                </div>
+
+                <hr style="border:0; border-top:1px solid var(--border); margin:24px 0;">
+
+                <div class="security-section danger-zone">
+                    <h4 style="color:var(--danger)">⚠️ 회원 탈퇴</h4>
+                    <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+                        탈퇴 시 모든 대화방에서 나가며, 계정 정보가 영구적으로 삭제됩니다. 작성한 메시지는 보존됩니다.
+                    </p>
+                    <button class="btn btn-danger" id="deleteAccountBtn">회원 탈퇴</button>
+                </div>
             </div>
         </div>
     </div>
@@ -366,9 +414,137 @@
         <button class="lightbox-nav lightbox-next" onclick="nextImage()">▶</button>
     </div>
 
+    <!-- v4.0 투표 생성 모달 -->
+    <div class="modal-overlay" id="pollModal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>📋 투표 만들기</h3>
+                <button class="modal-close" id="closePollModal">✕</button>
+            </div>
+            <div class="form-group">
+                <label>질문</label>
+                <input type="text" id="pollQuestion" placeholder="투표 질문을 입력하세요" maxlength="200">
+            </div>
+            <div class="form-group">
+                <label>옵션 <span class="option-count">(2~10개)</span></label>
+                <div id="pollOptions">
+                    <div class="poll-option-input"><input type="text" placeholder="옵션 1" maxlength="100"></div>
+                    <div class="poll-option-input"><input type="text" placeholder="옵션 2" maxlength="100"></div>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="addPollOption" style="margin-top:8px;">➕ 옵션 추가</button>
+            </div>
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" id="pollMultiple"> 복수 선택 허용</label>
+                <label><input type="checkbox" id="pollAnonymous"> 익명 투표</label>
+            </div>
+            <button class="btn btn-primary" id="createPollBtn" style="margin-top:16px;">투표 생성</button>
+        </div>
+    </div>
+
+    <!-- v4.0 파일 저장소 모달 -->
+    <div class="modal-overlay" id="filesModal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>📁 파일 저장소</h3>
+                <button class="modal-close" id="closeFilesModal">✕</button>
+            </div>
+            <div class="file-filter-tabs">
+                <button class="file-tab active" data-type="">전체</button>
+                <button class="file-tab" data-type="image">🖼 사진</button>
+                <button class="file-tab" data-type="file">📄 파일</button>
+            </div>
+            <div class="file-storage-list" id="fileStorageList">
+                <div class="empty-files">파일이 없습니다</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- v4.0 알림 설정 모달 -->
+    <div class="modal-overlay" id="notificationSettingsModal">
+        <div class="modal" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3>🔔 알림 설정</h3>
+                <button class="modal-close" id="closeNotificationSettingsModal">✕</button>
+            </div>
+            <div class="notification-settings">
+                <div class="setting-item">
+                    <label for="notifyAll">
+                        <input type="radio" name="notifyOption" id="notifyAll" value="all" checked>
+                        <span>모든 메시지</span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label for="notifyMention">
+                        <input type="radio" name="notifyOption" id="notifyMention" value="mention">
+                        <span>@멘션만</span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label for="notifyNone">
+                        <input type="radio" name="notifyOption" id="notifyNone" value="none">
+                        <span>알림 끄기</span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label for="notifySound">
+                        <input type="checkbox" id="notifySound" checked>
+                        <span>알림 소리</span>
+                    </label>
+                </div>
+            </div>
+            <button class="btn btn-primary" id="saveNotificationSettings" style="margin-top:16px;">저장</button>
+        </div>
+    </div>
+
+    <!-- v4.0 고급 검색 모달 -->
+    <div class="modal-overlay" id="advancedSearchModal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>🔍 고급 검색</h3>
+                <button class="modal-close" id="closeAdvancedSearchModal">✕</button>
+            </div>
+            <div class="form-group">
+                <label>검색어</label>
+                <input type="text" id="advSearchQuery" placeholder="검색할 내용">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>시작 날짜</label>
+                    <input type="date" id="advSearchDateFrom">
+                </div>
+                <div class="form-group">
+                    <label>종료 날짜</label>
+                    <input type="date" id="advSearchDateTo">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="advSearchFileOnly">
+                    <input type="checkbox" id="advSearchFileOnly">
+                    <span>파일/이미지만</span>
+                </label>
+            </div>
+            <button class="btn btn-primary" id="doAdvancedSearch" style="margin-top:16px;">검색</button>
+            <div id="advancedSearchResults" class="search-results"
+                style="margin-top:16px; max-height:300px; overflow-y:auto;"></div>
+        </div>
+    </div>
+
+    <!-- v4.0 관리자 설정 모달 -->
+    <div class="modal-overlay" id="adminModal">
+        <div class="modal" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3>👑 관리자 설정</h3>
+                <button class="modal-close" id="closeAdminModal">✕</button>
+            </div>
+            <div class="admin-settings">
+                <div id="adminMemberList" class="user-list"></div>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/storage.js"></script>
     <script src="/static/js/notification.js"></script>
-    <script type="module" src="/static/js/modules/main.js"></script>
+    <script src="/static/js/app.js"></script>
 </body>
 
 </html>

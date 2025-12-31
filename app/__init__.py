@@ -1,22 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-사내 메신저 앱 패키지
+사내 메신저 v4.1 앱 패키지
 Flask 앱 팩토리 패턴
 """
-
-# gevent monkey patching (반드시 다른 import 전에 실행)
-try:
-    from gevent import monkey
-    monkey.patch_all()
-    _GEVENT_AVAILABLE = True
-except ImportError:
-    _GEVENT_AVAILABLE = False
 
 import os
 import sys
 import logging
 import secrets
 from datetime import timedelta
+
+# gevent monkey patching (반드시 다른 import 전에 실행)
+# [v4.1] GUI 모드에서는 PyQt6와 충돌하므로 비활성화
+_SKIP_GEVENT = os.environ.get('SKIP_GEVENT_PATCH', '0') == '1'
+_GEVENT_AVAILABLE = False
+
+if not _SKIP_GEVENT:
+    try:
+        from gevent import monkey
+        monkey.patch_all()
+        _GEVENT_AVAILABLE = True
+    except ImportError:
+        _GEVENT_AVAILABLE = False
 
 from flask import Flask
 from flask_socketio import SocketIO

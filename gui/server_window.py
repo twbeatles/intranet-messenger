@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-PyQt6 GUI - 서버 관리 창 v3.7
+PyQt6 GUI - 서버 관리 창 v4.1
 - HiDPI 디스플레이 지원
 - 토스트 알림 시스템
+- 체크박스/버튼 UI 개선
 """
 
 import os
@@ -41,6 +42,10 @@ class ServerThread(QThread):
     
     def run(self):
         try:
+            # DB 초기화를 스레드 내부로 이동
+            from app.models import init_db
+            init_db()
+            
             from app import create_app
             from app.models import server_stats
             
@@ -89,6 +94,8 @@ class ServerThread(QThread):
             self.log_signal.emit(f"서버 오류: {str(e)}")
             import traceback
             self.log_signal.emit(traceback.format_exc())
+        finally:
+            self.running = False
     
     def stop(self):
         self.running = False
@@ -155,31 +162,41 @@ class ServerWindow(QMainWindow):
         self.create_tray_icon()
         self.load_settings()
         
+        # 서버 자동 시작 (지연)
         if self.settings.value('auto_start_server', True, type=bool):
-            QTimer.singleShot(500, self.start_server)
+            QTimer.singleShot(1000, self.safe_start_server)
+    
+    def safe_start_server(self):
+        """안전한 서버 시작 (예외 처리 포함)"""
+        try:
+            self.start_server()
+        except Exception as e:
+            self.add_log(f'서버 자동 시작 실패: {e}')
     
     def init_ui(self):
-        """UI 초기화"""
+        """유저 인터페이스 초기화"""
         self.setWindowTitle(f'{APP_NAME} v{VERSION}')
-        self.setMinimumSize(700, 500)
+        self.setMinimumSize(800, 700)  # [v4.1] 최소 크기 증가
+        self.resize(850, 750)  # [v4.1] 기본 크기 설정
         self.setStyleSheet('''
             QMainWindow { background-color: #0F172A; }
             QWidget { color: #F8FAFC; font-family: 'Segoe UI', sans-serif; }
             QGroupBox { border: 1px solid #334155; border-radius: 8px; margin-top: 12px; padding: 16px; background-color: #1E293B; }
             QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 8px; color: #10B981; font-weight: bold; }
-            QPushButton { background-color: #10B981; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; }
+            QPushButton { background-color: #10B981; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; min-height: 20px; }
             QPushButton:hover { background-color: #059669; }
             QPushButton:disabled { background-color: #475569; color: #94A3B8; }
             QPushButton#stopBtn { background-color: #EF4444; }
             QPushButton#stopBtn:hover { background-color: #DC2626; }
             QPushButton#genCertBtn { background-color: #F59E0B; }
             QPushButton#genCertBtn:hover { background-color: #D97706; }
-            QLineEdit, QSpinBox { background-color: #1E293B; border: 1px solid #334155; border-radius: 4px; padding: 8px; color: #F8FAFC; }
+            QLineEdit, QSpinBox { background-color: #1E293B; border: 1px solid #334155; border-radius: 4px; padding: 8px; color: #F8FAFC; min-height: 20px; }
             QLineEdit:focus, QSpinBox:focus { border-color: #10B981; }
             QTextEdit { background-color: #0F172A; border: 1px solid #334155; border-radius: 4px; color: #94A3B8; font-family: Consolas, monospace; }
-            QCheckBox { color: #F8FAFC; }
-            QCheckBox::indicator { width: 18px; height: 18px; }
-            QCheckBox::indicator:checked { background-color: #10B981; border-radius: 3px; }
+            QCheckBox { color: #F8FAFC; spacing: 8px; padding: 4px 0; min-height: 24px; }
+            QCheckBox::indicator { width: 20px; height: 20px; border: 2px solid #475569; border-radius: 4px; background-color: #1E293B; }
+            QCheckBox::indicator:checked { background-color: #10B981; border-color: #10B981; image: none; }
+            QCheckBox::indicator:hover { border-color: #10B981; }
             QLabel { color: #94A3B8; }
             QTabWidget::pane { border: 1px solid #334155; border-radius: 8px; background-color: #1E293B; }
             QTabBar::tab { background-color: #1E293B; color: #94A3B8; padding: 10px 20px; border-top-left-radius: 6px; border-top-right-radius: 6px; margin-right: 2px; }
@@ -266,6 +283,7 @@ class ServerWindow(QMainWindow):
         # 옵션 그룹
         options_group = QGroupBox('옵션')
         options_layout = QVBoxLayout(options_group)
+        options_layout.setSpacing(12)  # [v4.1] 체크박스 간격 증가
         
         self.auto_start_check = QCheckBox('프로그램 시작 시 서버 자동 시작')
         self.auto_start_check.setChecked(True)
@@ -286,6 +304,7 @@ class ServerWindow(QMainWindow):
         # 접속 정보 그룹
         info_group = QGroupBox('접속 정보')
         info_layout = QVBoxLayout(info_group)
+        info_layout.setSpacing(10)  # [v4.1] 라벨 간격 증가
         
         hostname = socket.gethostname()
         try:
@@ -459,15 +478,16 @@ class ServerWindow(QMainWindow):
         if self.server_thread and self.server_thread.isRunning():
             return
         
-        # 데이터베이스 초기화
-        from app.models import init_db
-        init_db()
+        # [v4.1] GUI 모드에서는 gevent 비활성화 (PyQt6 충돌 방지)
+        import os
+        os.environ['SKIP_GEVENT_PATCH'] = '1'
         
         self.server_thread = ServerThread(
             port=self.port_spin.value(),
             use_https=self.https_check.isChecked()
         )
         self.server_thread.log_signal.connect(self.add_log)
+        self.server_thread.finished.connect(self.on_server_finished)  # [v4.1] 스레드 종료 핸들러
         self.server_thread.start()
         
         self.start_btn.setEnabled(False)
@@ -480,6 +500,16 @@ class ServerWindow(QMainWindow):
         self.add_log('서버가 시작되었습니다.')
         self.show_toast('서버가 시작되었습니다', 'success')
         self.tray_icon.showMessage(APP_NAME, '서버가 시작되었습니다.', QSystemTrayIcon.MessageIcon.Information, 2000)
+    
+    def on_server_finished(self):
+        """[v4.1] 서버 스레드 종료 시 UI 복구"""
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.port_spin.setEnabled(True)
+        self.https_check.setEnabled(True)
+        self.status_label.setText('⚪ 서버 중지됨')
+        self.status_label.setStyleSheet('font-size: 14px; color: #94A3B8;')
+        self.add_log('서버 스레드가 종료되었습니다.')
     
     def stop_server(self):
         if self.server_thread:
