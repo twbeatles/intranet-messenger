@@ -470,58 +470,59 @@ function cacheElements() {
 
 function setupEventListeners() {
     // 인증 관련
-    $('loginBtn').onclick = doLogin;
-    $('registerBtn').onclick = doRegister;
-    $('showRegister').onclick = showRegisterForm;
-    $('showLogin').onclick = showLoginForm;
+    if ($('loginBtn')) $('loginBtn').onclick = doLogin;
+    if ($('registerBtn')) $('registerBtn').onclick = doRegister;
+    if ($('showRegister')) $('showRegister').onclick = showRegisterForm;
+    if ($('showLogin')) $('showLogin').onclick = showLoginForm;
 
     // Enter 키로 로그인/회원가입
-    $('loginPassword').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
-    $('regNickname').onkeydown = e => { if (e.key === 'Enter') doRegister(); };
+    if ($('loginPassword')) $('loginPassword').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+    if ($('regNickname')) $('regNickname').onkeydown = e => { if (e.key === 'Enter') doRegister(); };
 
     // 메시지 전송
-    $('sendBtn').onclick = sendMessage;
-    $('messageInput').onkeydown = e => {
-        // 멘션 자동완성이 열려있으면 메시지 전송하지 않음
-        var mentionAc = $('mentionAutocomplete');
-        if (mentionAc && !mentionAc.classList.contains('hidden')) {
-            return; // 멘션 핸들러에서 처리
-        }
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    };
-    $('messageInput').oninput = handleTyping;
+    if ($('sendBtn')) $('sendBtn').onclick = sendMessage;
+    if ($('messageInput')) {
+        $('messageInput').onkeydown = e => {
+            var mentionAc = $('mentionAutocomplete');
+            if (mentionAc && !mentionAc.classList.contains('hidden')) {
+                return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        };
+        $('messageInput').oninput = handleTyping;
+    }
 
     // 이모지 & 파일
-    $('emojiBtn').onclick = () => $('emojiPicker').classList.toggle('active');
-    $('attachBtn').onclick = () => $('fileInput').click();
-    $('fileInput').onchange = handleFileUpload;
+    if ($('emojiBtn')) $('emojiBtn').onclick = () => $('emojiPicker').classList.toggle('active');
+    if ($('attachBtn')) $('attachBtn').onclick = () => $('fileInput').click();
+    if ($('fileInput')) $('fileInput').onchange = handleFileUpload;
 
     // 새 대화
-    $('newChatBtn').onclick = openNewChatModal;
-    $('closeNewChatModal').onclick = () => $('newChatModal').classList.remove('active');
-    $('createRoomBtn').onclick = createRoom;
+    if ($('newChatBtn')) $('newChatBtn').onclick = openNewChatModal;
+    if ($('closeNewChatModal')) $('closeNewChatModal').onclick = () => $('newChatModal').classList.remove('active');
+    if ($('createRoomBtn')) $('createRoomBtn').onclick = createRoom;
 
     // 초대
-    $('inviteBtn').onclick = openInviteModal;
-    $('closeInviteModal').onclick = () => $('inviteModal').classList.remove('active');
-    $('confirmInviteBtn').onclick = confirmInvite;
+    if ($('inviteBtn')) $('inviteBtn').onclick = openInviteModal;
+    if ($('closeInviteModal')) $('closeInviteModal').onclick = () => $('inviteModal').classList.remove('active');
+    if ($('confirmInviteBtn')) $('confirmInviteBtn').onclick = confirmInvite;
 
     // 대화방 설정
-    $('roomSettingsBtn').onclick = e => {
+    if ($('roomSettingsBtn')) $('roomSettingsBtn').onclick = e => {
         e.stopPropagation();
         $('roomSettingsMenu').classList.toggle('active');
     };
-    $('editRoomNameBtn').onclick = editRoomName;
-    $('pinRoomBtn').onclick = togglePinRoom;
-    $('muteRoomBtn').onclick = toggleMuteRoom;
-    $('viewMembersBtn').onclick = viewMembers;
+    if ($('editRoomNameBtn')) $('editRoomNameBtn').onclick = editRoomName;
+    if ($('pinRoomBtn')) $('pinRoomBtn').onclick = togglePinRoom;
+    if ($('muteRoomBtn')) $('muteRoomBtn').onclick = toggleMuteRoom;
+    if ($('viewMembersBtn')) $('viewMembersBtn').onclick = viewMembers;
 
     // 나가기 & 로그아웃
-    $('leaveRoomBtn').onclick = leaveRoom;
-    $('logoutBtn').onclick = logout;
+    if ($('leaveRoomBtn')) $('leaveRoomBtn').onclick = leaveRoom;
+    if ($('logoutBtn')) $('logoutBtn').onclick = logout;
 
 
     // 프로필 모달 이벤트 (null 체크 추가)
@@ -565,31 +566,37 @@ function setupEventListeners() {
         option.onclick = function () { setThemeColor(option.dataset.color); };
     });
 
+
     // 배경 옵션
     document.querySelectorAll('.bg-option').forEach(function (option) {
         option.onclick = function () { setChatBackground(option.dataset.bg); };
     });
 
     // 모바일 메뉴
-    $('mobileMenuBtn').onclick = function () { $('sidebar').classList.toggle('active'); };
+    if ($('mobileMenuBtn')) $('mobileMenuBtn').onclick = function () { $('sidebar').classList.toggle('active'); };
 
     // 검색
-    $('searchInput').oninput = handleSearch;
+    if ($('searchInput')) $('searchInput').oninput = handleSearch;
 
     // 글로벌 클릭 이벤트
     document.addEventListener('click', e => {
-        if (!e.target.closest('#emojiBtn') && !e.target.closest('#emojiPicker')) {
-            $('emojiPicker').classList.remove('active');
+        var emojiPicker = $('emojiPicker');
+        var roomSettingsMenu = $('roomSettingsMenu');
+        if (emojiPicker && !e.target.closest('#emojiBtn') && !e.target.closest('#emojiPicker')) {
+            emojiPicker.classList.remove('active');
         }
-        if (!e.target.closest('#roomSettingsMenu') && !e.target.closest('#roomSettingsBtn')) {
-            $('roomSettingsMenu').classList.remove('active');
+        if (roomSettingsMenu && !e.target.closest('#roomSettingsMenu') && !e.target.closest('#roomSettingsBtn')) {
+            roomSettingsMenu.classList.remove('active');
         }
-        // 컨텍스트 메뉴 닫기
         document.querySelectorAll('.message-context-menu').forEach(m => m.remove());
     });
 
     // 메시지 우클릭
-    $('messagesContainer').addEventListener('contextmenu', handleMessageContextMenu);
+    var msgContainer = $('messagesContainer');
+    if (msgContainer) {
+        msgContainer.addEventListener('contextmenu', handleMessageContextMenu);
+        msgContainer.addEventListener('scroll', handleMessagesScroll);
+    }
 
     // 드래그앤드롭 파일 업로드
     setupDragDrop();
@@ -600,8 +607,137 @@ function setupEventListeners() {
         scrollBtn.onclick = scrollToBottom;
     }
 
-    // 메시지 컨테이너 스크롤 감지
-    $('messagesContainer').addEventListener('scroll', handleMessagesScroll);
+    // ========================================
+    // [v4.0] 투표/파일/공지 버튼 (직접 바인딩)
+    // ========================================
+    // 투표 만들기 버튼
+    var createPollBtn2 = $('createPollBtn2');
+    if (createPollBtn2) {
+        createPollBtn2.onclick = function () {
+            if (typeof openPollModal === 'function') openPollModal();
+        };
+    }
+
+    // 파일 저장소 버튼
+    var viewFilesBtn = $('viewFilesBtn');
+    if (viewFilesBtn) {
+        viewFilesBtn.onclick = function () {
+            if (typeof openFilesModal === 'function') openFilesModal();
+        };
+    }
+
+    // 공지 보기 버튼
+    var viewPinsBtn = $('viewPinsBtn');
+    if (viewPinsBtn) {
+        viewPinsBtn.onclick = function () {
+            if (typeof loadPinnedMessages === 'function') loadPinnedMessages();
+            var banner = $('pinnedBanner');
+            if (banner) {
+                banner.classList.remove('hidden');
+                if (typeof showToast === 'function') showToast('공지사항을 표시합니다', 'info');
+            }
+        };
+    }
+
+    // 투표 모달 닫기/생성 버튼
+    var closePollModal = $('closePollModal');
+    if (closePollModal) closePollModal.onclick = function () { $('pollModal').classList.remove('active'); };
+
+    var createPollBtn = $('createPollBtn');
+    if (createPollBtn && typeof createPoll === 'function') createPollBtn.onclick = createPoll;
+
+    // 파일 모달 닫기
+    var closeFilesModal = $('closeFilesModal');
+    if (closeFilesModal) closeFilesModal.onclick = function () { $('filesModal').classList.remove('active'); };
+
+    // 관리자 설정
+    var adminSettingsBtn = $('adminSettingsBtn');
+    if (adminSettingsBtn && typeof openAdminModal === 'function') adminSettingsBtn.onclick = openAdminModal;
+
+    var closeAdminModal = $('closeAdminModal');
+    if (closeAdminModal) closeAdminModal.onclick = function () { $('adminModal').classList.remove('active'); };
+
+    // ========================================
+    // [v4.1] 프로필 탭 전환
+    // ========================================
+    var profileTabs = document.querySelectorAll('.modal-tab');
+    profileTabs.forEach(function (tab) {
+        tab.onclick = function () {
+            // 모든 탭 비활성화
+            profileTabs.forEach(function (t) { t.classList.remove('active'); });
+            tab.classList.add('active');
+
+            // 탭 콘텐츠 전환
+            var targetId = 'tab-' + tab.dataset.tab;
+            document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.remove('active'); });
+            var targetEl = document.getElementById(targetId);
+            if (targetEl) targetEl.classList.add('active');
+        };
+    });
+
+    // 비밀번호 변경 버튼
+    var changePasswordBtn = $('changePasswordBtn');
+    if (changePasswordBtn) {
+        changePasswordBtn.onclick = async function () {
+            var currentPw = $('currentPassword').value;
+            var newPw = $('newPassword').value;
+            var confirmPw = $('newPasswordConfirm').value;
+
+            if (!currentPw || !newPw) {
+                if (typeof showToast === 'function') showToast('모든 항목을 입력해주세요.', 'warning');
+                return;
+            }
+            if (newPw.length < 4) {
+                if (typeof showToast === 'function') showToast('새 비밀번호는 4자 이상이어야 합니다.', 'warning');
+                return;
+            }
+            if (newPw !== confirmPw) {
+                if (typeof showToast === 'function') showToast('새 비밀번호가 일치하지 않습니다.', 'warning');
+                return;
+            }
+
+            try {
+                var result = await api('/api/me/password', {
+                    method: 'PUT',
+                    body: JSON.stringify({ current_password: currentPw, new_password: newPw })
+                });
+                if (result.success) {
+                    if (typeof showToast === 'function') showToast('비밀번호가 변경되었습니다.', 'success');
+                    $('currentPassword').value = '';
+                    $('newPassword').value = '';
+                    $('newPasswordConfirm').value = '';
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') showToast(e.message || '비밀번호 변경 실패', 'error');
+            }
+        };
+    }
+
+    // 회원 탈퇴 버튼
+    var deleteAccountBtn = $('deleteAccountBtn');
+    if (deleteAccountBtn) {
+        deleteAccountBtn.onclick = async function () {
+            var confirmPw = $('deleteAccountPassword').value;
+            if (!confirmPw) {
+                if (typeof showToast === 'function') showToast('비밀번호를 입력해주세요.', 'warning');
+                return;
+            }
+            if (!confirm('정말 탈퇴하시겠습니까? 모든 데이터가 삭제됩니다.')) return;
+
+            try {
+                var result = await api('/api/me/delete', {
+                    method: 'DELETE',
+                    body: JSON.stringify({ password: confirmPw })
+                });
+                if (result.success) {
+                    alert('회원 탈퇴가 완료되었습니다.');
+                    location.reload();
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') showToast(e.message || '회원 탈퇴 실패', 'error');
+            }
+        };
+    }
 }
 
 // ============================================================================
@@ -2040,13 +2176,11 @@ function handleMessageContextMenu(e) {
     // 메뉴 아이템 구성
     let menuHtml = '';
 
-    // 1. 공통: 리액션, 공지(관리자만), 복사, 답장
+    // 1. 공통: 리액션, 공지(모두에게 표시, 권한은 서버에서 확인), 복사, 답장
     menuHtml += `<div class="context-menu-item" data-action="reaction">👍 리액션 추가</div>`;
 
-    // 관리자 권한 확인 (v4 기능)
-    if (typeof isCurrentUserAdmin !== 'undefined' && isCurrentUserAdmin) {
-        menuHtml += `<div class="context-menu-item" data-action="pin">📌 공지로 고정</div>`;
-    }
+    // v4.1: 공지로 고정 (모든 사용자에게 표시)
+    menuHtml += `<div class="context-menu-item" data-action="pin">📌 공지로 고정</div>`;
 
     menuHtml += `<div class="context-menu-item" data-action="copy">📋 복사</div>`;
     menuHtml += `<div class="context-menu-item" data-action="reply">↩️ 답장</div>`;
@@ -2068,11 +2202,8 @@ function handleMessageContextMenu(e) {
     if (reactionBtn) {
         reactionBtn.onclick = () => {
             menu.remove();
-            // 리액션 피커 표시 (v4 기능)
-            if (typeof renderReactionPicker === 'function') {
-                const btn = msgEl.querySelector('.message-action-btn') || msgEl; // 위치 기준점
-                renderReactionPicker(msgId, btn);
-            }
+            // [v4.1] 리액션 피커 팝업 표시
+            showReactionPicker(msgId, msgEl);
         };
     }
 
@@ -2081,8 +2212,11 @@ function handleMessageContextMenu(e) {
     if (pinBtn) {
         pinBtn.onclick = () => {
             menu.remove();
+            // [v4.1] 복호화된 메시지 내용을 공지로 사용
+            const bubble = msgEl.querySelector('.message-bubble');
+            const content = bubble ? bubble.textContent.trim() : '';
             if (typeof pinCurrentMessage === 'function') {
-                pinCurrentMessage(msgId);
+                pinCurrentMessage(msgId, content);
             }
         };
     }
@@ -2104,8 +2238,16 @@ function handleMessageContextMenu(e) {
     // 답장 버튼
     menu.querySelector('[data-action="reply"]').onclick = () => {
         if (msgEl._messageData) {
-            setReplyTo(msgEl._messageData);
-            elements.messageInput.focus();
+            // [v4.1] 복호화된 내용으로 답장 설정
+            const bubble = msgEl.querySelector('.message-bubble');
+            const content = bubble ? bubble.textContent.trim() : msgEl._messageData.content;
+
+            // 기존 데이터 복사 후 content만 업데이트
+            const replyData = Object.assign({}, msgEl._messageData);
+            replyData.content = content;
+
+            setReplyTo(replyData);
+            $('messageInput').focus();
         }
         menu.remove();
     };
@@ -2113,21 +2255,81 @@ function handleMessageContextMenu(e) {
     // 삭제 버튼
     const deleteBtn = menu.querySelector('[data-action="delete"]');
     if (deleteBtn) {
-        deleteBtn.onclick = async () => {
+        deleteBtn.onclick = () => {
             if (confirm('메시지를 삭제하시겠습니까?')) {
-                try {
-                    const result = await api(`/api/messages/${msgId}`, { method: 'DELETE' });
-                    if (result.success) {
-                        // UI 업데이트는 소켓 이벤트로 처리됨
-                    }
-                } catch (err) {
-                    console.error('삭제 실패:', err);
-                }
+                deleteMessage(msgId);
             }
             menu.remove();
         };
     }
 }
+
+// [v4.1] 리액션 피커 표시 함수
+function showReactionPicker(messageId, targetEl) {
+    // 기존 피커 제거
+    document.querySelectorAll('.reaction-picker-popup').forEach(e => e.remove());
+
+    const div = document.createElement('div');
+    div.className = 'reaction-picker-popup';
+
+    // 스타일 직접 적용 (CSS 의존성 줄임)
+    Object.assign(div.style, {
+        position: 'fixed',
+        zIndex: '10000',
+        backgroundColor: 'var(--bg-secondary)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '24px',
+        padding: '6px 10px',
+        boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+        display: 'flex',
+        gap: '4px',
+        animation: 'fadeIn 0.2s ease'
+    });
+
+    // [v4.1] 리액션 목록 로컬 정의 (스코프 문제 해결)
+    const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
+    div.innerHTML = quickReactions.map(emoji =>
+        `<button class="reaction-picker-btn" onclick="toggleReaction(${messageId}, '${emoji}'); this.parentElement.remove();"
+                 style="background:none; border:none; font-size:1.4rem; cursor:pointer; padding:4px; border-radius:50%; transition:transform 0.1s;">
+            ${emoji}
+        </button>`
+    ).join('');
+
+    // 호버 효과 추가
+    div.querySelectorAll('button').forEach(btn => {
+        btn.onmouseover = () => btn.style.transform = 'scale(1.2)';
+        btn.onmouseout = () => btn.style.transform = 'scale(1)';
+    });
+
+    document.body.appendChild(div);
+
+    // 위치 계산
+    const rect = targetEl.getBoundingClientRect();
+    const popupRect = div.getBoundingClientRect();
+
+    // 메시지 바로 위에 표시
+    let top = rect.top - popupRect.height - 8;
+    let left = rect.left;
+
+    // 화면 밖으로 나가면 위치 조정
+    if (top < 10) top = rect.bottom + 8;
+    if (left + popupRect.width > window.innerWidth - 10) left = window.innerWidth - popupRect.width - 10;
+
+    div.style.top = top + 'px';
+    div.style.left = left + 'px';
+
+    // 외부 클릭 시 닫기
+    setTimeout(() => {
+        document.addEventListener('click', function close(e) {
+            if (!div.contains(e.target)) {
+                div.remove();
+                document.removeEventListener('click', close);
+            }
+        });
+    }, 0);
+}
+
 
 
 // ============================================================================
@@ -2315,11 +2517,17 @@ var themeSettings = {
 };
 
 function initTheme() {
-    // localStorage에서 설정 로드
+    // localStorage에서 설정 로드 (기본값과 병합)
     var saved = localStorage.getItem('messengerTheme');
     if (saved) {
         try {
-            themeSettings = JSON.parse(saved);
+            var parsed = JSON.parse(saved);
+            // 기본값과 병합하여 누락된 속성 방지
+            themeSettings = {
+                mode: parsed.mode || 'dark',
+                color: parsed.color || 'emerald',
+                chatBg: parsed.chatBg || 'none'
+            };
         } catch (e) {
             console.error('테마 설정 로드 오류:', e);
         }
@@ -2353,25 +2561,41 @@ function saveThemeSettings() {
 }
 
 function updateSettingsUI() {
-    // 테마 모드 버튼
-    document.querySelectorAll('.theme-toggle-btn').forEach(function (btn) {
-        btn.classList.toggle('active', btn.dataset.theme === themeSettings.mode);
-    });
+    try {
+        // themeSettings가 없으면 기본값 사용
+        if (!themeSettings || typeof themeSettings !== 'object') {
+            themeSettings = { mode: 'dark', color: 'emerald', chatBg: 'none' };
+        }
 
-    // 색상 옵션
-    document.querySelectorAll('.color-option').forEach(function (option) {
-        option.classList.toggle('active', option.dataset.color === themeSettings.color);
-    });
+        // 테마 모드 버튼
+        document.querySelectorAll('.theme-toggle-btn').forEach(function (btn) {
+            if (btn && btn.dataset && themeSettings.mode) {
+                btn.classList.toggle('active', btn.dataset.theme === themeSettings.mode);
+            }
+        });
 
-    // 배경 옵션
-    document.querySelectorAll('.bg-option').forEach(function (option) {
-        option.classList.toggle('active', option.dataset.bg === themeSettings.chatBg);
-    });
+        // 색상 옵션
+        document.querySelectorAll('.color-option').forEach(function (option) {
+            if (option && option.dataset && themeSettings.color) {
+                option.classList.toggle('active', option.dataset.color === themeSettings.color);
+            }
+        });
+
+        // 배경 옵션
+        document.querySelectorAll('.bg-option').forEach(function (option) {
+            if (option && option.dataset && themeSettings.chatBg !== undefined) {
+                option.classList.toggle('active', option.dataset.bg === themeSettings.chatBg);
+            }
+        });
+    } catch (e) {
+        console.error('설정UI 업데이트 오류:', e);
+    }
 }
 
 function openSettingsModal() {
     updateSettingsUI();
-    $('settingsModal').classList.add('active');
+    var modal = $('settingsModal');
+    if (modal) modal.classList.add('active');
 }
 
 function closeSettingsModal() {
@@ -3264,6 +3488,17 @@ document.addEventListener('DOMContentLoaded', function () {
         $('pinnedBanner').classList.add('hidden');
     };
 
+    // [v4.1] 공지 보기 버튼
+    var viewPinsBtn = $('viewPinsBtn');
+    if (viewPinsBtn) viewPinsBtn.onclick = function () {
+        loadPinnedMessages();
+        var banner = $('pinnedBanner');
+        if (banner) {
+            banner.classList.remove('hidden');
+            showToast('공지사항을 표시합니다', 'info');
+        }
+    };
+
     // 드래프트 자동 저장
     var messageInput = $('messageInput');
     if (messageInput) {
@@ -3321,10 +3556,11 @@ document.addEventListener('DOMContentLoaded', () => {
             tabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
 
-            // 컨텐츠 전환
+            // 컨텐츠 전환 (null 체크 추가)
             const targetId = 'tab-' + tab.dataset.tab;
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.getElementById(targetId).classList.add('active');
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) targetEl.classList.add('active');
         };
     });
 

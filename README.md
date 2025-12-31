@@ -4,29 +4,33 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 
 ## ✨ v4.1 신규 기능
 
-### 🔒 계정 보안
-- 비밀번호 변경 (프로필 설정 > 계정 보안 탭)
-- 회원 탈퇴 기능
+### 👑 관리자 권한 이양
+- **자동 권한**: 채팅방 생성자가 자동으로 관리자가 됩니다.
+- **권한 이양**: '⚙️ > 👑 관리자 설정' 메뉴에서 멤버에게 관리자 권한을 부여하거나 해제할 수 있습니다.
+- **실시간 동기화**: 권한 변경 시 즉시 모든 클라이언트에 반영됩니다.
 
-### 📢 시스템 메시지
-- 방 이름 변경, 공지 등록 시 채팅창에 알림 표시
+### 📌 채팅 메시지 공지
+- **우클릭 공지**: 채팅 중인 메시지를 우클릭하여 "📌 공지로 고정"을 선택하면 즉시 상단 공지로 등록됩니다.
+- **평문 지원**: 암호화된 메시지도 복호화된 평문으로 깔끔하게 공지에 표시됩니다.
 
-### 🎨 UI 개선
-- 프로필 모달 탭 구조 개편
-- 글래스모피즘 효과, 커스텀 스크롤바
+### 🎨 UI/UX 개선
+- **리액션 피커**: 메시지 우클릭 > '리액션 추가' 시 직관적인 이모지 선택 팝업 제공
+- **보안 탭**: 프로필 설정에서 비밀번호 변경 및 회원 탈퇴 기능 제공
+- **시스템 알림**: 방 이름 변경, 공지 등록 등의 중요 이벤트를 채팅창 내 시스템 메시지로 표시
 
 ---
 
 ## 📌 v4.0 핵심 기능
-- 📌 공지사항 고정 | 📋 투표/설문 | 📁 파일 저장소 | 👑 관리자 권한
-- 👍 이모지 리액션 | 🔔 알림 세분화 | 🔍 고급 검색 | 💾 드래프트 저장
+- 📋 투표/설문 만들기 | 📁 드래그앤드롭 파일 공유
+- 💾 자동 임시저장 (Draft) | 🔍 고급 검색 (날짜/작성자/파일)
+- 🔔 읽음 확인 (Read Receipt) | ⌨️ 입력 중 표시 (Typing Indicator)
 
 ---
 
 ## 🔒 사내망 호환
-- ✅ 외부 CDN/API 없음 (완전 독립)
-- ✅ Socket.IO, CryptoJS 로컬 포함
-- ✅ SQLite 데이터베이스
+- ✅ **완전 독립 실행**: 외부 CDN이나 API 의존성 없음
+- ✅ **로컬 라이브러리**: Socket.IO, Crypto-JS 등 필수 라이브러리 내장
+- ✅ **데이터베이스**: 경량 SQLite 사용 (별도 DB 서버 불필요)
 
 ---
 
@@ -36,20 +40,15 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 pip install -r requirements.txt
 ```
 
-또는 개별 설치:
-```powershell
-pip install flask flask-socketio simple-websocket pycryptodome pyqt6 cryptography gevent gevent-websocket
-```
-
 ---
 
 ## 🚀 실행
 
 ```powershell
-# GUI 모드 (권장)
+# GUI 모드 (일반 사용자용)
 python server.py
 
-# CLI 모드 (고성능)
+# CLI 모드 (서버/대규모 접속용)
 python server.py --cli
 ```
 
@@ -57,11 +56,13 @@ python server.py --cli
 
 ## 📦 PyInstaller 빌드
 
+단일 실행 파일(.exe)로 배포하려면:
+
 ```powershell
 pyinstaller messenger.spec --clean
 ```
 
-결과물: `dist/사내메신저v4.1/`
+결과물: `dist/사내메신저v4.1/사내메신저v4.1.exe`
 
 ---
 
@@ -69,19 +70,18 @@ pyinstaller messenger.spec --clean
 
 ```
 사내 메신저/
-├── server.py            # 진입점
-├── config.py            # 설정
-├── messenger.spec       # PyInstaller
-├── requirements.txt     # 의존성
-├── app/                 # Flask 앱
-├── gui/                 # PyQt6 GUI
-├── static/              # CSS, JS
-├── templates/           # HTML
-└── certs/               # SSL 인증서
+├── server.py            # 메인 실행 파일
+├── config.py            # 환경 설정
+├── messenger.spec       # 빌드 설정 파일
+├── app/                 # 백엔드 로직 (Flask)
+├── gui/                 # 데스크탑 UI (PyQt6)
+├── static/              # 프론트엔드 (JS/CSS)
+└── templates/           # HTML 템플릿
 ```
 
 ---
 
-## ⚠️ 참고
-- GUI 모드: PyQt6 충돌 방지를 위해 gevent 자동 비활성화
-- CLI 모드: gevent 활성화로 수백 명 동시 접속 지원
+## ⚠️ 기술 참고사항
+- **암호화**: 모든 메시지는 AES-256로 암호화되어 전송 및 저장됩니다.
+- **GUI 모드**: PyQt6 이벤트 루프 충돌 방지를 위해 `gevent` 몽키 패칭이 비활성화됩니다.
+- **CLI 모드**: 고성능 처리를 위해 `gevent` 비동기 라이브러리를 완전하게 활용합니다.

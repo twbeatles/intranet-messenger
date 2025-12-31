@@ -441,6 +441,10 @@ def register_routes(app):
         if not is_room_member(room_id, session['user_id']):
             return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
+        # [v4.1] 관리자만 공지 등록 가능
+        if not is_room_admin(room_id, session['user_id']):
+            return jsonify({'error': '관리자만 공지를 등록할 수 있습니다.'}), 403
+        
         data = request.json
         message_id = data.get('message_id')
         content = sanitize_input(data.get('content', ''), max_length=500)
