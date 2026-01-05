@@ -971,3 +971,33 @@
 2025-12-31 22:42:10,114 - INFO - 127.0.0.1 - - [31/Dec/2025 22:42:10] "POST /api/messages/22/reactions HTTP/1.1" 200 -
 2025-12-31 22:42:12,128 - INFO - 127.0.0.1 - - [31/Dec/2025 22:42:12] "POST /api/messages/22/reactions HTTP/1.1" 200 -
 2025-12-31 22:42:26,946 - INFO - 127.0.0.1 - - [31/Dec/2025 22:42:26] "GET /socket.io/?EIO=4&transport=websocket&sid=ynPz4QzZ7Tt8zIi8AAAC HTTP/1.1" 200 -
+2026-01-05 13:26:10,563 - INFO - 데이터베이스 초기화 완료
+2026-01-05 13:26:10,623 - INFO - threading 비동기 모드 활성화 (동시 접속 제한적)
+2026-01-05 13:26:10,624 - INFO - Socket.IO 초기화 완료 (모드: threading)
+2026-01-05 13:26:10,681 - INFO - 데이터베이스 초기화 완료
+2026-01-05 13:26:10,681 - INFO - 사내 메신저 서버 v4.1 앱 초기화 완료
+2026-01-05 13:26:10,725 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.17:5000
+2026-01-05 13:26:10,725 - INFO - [33mPress CTRL+C to quit[0m
+2026-01-05 13:26:50,128 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "GET / HTTP/1.1" 200 -
+2026-01-05 13:26:50,358 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "GET /static/css/style.css HTTP/1.1" 200 -
+2026-01-05 13:26:50,403 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "GET /static/js/storage.js HTTP/1.1" 200 -
+2026-01-05 13:26:50,406 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "GET /static/js/notification.js HTTP/1.1" 200 -
+2026-01-05 13:26:50,443 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "GET /static/js/app.js HTTP/1.1" 200 -
+2026-01-05 13:26:50,446 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "GET /static/js/socket.io.min.js HTTP/1.1" 200 -
+2026-01-05 13:26:50,448 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "GET /static/js/crypto-js.min.js HTTP/1.1" 200 -
+2026-01-05 13:26:50,768 - INFO - 127.0.0.1 - - [05/Jan/2026 13:26:50] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-01-05 13:27:20,587 - INFO - 127.0.0.1 - - [05/Jan/2026 13:27:20] "[31m[1mGET /api/users/online HTTP/1.1[0m" 401 -
+2026-01-05 13:32:49,304 - INFO - 데이터베이스 초기화 완료
+2026-01-05 13:33:03,048 - INFO - 데이터베이스 초기화 완료
+2026-01-05 13:33:03,090 - INFO - threading 비동기 모드 활성화 (동시 접속 제한적)
+2026-01-05 13:33:03,090 - INFO - Socket.IO 초기화 완료 (모드: threading)
+2026-01-05 13:33:03,114 - INFO - 데이터베이스 초기화 완료
+2026-01-05 13:33:03,115 - INFO - 사내 메신저 서버 v4.1 앱 초기화 완료
+2026-01-05 13:33:03,145 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.17:5000
+2026-01-05 13:33:03,145 - INFO - [33mPress CTRL+C to quit[0m

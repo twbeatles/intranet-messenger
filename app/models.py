@@ -250,6 +250,17 @@ def init_db():
     except Exception as e:
         logger.debug(f"Role column migration: {e}")
     
+    # [v4.1] 성능 최적화를 위한 인덱스 추가
+    try:
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_room_id ON messages(room_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_members_user_id ON room_members(user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_members_room_id ON room_members(room_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id)')
+        logger.debug("Database indexes created/verified")
+    except Exception as e:
+        logger.debug(f"Index creation: {e}")
+    
     conn.commit()
     conn.close()
     logger.info("데이터베이스 초기화 완료")

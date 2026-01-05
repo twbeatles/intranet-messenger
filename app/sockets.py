@@ -27,14 +27,42 @@ stats_lock = Lock()
 # 사용자별 캐시 (닉네임, 방 목록)
 user_cache = {}  # {user_id: {'nickname': str, 'rooms': [int], 'updated': float}}
 cache_lock = Lock()
+MAX_CACHE_SIZE = 1000  # [v4.1] 최대 캐시 크기
+CACHE_TTL = 300  # [v4.1] 캐시 유효 시간 (5분)
+
+
+def cleanup_old_cache():
+    """오래된 캐시 항목 정리 (메모리 누수 방지)"""
+    current_time = time.time()
+    expired_keys = []
+    
+    with cache_lock:
+        # 10분 이상 된 캐시 항목 식별
+        for user_id, data in user_cache.items():
+            if current_time - data.get('updated', 0) > 600:  # 10분
+                expired_keys.append(user_id)
+        
+        # 만료된 항목 삭제
+        for key in expired_keys:
+            del user_cache[key]
+        
+        # 캐시 크기 제한 (FIFO 방식)
+        if len(user_cache) > MAX_CACHE_SIZE:
+            sorted_items = sorted(user_cache.items(), key=lambda x: x[1].get('updated', 0))
+            to_remove = len(user_cache) - MAX_CACHE_SIZE
+            for i in range(to_remove):
+                del user_cache[sorted_items[i][0]]
+    
+    if expired_keys:
+        logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
 
 
 def get_user_room_ids(user_id):
     """사용자의 방 ID 목록 (캐시 사용)"""
     with cache_lock:
         cached = user_cache.get(user_id)
-        # 캐시가 있고 5분 이내면 사용
-        if cached and (time.time() - cached.get('updated', 0)) < 300:
+        # 캐시가 있고 TTL 이내면 사용
+        if cached and (time.time() - cached.get('updated', 0)) < CACHE_TTL:
             return cached.get('rooms', [])
     
     # 캐시 없거나 만료되면 DB에서 조회
@@ -43,6 +71,10 @@ def get_user_room_ids(user_id):
         room_ids = [r['id'] for r in rooms]
         
         with cache_lock:
+            # 캐시 정리 (주기적으로)
+            if len(user_cache) > MAX_CACHE_SIZE // 2:
+                cleanup_old_cache()
+            
             if user_id not in user_cache:
                 user_cache[user_id] = {}
             user_cache[user_id]['rooms'] = room_ids

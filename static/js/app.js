@@ -725,7 +725,7 @@ function setupEventListeners() {
             if (!confirm('정말 탈퇴하시겠습니까? 모든 데이터가 삭제됩니다.')) return;
 
             try {
-                var result = await api('/api/me/delete', {
+                var result = await api('/api/me', {
                     method: 'DELETE',
                     body: JSON.stringify({ password: confirmPw })
                 });
@@ -1010,15 +1010,16 @@ function closeProfileModal() {
 
 function updateProfilePreview() {
     var preview = $('profileImagePreview');
-    var initial = $('profileInitial');
+    if (!preview) return;
 
-    if (currentUser.profile_image) {
+    if (currentUser && currentUser.profile_image) {
         preview.innerHTML = '<img src="/uploads/' + currentUser.profile_image + '" alt="프로필">';
         preview.classList.add('has-image');
     } else {
-        preview.innerHTML = '<span id="profileInitial">' + (currentUser.nickname ? currentUser.nickname[0].toUpperCase() : '?') + '</span>';
+        var displayName = (currentUser && currentUser.nickname) ? currentUser.nickname : '?';
+        preview.innerHTML = '<span id="profileInitial">' + displayName[0].toUpperCase() + '</span>';
         preview.classList.remove('has-image');
-        preview.style.background = getUserColor(currentUser.id);
+        preview.style.background = getUserColor(currentUser ? currentUser.id : 0);
     }
 }
 
