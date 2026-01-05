@@ -704,85 +704,103 @@ def create_message(room_id, sender_id, content, message_type='text', file_path=N
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO messages (room_id, sender_id, content, encrypted, message_type, file_path, file_name, reply_to, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (room_id, sender_id, content, 1 if encrypted else 0, message_type, file_path, file_name, reply_to, now_kst))
-    message_id = cursor.lastrowid
-    conn.commit()
-    
-    cursor.execute('''
-        SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image
-        FROM messages m
-        JOIN users u ON m.sender_id = u.id
-        WHERE m.id = ?
-    ''', (message_id,))
-    message = cursor.fetchone()
-    conn.close()
-    
-    server_stats['total_messages'] += 1
-    
-    return dict(message)
+    try:
+        cursor.execute('''
+            INSERT INTO messages (room_id, sender_id, content, encrypted, message_type, file_path, file_name, reply_to, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (room_id, sender_id, content, 1 if encrypted else 0, message_type, file_path, file_name, reply_to, now_kst))
+        message_id = cursor.lastrowid
+        conn.commit()
+        
+        cursor.execute('''
+            SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image
+            FROM messages m
+            JOIN users u ON m.sender_id = u.id
+            WHERE m.id = ?
+        ''', (message_id,))
+        message = cursor.fetchone()
+        
+        server_stats['total_messages'] += 1
+        
+        return dict(message) if message else None
+    except Exception as e:
+        logger.error(f"Create message error: {e}")
+        return None
+    finally:
+        conn.close()
 
 
 def get_room_messages(room_id, limit=50, before_id=None):
     """대화방 메시지 조회"""
     conn = get_db()
     cursor = conn.cursor()
-    
-    if before_id:
-        cursor.execute('''
-            SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image,
-                   rm.content as reply_content, ru.nickname as reply_sender
-            FROM messages m
-            JOIN users u ON m.sender_id = u.id
-            LEFT JOIN messages rm ON m.reply_to = rm.id
-            LEFT JOIN users ru ON rm.sender_id = ru.id
-            WHERE m.room_id = ? AND m.id < ?
-            ORDER BY m.id DESC
-            LIMIT ?
-        ''', (room_id, before_id, limit))
-    else:
-        cursor.execute('''
-            SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image,
-                   rm.content as reply_content, ru.nickname as reply_sender
-            FROM messages m
-            JOIN users u ON m.sender_id = u.id
-            LEFT JOIN messages rm ON m.reply_to = rm.id
-            LEFT JOIN users ru ON rm.sender_id = ru.id
-            WHERE m.room_id = ?
-            ORDER BY m.id DESC
-            LIMIT ?
-        ''', (room_id, limit))
-    
-    messages = cursor.fetchall()
-    conn.close()
-    return [dict(m) for m in reversed(messages)]
+    try:
+        if before_id:
+            cursor.execute('''
+                SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image,
+                       rm.content as reply_content, ru.nickname as reply_sender
+                FROM messages m
+                JOIN users u ON m.sender_id = u.id
+                LEFT JOIN messages rm ON m.reply_to = rm.id
+                LEFT JOIN users ru ON rm.sender_id = ru.id
+                WHERE m.room_id = ? AND m.id < ?
+                ORDER BY m.id DESC
+                LIMIT ?
+            ''', (room_id, before_id, limit))
+        else:
+            cursor.execute('''
+                SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image,
+                       rm.content as reply_content, ru.nickname as reply_sender
+                FROM messages m
+                JOIN users u ON m.sender_id = u.id
+                LEFT JOIN messages rm ON m.reply_to = rm.id
+                LEFT JOIN users ru ON rm.sender_id = ru.id
+                WHERE m.room_id = ?
+                ORDER BY m.id DESC
+                LIMIT ?
+            ''', (room_id, limit))
+        
+        messages = cursor.fetchall()
+        return [dict(m) for m in reversed(messages)]
+    except Exception as e:
+        logger.error(f"Get room messages error: {e}")
+        return []
+    finally:
+        conn.close()
 
 
 def update_last_read(room_id, user_id, message_id):
     """마지막 읽은 메시지 업데이트"""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE room_members SET last_read_message_id = ?
-        WHERE room_id = ? AND user_id = ? AND last_read_message_id < ?
-    ''', (message_id, room_id, user_id, message_id))
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute('''
+            UPDATE room_members SET last_read_message_id = ?
+            WHERE room_id = ? AND user_id = ? AND last_read_message_id < ?
+        ''', (message_id, room_id, user_id, message_id))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Update last read error: {e}")
+    finally:
+        conn.close()
 
 
 def get_unread_count(room_id, message_id):
     """메시지를 읽지 않은 사람 수"""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT COUNT(*) FROM room_members
-        WHERE room_id = ? AND last_read_message_id < ?
-    ''', (room_id, message_id))
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count
+    try:
+        cursor.execute('''
+            SELECT COUNT(*) FROM room_members
+            WHERE room_id = ? AND last_read_message_id < ?
+        ''', (room_id, message_id))
+        count = cursor.fetchone()[0]
+        return count
+    except Exception as e:
+        logger.error(f"Get unread count error: {e}")
+        return 0
+    finally:
+        conn.close()
 
 
 def delete_message(message_id, user_id):

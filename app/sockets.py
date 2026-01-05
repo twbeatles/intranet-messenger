@@ -252,8 +252,11 @@ def register_socket_events(socketio):
                 return
             
             is_typing = data.get('is_typing', False)
-            # 세션에서 닉네임 가져오기 (DB 조회 제거)
+            # 세션에서 닉네임 가져오기 (없으면 DB 조회)
             nickname = session.get('nickname', '')
+            if not nickname:
+                user = get_user_by_id(session['user_id'])
+                nickname = user.get('nickname', '사용자') if user else '사용자'
             
             emit('user_typing', {
                 'room_id': room_id,

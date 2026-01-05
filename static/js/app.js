@@ -212,6 +212,8 @@ function updateReplyPreview() {
 // ============================================================================
 var mentionUsers = [];
 var mentionSelectedIndex = 0;
+var cachedRoomMembers = null;
+var cachedRoomId = null;
 
 function setupMention() {
     var input = document.getElementById('messageInput');
@@ -255,35 +257,48 @@ function showMentionAutocomplete(query) {
     var autocomplete = document.getElementById('mentionAutocomplete');
     if (!autocomplete || !currentRoom) return;
 
+    // 캐시된 멤버가 있고 같은 방이면 캐시 사용
+    if (cachedRoomMembers && cachedRoomId === currentRoom.id) {
+        filterAndShowMentions(query, cachedRoomMembers, autocomplete);
+        return;
+    }
+
     fetch('/api/rooms/' + currentRoom.id + '/info')
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (!data.members) return;
 
-            mentionUsers = data.members.filter(function (m) {
-                // 대소문자 무시, 한글 포함 검색
-                return m.id !== currentUser.id && m.nickname.toLowerCase().includes(query.toLowerCase());
-            }).slice(0, 5);
+            // 멤버 목록 캐싱
+            cachedRoomMembers = data.members;
+            cachedRoomId = currentRoom.id;
 
-            if (mentionUsers.length === 0) {
-                hideMentionAutocomplete();
-                return;
-            }
-
-            mentionSelectedIndex = 0;
-            autocomplete.innerHTML = mentionUsers.map(function (user, i) {
-                return '<div class="mention-item' + (i === 0 ? ' selected' : '') + '" data-user-id="' + user.id + '">' +
-                    '<div class="mention-item-avatar">' + ((user.nickname && user.nickname.length > 0) ? user.nickname[0].toUpperCase() : '?') + '</div>' +
-                    '<div class="mention-item-name">' + escapeHtml(user.nickname) + '</div>' +
-                    '</div>';
-            }).join('');
-
-            autocomplete.querySelectorAll('.mention-item').forEach(function (item, idx) {
-                item.onclick = function () { selectMention(mentionUsers[idx]); };
-            });
-
-            autocomplete.classList.remove('hidden');
+            filterAndShowMentions(query, data.members, autocomplete);
         });
+}
+
+function filterAndShowMentions(query, members, autocomplete) {
+    mentionUsers = members.filter(function (m) {
+        return m.id !== currentUser.id && m.nickname.toLowerCase().includes(query.toLowerCase());
+    }).slice(0, 5);
+
+    if (mentionUsers.length === 0) {
+        hideMentionAutocomplete();
+        return;
+    }
+
+    mentionSelectedIndex = 0;
+    autocomplete.innerHTML = mentionUsers.map(function (user, i) {
+        return '<div class="mention-item' + (i === 0 ? ' selected' : '') + '" data-user-id="' + user.id + '">' +
+            '<div class="mention-item-avatar">' + ((user.nickname && user.nickname.length > 0) ? user.nickname[0].toUpperCase() : '?') + '</div>' +
+            '<div class="mention-item-name">' + escapeHtml(user.nickname) + '</div>' +
+            '</div>';
+    }).join('');
+
+    autocomplete.querySelectorAll('.mention-item').forEach(function (item, idx) {
+        item.onclick = function () { selectMention(mentionUsers[idx]); };
+    });
+
+    autocomplete.classList.remove('hidden');
 }
 
 function hideMentionAutocomplete() {
@@ -752,18 +767,26 @@ function scrollToBottom() {
     });
 }
 
-function handleMessagesScroll() {
+// throttled loadRooms for performance
+var throttledLoadRooms = throttle(function () {
+    loadRooms();
+}, 2000);
+
+// throttled 스크롤 핸들러
+var throttledScrollHandler = throttle(function () {
     var container = $('messagesContainer');
     var scrollBtn = $('scrollToBottomBtn');
     if (!container || !scrollBtn) return;
-
-    // 스크롤이 맨 아래에서 150px 이상 떨어져 있으면 버튼 표시
     var scrollFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (scrollFromBottom > 150) {
         scrollBtn.classList.remove('hidden');
     } else {
         scrollBtn.classList.add('hidden');
     }
+}, 100);
+
+function handleMessagesScroll() {
+    throttledScrollHandler();
 }
 
 // ============================================================================
@@ -1258,11 +1281,17 @@ async function loadRooms() {
     try {
         const result = await api('/api/rooms');
         rooms = result;
+        window.rooms = rooms;  // 전역 노출 (notification.js에서 사용)
         renderRoomList();
     } catch (err) {
         console.error('대화방 로드 실패:', err);
     }
 }
+
+// 전역 함수 노출 (notification.js에서 사용)
+window.openRoom = function (room) {
+    openRoom(room);
+};
 
 function renderRoomList() {
     elements.roomList.innerHTML = rooms.map(function (room) {
@@ -1309,6 +1338,9 @@ async function openRoom(room) {
     }
 
     currentRoom = room;
+    // 대화방 변경 시 멤버 캐시 초기화
+    cachedRoomMembers = null;
+    cachedRoomId = null;
     socket.emit('join_room', { room_id: room.id });
 
     elements.emptyState.classList.add('hidden');
@@ -1515,15 +1547,25 @@ function appendMessage(msg) {
     // sender_name null 체크
     var senderName = msg.sender_name || '사용자';
 
+    // 읽음 표시 UI 개선 (보낸 메시지에만 표시)
+    var readIndicatorHtml = '';
+    if (isSent) {
+        if (msg.unread_count === 0) {
+            readIndicatorHtml = '<div class="message-read-indicator all-read"><span class="read-icon">✓✓</span>모두 읽음</div>';
+        } else if (msg.unread_count !== undefined && msg.unread_count > 0) {
+            readIndicatorHtml = '<div class="message-read-indicator"><span class="read-icon">✓</span>' + msg.unread_count + '명 안읽음</div>';
+        }
+    }
+
     div.innerHTML = avatarHtml +
         '<div class="message-content">' +
         '<div class="message-sender">' + escapeHtml(senderName) + '</div>' +
         replyHtml +
         content +
         '<div class="message-meta">' +
-        unreadHtml +
         '<span>' + formatTime(msg.created_at) + '</span>' +
         '</div>' +
+        readIndicatorHtml +
         '</div>' +
         actionsHtml;
 
@@ -1742,7 +1784,8 @@ function handleNewMessage(msg) {
             MessengerNotification.show(msg.sender_name, decrypted, msg.room_id);
         }
     }
-    loadRooms();
+    // throttled loadRooms to prevent performance issues
+    throttledLoadRooms();
 }
 
 function handleReadUpdated(data) {

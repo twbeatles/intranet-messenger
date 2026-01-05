@@ -357,25 +357,26 @@ body {
 /* 사이드바 */
 .sidebar {
     width: 340px;
-    background: rgba(2, 6, 23, 0.8);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: rgba(2, 6, 23, 0.9);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     display: flex;
     flex-direction: column;
     border-right: 1px solid rgba(255, 255, 255, 0.08);
     position: relative;
+    will-change: transform;
 }
 
 .sidebar::before {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(16, 185, 129, 0.03) 0%, transparent 100%);
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.02) 0%, transparent 100%);
     pointer-events: none;
 }
 
 [data-theme="light"] .sidebar {
-    background: rgba(226, 232, 240, 0.85);
+    background: rgba(226, 232, 240, 0.92);
 }
 
 .sidebar-header {
@@ -840,19 +841,17 @@ body {
 .message-bubble {
     padding: 12px 16px;
     border-radius: 18px 18px 18px 6px;
-    background: rgba(30, 41, 59, 0.8);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: rgba(30, 41, 59, 0.85);
     word-break: break-word;
     line-height: 1.6;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
     border: 1px solid rgba(255, 255, 255, 0.05);
-    transition: all 0.2s ease;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .message-bubble:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
 }
 
 .message.sent .message-bubble {
@@ -1098,22 +1097,23 @@ body {
 }
 
 .modal {
-    background: rgba(30, 41, 59, 0.9);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: rgba(30, 41, 59, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-radius: 20px;
     padding: 28px;
     width: 100%;
     max-width: 480px;
-    max-height: 80vh;
+    max-height: 85vh;
     overflow-y: auto;
+    overflow-x: hidden;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="light"] .modal {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.12);
 }
 
 .modal-header {
@@ -1483,6 +1483,13 @@ body {
 /* ============================================
    설정 모달 스타일
    ============================================ */
+.settings-content {
+    max-height: calc(85vh - 140px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px;
+}
+
 .settings-section {
     margin-bottom: 24px;
 }
@@ -2942,7 +2949,8 @@ body {
     align-items: center;
     justify-content: center;
     font-size: 80px;
-    animation: float 3s ease-in-out infinite;
+    animation: float 4s ease-in-out infinite;
+    will-change: transform;
 }
 
 @keyframes float {
@@ -2953,7 +2961,7 @@ body {
     }
 
     50% {
-        transform: translateY(-10px);
+        transform: translateY(-8px);
     }
 }
 
@@ -3951,26 +3959,26 @@ body {
 
 /* 채팅 헤더 글래스모피즘 */
 .chat-header {
-    background: rgba(15, 23, 42, 0.7);
-    backdrop-filter: blur(15px);
-    -webkit-backdrop-filter: blur(15px);
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="light"] .chat-header {
-    background: rgba(248, 250, 252, 0.85);
+    background: rgba(248, 250, 252, 0.92);
 }
 
 /* 채팅 입력 컨테이너 개선 */
 .chat-input-container {
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(15px);
-    -webkit-backdrop-filter: blur(15px);
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="light"] .chat-input-container {
-    background: rgba(248, 250, 252, 0.9);
+    background: rgba(248, 250, 252, 0.95);
 }
 
 /* 텍스트 선택 스타일 */
@@ -4108,4 +4116,75 @@ html {
 
 .emoji-btn:active {
     transform: scale(0.9);
+}
+
+/* ============================================
+   검색 하이라이트 스타일
+   ============================================ */
+.search-highlight {
+    background: linear-gradient(120deg, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.5) 100%);
+    padding: 1px 4px;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-weight: 600;
+    animation: highlightPulse 1s ease-out;
+}
+
+@keyframes highlightPulse {
+    0% {
+        background: rgba(16, 185, 129, 0.8);
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.4);
+    }
+
+    100% {
+        background: rgba(16, 185, 129, 0.3);
+        box-shadow: none;
+    }
+}
+
+/* ============================================
+   읽음 표시 UI
+   ============================================ */
+.message-read-indicator {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    opacity: 0.8;
+}
+
+.message-read-indicator .read-icon {
+    font-size: 13px;
+}
+
+.message-read-indicator.all-read {
+    color: var(--primary);
+}
+
+.message-read-indicator.all-read .read-icon {
+    color: var(--primary);
+}
+
+.message.sent .message-read-indicator {
+    justify-content: flex-end;
+}
+
+/* 채팅 내 검색 하이라이트된 메시지 */
+.message.highlighted {
+    animation: messageHighlight 2s ease-out;
+}
+
+@keyframes messageHighlight {
+
+    0%,
+    30% {
+        background: rgba(16, 185, 129, 0.2);
+        border-radius: 12px;
+    }
+
+    100% {
+        background: transparent;
+    }
 }

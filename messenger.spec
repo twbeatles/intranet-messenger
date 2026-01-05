@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 # ============================================================================
-# 사내 메신저 v4.2 PyInstaller Spec (경량화 최적화)
+# 사내 메신저 v4.3 PyInstaller Spec (경량화 최적화)
 # 
 # 빌드: pyinstaller messenger.spec --clean
-# 결과: dist/사내메신저v4.2/사내메신저v4.2.exe
+# 결과: dist/사내메신저v4.3/사내메신저v4.3.exe
 # ============================================================================
 
 import os
@@ -20,13 +20,13 @@ a = Analysis(
     pathex=[BASE_PATH],
     binaries=[],
     datas=[
-        # 필수 리소스만 포함
+        # 필수 리소스만 포함 (경량화)
         ('static', 'static'),
         ('templates', 'templates'),
         ('app', 'app'),
         ('gui', 'gui'),
-        ('certs', 'certs'),
         ('config.py', '.'),
+        # certs 폴더가 있는 경우에만 포함
     ],
     hiddenimports=[
         # ========================================
@@ -56,7 +56,7 @@ a = Analysis(
         'Crypto.Util.Padding',
         
         # ========================================
-        # PyQt6 핵심 모듈
+        # PyQt6 핵심 모듈만
         # ========================================
         'PyQt6',
         'PyQt6.QtCore',
@@ -69,15 +69,19 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         # ========================================
-        # 대형 불필요 라이브러리
+        # 대형 불필요 라이브러리 (★ 용량 절감 핵심)
         # ========================================
-        'matplotlib', 'numpy', 'pandas', 'scipy',
-        'tkinter', '_tkinter', 'tk',
+        'matplotlib', 'numpy', 'pandas', 'scipy', 'sklearn',
+        'tensorflow', 'torch', 'keras',
+        'tkinter', '_tkinter', 'tk', 'tcl',
         'cv2', 'PIL', 'pillow', 'Pillow',
-        'IPython', 'notebook', 'jupyter',
-        'pytest', 'unittest', 'doctest',
+        'IPython', 'notebook', 'jupyter', 'nbconvert', 'nbformat',
+        'pytest', 'unittest', 'doctest', 'nose',
         'setuptools', 'pip', 'wheel',
+        'sphinx', 'docutils', 'pygments',
         'xml.etree.ElementTree',
+        'email', 'html', 'http.server',
+        'multiprocessing.popen_spawn_win32',
         
         # ========================================
         # PyQt5/PySide (충돌 방지)
@@ -85,7 +89,7 @@ a = Analysis(
         'PyQt5', 'PySide2', 'PySide6',
         
         # ========================================
-        # PyQt6 미사용 모듈 (경량화 핵심)
+        # PyQt6 미사용 모듈 (★ 경량화 핵심)
         # ========================================
         'PyQt6.Qt3DAnimation', 'PyQt6.Qt3DCore', 'PyQt6.Qt3DExtras',
         'PyQt6.Qt3DInput', 'PyQt6.Qt3DLogic', 'PyQt6.Qt3DRender',
@@ -96,13 +100,13 @@ a = Analysis(
         'PyQt6.QtNfc', 'PyQt6.QtOpenGL', 'PyQt6.QtOpenGLWidgets',
         'PyQt6.QtPdf', 'PyQt6.QtPdfWidgets',
         'PyQt6.QtPositioning', 'PyQt6.QtPrintSupport',
-        'PyQt6.QtQml', 'PyQt6.QtQuick', 'PyQt6.QtQuickWidgets',
+        'PyQt6.QtQml', 'PyQt6.QtQuick', 'PyQt6.QtQuickWidgets', 'PyQt6.QtQuick3D',
         'PyQt6.QtRemoteObjects', 'PyQt6.QtSensors', 'PyQt6.QtSerialPort',
         'PyQt6.QtSpatialAudio', 'PyQt6.QtSql', 'PyQt6.QtSvg', 'PyQt6.QtSvgWidgets',
         'PyQt6.QtTest', 'PyQt6.QtTextToSpeech',
         'PyQt6.QtWebChannel', 'PyQt6.QtWebEngine', 'PyQt6.QtWebEngineCore',
         'PyQt6.QtWebEngineWidgets', 'PyQt6.QtWebSockets',
-        'PyQt6.QtXml',
+        'PyQt6.QtXml', 'PyQt6.QtVirtualKeyboard',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -127,7 +131,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='사내메신저v4.2',
+    name='사내메신저v4.3',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,  # Windows에서는 strip 비활성화
@@ -161,6 +165,8 @@ coll = COLLECT(
         'MSVCP*.dll',
         'api-ms-*.dll',
         'ucrtbase.dll',
+        '_ssl.pyd',
+        '_hashlib.pyd',
     ],
-    name='사내메신저v4.2',
+    name='사내메신저v4.3',
 )

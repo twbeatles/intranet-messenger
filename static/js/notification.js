@@ -51,10 +51,10 @@ const MessengerNotification = {
                 notification.close();
 
                 // 대화방 열기 (app.js의 함수 호출)
-                if (window.rooms) {
+                if (window.rooms && window.openRoom) {
                     const room = window.rooms.find(r => r.id === roomId);
-                    if (room && typeof openRoom === 'function') {
-                        openRoom(room);
+                    if (room) {
+                        window.openRoom(room);
                     }
                 }
             };
