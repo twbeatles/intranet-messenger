@@ -5,6 +5,29 @@
 // ============================================================================
 // 성능 최적화 유틸리티
 // ============================================================================
+// [v4.22] Missing escapeHtml helper
+function escapeHtml(text) {
+    if (typeof text !== 'string') return text;
+    var map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, function (m) { return map[m]; });
+}
+
+// [v4.25] Hoisted helper function
+function $(id) {
+    try {
+        return document.getElementById(id);
+    } catch (e) {
+        return null; // Safety for non-browser envs
+    }
+}
+
+
 function debounce(func, wait) {
     var timeout;
     return function () {
@@ -14,6 +37,16 @@ function debounce(func, wait) {
             func.apply(context, args);
         }, wait);
     };
+}
+
+
+
+
+
+// [v4.24] Interval Manager
+var activeIntervals = [];
+function registerInterval(id) {
+    activeIntervals.push(id);
 }
 
 function throttle(func, limit) {
@@ -444,7 +477,7 @@ let todayDividerShown = false;
 const emojis = ['😀', '😂', '😊', '😍', '🥰', '😎', '🤔', '😅', '😭', '😤', '👍', '👎', '❤️', '🔥', '✨', '🎉', '👏', '🙏', '💪', '🤝', '👋', '✅', '❌', '⭐', '💯', '🚀', '💡', '📌', '📝', '💬'];
 
 // DOM 요소 캐싱
-const $ = id => document.getElementById(id);
+// const $ = id => document.getElementById(id); // [v4.25] Moved to top
 const elements = {};
 
 // 초기화
@@ -702,8 +735,8 @@ function setupEventListeners() {
                 if (typeof showToast === 'function') showToast('모든 항목을 입력해주세요.', 'warning');
                 return;
             }
-            if (newPw.length < 4) {
-                if (typeof showToast === 'function') showToast('새 비밀번호는 4자 이상이어야 합니다.', 'warning');
+            if (newPw.length < 8) {
+                if (typeof showToast === 'function') showToast('새 비밀번호는 8자 이상이어야 합니다.', 'warning');
                 return;
             }
             if (newPw !== confirmPw) {
@@ -866,9 +899,17 @@ async function uploadFile(file) {
     formData.append('file', file);
     formData.append('room_id', currentRoom.id);
 
+    // [v4.16] CSRF 토큰 추가
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    const headers = {};
+    if (csrfToken) {
+        headers['X-CSRFToken'] = csrfToken;
+    }
+
     try {
         var response = await fetch('/api/upload', {
             method: 'POST',
+            headers: headers,
             body: formData
         });
 
@@ -903,9 +944,16 @@ async function uploadFile(file) {
 // ============================================================================
 async function api(url, options = {}) {
     try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(csrfToken && { 'X-CSRFToken': csrfToken }),
+            ...options.headers
+        };
+
         const res = await fetch(url, {
             ...options,
-            headers: { 'Content-Type': 'application/json', ...options.headers }
+            headers: headers
         });
 
         // 비 JSON 응답 처리
@@ -915,7 +963,11 @@ async function api(url, options = {}) {
             return {};
         }
 
-        return res.json();
+        const json = await res.json();
+        if (!res.ok) {
+            throw new Error(json.error || `HTTP ${res.status}`);
+        }
+        return json;
     } catch (err) {
         console.error('API 오류:', url, err);
         throw err;
@@ -969,7 +1021,16 @@ async function doLogin() {
         });
 
         if (result.success) {
+            // [v4.5] CSRF 토큰 갱신 및 상태 초기화를 위해 새로고침 -> reload 제거 및 매끄러운 진입
+            if (result.csrf_token) {
+                const meta = document.querySelector('meta[name="csrf-token"]');
+                if (meta) meta.setAttribute('content', result.csrf_token);
+            }
+
             currentUser = result.user;
+            showAuthSuccess('로그인 성공!');
+
+            // UI 초기화 및 진입
             initApp();
         } else {
             showAuthError(result.error || '로그인 실패');
@@ -987,6 +1048,16 @@ async function doRegister() {
 
     if (!username || !password) {
         showAuthError('아이디와 비밀번호를 입력하세요.');
+        return;
+    }
+
+    // [v4.3] 클라이언트 측 비밀번호 검증
+    if (password.length < 8) {
+        showAuthError('비밀번호는 8자 이상이어야 합니다.');
+        return;
+    }
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+        showAuthError('비밀번호는 영문자와 숫자를 포함해야 합니다.');
         return;
     }
 
@@ -1009,8 +1080,13 @@ async function doRegister() {
 }
 
 async function logout() {
-    await api('/api/logout', { method: 'POST' });
-    location.reload();
+    try {
+        await api('/api/logout', { method: 'POST' });
+    } catch (err) {
+        console.warn('로그아웃 API 오류 (무시됨):', err);
+    } finally {
+        location.href = '/';
+    }
 }
 
 // ============================================================================
@@ -1105,9 +1181,17 @@ async function handleProfileImageUpload(e) {
     var formData = new FormData();
     formData.append('file', file);
 
+    // [v4.16] CSRF 토큰 추가
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    const headers = {};
+    if (csrfToken) {
+        headers['X-CSRFToken'] = csrfToken;
+    }
+
     try {
         var response = await fetch('/api/profile/image', {
             method: 'POST',
+            headers: headers,
             body: formData
         });
         var result = await response.json();
@@ -1217,7 +1301,32 @@ function initApp() {
 }
 
 function initSocket() {
+    if (socket) {
+        socket.disconnect();
+    }
     socket = io();
+
+    // [v4.4] 메시지 배치 처리 (성능 최적화)
+    var pendingMessages = [];
+    var messageRafScheduled = false;
+
+    function processPendingMessages() {
+        if (pendingMessages.length === 0) return;
+        var messages = pendingMessages;
+        pendingMessages = [];
+        messageRafScheduled = false;
+        messages.forEach(function (msg) {
+            handleNewMessage(msg);
+        });
+    }
+
+    function batchNewMessage(msg) {
+        pendingMessages.push(msg);
+        if (!messageRafScheduled) {
+            messageRafScheduled = true;
+            requestAnimationFrame(processPendingMessages);
+        }
+    }
 
     socket.on('connect', () => {
         console.log('Socket.IO 연결됨');
@@ -1240,16 +1349,17 @@ function initSocket() {
         updateConnectionStatus('reconnecting');
     });
 
-    socket.on('new_message', handleNewMessage);
+    socket.on('new_message', batchNewMessage);  // [v4.4] 배치 처리 사용
     socket.on('read_updated', handleReadUpdated);
     socket.on('user_typing', handleUserTyping);
     socket.on('user_status', handleUserStatus);
-    socket.on('room_updated', function () { loadRooms(); });
+    socket.on('room_updated', function () { throttledLoadRooms(); });
     socket.on('room_name_updated', handleRoomNameUpdated);
     socket.on('room_members_updated', handleRoomMembersUpdated);
     socket.on('message_deleted', handleMessageDeleted);
     socket.on('message_edited', handleMessageEdited);
     socket.on('user_profile_updated', handleUserProfileUpdated);  // 프로필 변경 알림
+    socket.on('reaction_updated', handleReactionUpdated);  // [v4.23] 리액션 업데이트
     socket.on('error', function (data) { console.error('Socket 오류:', data.message); });
 }
 
@@ -1280,18 +1390,19 @@ function updateConnectionStatus(status) {
 async function loadRooms() {
     try {
         const result = await api('/api/rooms');
+        console.log('loadRooms fetched:', result); // [Debug]
         rooms = result;
         window.rooms = rooms;  // 전역 노출 (notification.js에서 사용)
         renderRoomList();
     } catch (err) {
         console.error('대화방 로드 실패:', err);
+        showToast('대화방 목록 로드 실패: ' + (err.message || err), 'error');
     }
 }
 
-// 전역 함수 노출 (notification.js에서 사용)
-window.openRoom = function (room) {
-    openRoom(room);
-};
+// [v4.23] Define throttled version
+var throttledLoadRooms = throttle(loadRooms, 2000);
+
 
 function renderRoomList() {
     elements.roomList.innerHTML = rooms.map(function (room) {
@@ -1332,82 +1443,133 @@ function renderRoomList() {
     });
 }
 
+// [v4.5] Race condition prevention
+var currentOpenRequestId = 0;
+// [v4.6] Critical: Prevent recursive calls to openRoom
+var isOpeningRoom = false;
+
 async function openRoom(room) {
-    if (currentRoom) {
-        socket.emit('leave_room', { room_id: currentRoom.id });
+    // 1. 이미 보고 있는 방이면 무시 (스팸 클릭/중복 로드 방지)
+    if (currentRoom && currentRoom.id === room.id) return;
+
+    // [v4.6] Re-entry guard (Prevent recursion)
+    if (isOpeningRoom) {
+        console.warn('Prevented recursive openRoom call - isOpeningRoom is true');
+        return;
     }
 
-    currentRoom = room;
-    // 대화방 변경 시 멤버 캐시 초기화
-    cachedRoomMembers = null;
-    cachedRoomId = null;
-    socket.emit('join_room', { room_id: room.id });
-
-    elements.emptyState.classList.add('hidden');
-    elements.chatContent.classList.remove('hidden');
-
-    const name = room.name || (room.type === 'direct' && room.partner ? room.partner.nickname : '대화방');
-    elements.chatName.innerHTML = `${escapeHtml(name)} 🔒`;
-    elements.chatAvatar.textContent = name[0].toUpperCase();
-    elements.chatStatus.textContent = room.type === 'direct' && room.partner
-        ? (room.partner.status === 'online' ? '온라인' : '오프라인')
-        : `${room.member_count}명 참여 중`;
-
-    // [v4.0] 기능 초기화
-    if (typeof initRoomV4Features === 'function') {
-        initRoomV4Features();
-    }
-
-    // 핀/음소거 상태 업데이트
-    $('pinRoomText').textContent = room.pinned ? '고정 해제' : '상단 고정';
-    $('muteRoomText').textContent = room.muted ? '알림 켜기' : '알림 끄기';
+    isOpeningRoom = true;
+    console.log('Entering openRoom for room:', room.id);
 
     try {
-        const result = await api(`/api/rooms/${room.id}/messages`);
-        currentRoomKey = result.encryption_key;
+        // 2. 요청 ID 생성 (Stale Request 방지)
+        var requestId = ++currentOpenRequestId;
 
-        // 현재 사용자의 마지막 읽은 메시지 ID 찾기
-        var lastReadId = 0;
-        if (result.members) {
-            var currentMember = result.members.find(m => m.id === currentUser.id);
-            if (currentMember) {
-                lastReadId = currentMember.last_read_message_id || 0;
+        if (currentRoom) {
+            socket.emit('leave_room', { room_id: currentRoom.id });
+        }
+
+        currentRoom = room;
+        // 대화방 변경 시 멤버 캐시 초기화
+        cachedRoomMembers = null;
+        cachedRoomId = null;
+        socket.emit('join_room', { room_id: room.id });
+
+        elements.emptyState.classList.add('hidden');
+        elements.chatContent.classList.remove('hidden');
+        console.log('UI Updated: emptyState hidden, chatContent shown');
+
+        const name = room.name || (room.type === 'direct' && room.partner ? room.partner.nickname : '대화방');
+        elements.chatName.innerHTML = `${escapeHtml(name)} 🔒`;
+        elements.chatAvatar.textContent = name[0].toUpperCase();
+        elements.chatStatus.textContent = room.type === 'direct' && room.partner
+            ? (room.partner.status === 'online' ? '온라인' : '오프라인')
+            : `${room.member_count}명 참여 중`;
+
+        // [v4.0] 기능 초기화
+        if (typeof initRoomV4Features === 'function') {
+            initRoomV4Features();
+        }
+
+        // 핀/음소거 상태 업데이트
+        $('pinRoomText').textContent = room.pinned ? '고정 해제' : '상단 고정';
+        $('muteRoomText').textContent = room.muted ? '알림 켜기' : '알림 끄기';
+
+        try {
+            const result = await api(`/api/rooms/${room.id}/messages`);
+
+            // [v4.5] Stale Request Check (다른 방으로 이미 이동했으면 렌더링 중단)
+            if (requestId !== currentOpenRequestId) {
+                console.log('Ignoring stale openRoom response');
+                return;
+            }
+
+            currentRoomKey = result.encryption_key;
+
+            // 현재 사용자의 마지막 읽은 메시지 ID 찾기
+            var lastReadId = 0;
+            if (result.members) {
+                var currentMember = result.members.find(m => m.id === currentUser.id);
+                if (currentMember) {
+                    lastReadId = currentMember.last_read_message_id || 0;
+                }
+            }
+
+            renderMessages(result.messages, lastReadId);
+
+            if (result.messages.length > 0) {
+                socket.emit('message_read', {
+                    room_id: room.id,
+                    message_id: result.messages[result.messages.length - 1].id
+                });
+            }
+
+            // 로컬 캐시 저장
+            if (window.MessengerStorage) {
+                MessengerStorage.cacheMessages(room.id, result.messages);
+            }
+        } catch (err) {
+            // [v4.5] Stale Check
+            if (requestId !== currentOpenRequestId) return;
+
+            console.error('메시지 로드 실패:', err);
+            showToast('메시지 로드 실패: ' + (err.message || err), 'error');
+            // 오프라인 캐시에서 로드 시도
+            if (window.MessengerStorage) {
+                const cached = await MessengerStorage.getCachedMessages(room.id);
+                if (cached.length > 0) {
+                    renderMessages(cached, 0);
+                }
             }
         }
 
-        renderMessages(result.messages, lastReadId);
+        setTimeout(renderRoomList, 0);
 
-        if (result.messages.length > 0) {
-            socket.emit('message_read', {
-                room_id: room.id,
-                message_id: result.messages[result.messages.length - 1].id
-            });
-        }
-
-        // 로컬 캐시 저장
-        if (window.MessengerStorage) {
-            MessengerStorage.cacheMessages(room.id, result.messages);
-        }
-    } catch (err) {
-        console.error('메시지 로드 실패:', err);
-        // 오프라인 캐시에서 로드 시도
-        if (window.MessengerStorage) {
-            const cached = await MessengerStorage.getCachedMessages(room.id);
-            if (cached.length > 0) {
-                renderMessages(cached, 0);
-            }
-        }
+        // 모바일에서 사이드바 닫기
+        elements.sidebar.classList.remove('active');
+    } finally {
+        isOpeningRoom = false;
     }
-
-    renderRoomList();
-
-    // 모바일에서 사이드바 닫기
-    elements.sidebar.classList.remove('active');
 }
+
+// 전역 함수 노출 (notification.js에서 사용)
+// 원본 함수에 대한 참조를 저장하여 무한 재귀 방지
+var _openRoomImpl = openRoom;
+window.openRoom = function (room) {
+    _openRoomImpl(room);
+};
 
 // ============================================================================
 // 메시지
 // ============================================================================
+// [v4.20] formatTime 헬퍼 추가
+function formatTime(dateStr) {
+    if (!dateStr) return '';
+    var date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function formatDateLabel(dateStr) {
     var today = new Date();
     var msgDate = new Date(dateStr);
@@ -1479,100 +1641,146 @@ function renderMessages(messages, lastReadId) {
     scrollToBottom();
 }
 
-function appendMessage(msg) {
-    // 시스템 메시지 처리
-    if (msg.message_type === 'system') {
+function scrollToBottom() {
+    if (elements.messagesContainer) {
+        elements.messagesContainer.scrollTop = elements.messagesContainer.scrollHeight;
+    }
+}
+
+// [v4.20] 메시지 요소 생성 (Defensive)
+function createMessageElement(msg) {
+    try {
+        // 시스템 메시지 처리
+        if (msg.message_type === 'system') {
+            var div = document.createElement('div');
+            div.className = 'message system';
+            div.innerHTML = '<div class="message-content"><div class="message-bubble">' + escapeHtml(msg.content) + '</div></div>';
+            return div;
+        }
+
+        var isSent = msg.sender_id === currentUser.id;
         var div = document.createElement('div');
-        div.className = 'message system';
-        div.innerHTML = '<div class="message-content"><div class="message-bubble">' + escapeHtml(msg.content) + '</div></div>';
-        elements.messagesContainer.appendChild(div);
-        return;
-    }
+        div.className = 'message ' + (isSent ? 'sent' : '');
+        div.dataset.messageId = msg.id;
+        div.dataset.senderId = msg.sender_id;
 
-    var isSent = msg.sender_id === currentUser.id;
-    var div = document.createElement('div');
-    div.className = 'message ' + (isSent ? 'sent' : '');
-    div.dataset.messageId = msg.id;
-    div.dataset.senderId = msg.sender_id;  // 프로필 업데이트용
+        var content = '';
+        if (msg.message_type === 'image') {
+            content = '<img src="/uploads/' + msg.file_path + '" class="message-image" loading="lazy" decoding="async" onclick="openLightbox(this.src)">';
+        } else if (msg.message_type === 'file') {
+            content = '<div class="message-file">' +
+                '<span>📄</span>' +
+                '<div class="message-file-info">' +
+                '<div class="message-file-name">' + escapeHtml(msg.file_name) + '</div>' +
+                '</div>' +
+                '<a href="/uploads/' + msg.file_path + '" download="' + msg.file_name + '" class="icon-btn">⬇</a>' +
+                '</div>';
+        } else {
+            var decrypted = currentRoomKey && msg.encrypted ? E2E.decrypt(msg.content, currentRoomKey) : msg.content;
+            content = '<div class="message-bubble">' + parseMentions(escapeHtml(decrypted)) + '</div>';
+        }
 
-    var content = '';
-    if (msg.message_type === 'image') {
-        content = '<img src="/uploads/' + msg.file_path + '" class="message-image" onclick="openLightbox(this.src)">';
-    } else if (msg.message_type === 'file') {
-        content = '<div class="message-file">' +
-            '<span>📄</span>' +
-            '<div class="message-file-info">' +
-            '<div class="message-file-name">' + escapeHtml(msg.file_name) + '</div>' +
+        var senderName = msg.sender_name || '사용자';
+        var avatarHtml = createAvatarHtml(senderName, msg.sender_image, msg.sender_id, 'message-avatar');
+
+        // 답장/리액션/수정/삭제 버튼
+        var actionsHtml = '<div class="message-actions">' +
+            '<button class="message-action-btn" onclick="setReplyToFromId(' + msg.id + ')" title="답장">↩</button>' +
+            '<button class="message-action-btn" onclick="showReactionPicker(' + msg.id + ', event)" title="리액션">😊</button>';
+
+        if (isSent && msg.message_type !== 'image' && msg.message_type !== 'file') {
+            actionsHtml += '<button class="message-action-btn edit-btn" onclick="editMessage(' + msg.id + ')" title="수정">✏</button>';
+        }
+        if (isSent) {
+            actionsHtml += '<button class="message-action-btn delete-btn" onclick="deleteMessage(' + msg.id + ')" title="삭제">🗑</button>';
+        }
+        actionsHtml += '</div>';
+
+        // 답장 표시
+        var replyHtml = '';
+        if (msg.reply_to && msg.reply_content) {
+            var decryptedReply = currentRoomKey ? E2E.decrypt(msg.reply_content, currentRoomKey) : msg.reply_content;
+            if (!decryptedReply) decryptedReply = msg.reply_content;
+
+            replyHtml = '<div class="message-reply" onclick="scrollToMessage(' + msg.reply_to + ')" style="cursor:pointer;">' +
+                '<div class="reply-indicator">↩ ' + escapeHtml(msg.reply_sender || '사용자') + '에게 답장</div>' +
+                '<div class="reply-text">' + escapeHtml(decryptedReply) + '</div>' +
+                '</div>';
+        }
+
+        var readIndicatorHtml = '';
+        if (isSent) {
+            if (msg.unread_count === 0) {
+                readIndicatorHtml = '<div class="message-read-indicator all-read"><span class="read-icon">✓✓</span>모두 읽음</div>';
+            } else if (msg.unread_count > 0) {
+                readIndicatorHtml = '<div class="message-read-indicator"><span class="read-icon">✓</span>' + msg.unread_count + '명 안읽음</div>';
+            }
+        }
+
+        // [v4.23] 리액션 표시
+        var reactionsHtml = '';
+        if (msg.reactions && msg.reactions.length > 0) {
+            var grouped = {};
+            msg.reactions.forEach(function (r) {
+                if (!grouped[r.emoji]) {
+                    grouped[r.emoji] = { count: 0, users: [], myReaction: false };
+                }
+                grouped[r.emoji].count++;
+                grouped[r.emoji].users.push(r.nickname || r.user_id);
+                if (currentUser && r.user_id === currentUser.id) {
+                    grouped[r.emoji].myReaction = true;
+                }
+            });
+
+            reactionsHtml = '<div class="message-reactions">';
+            for (var emoji in grouped) {
+                var data = grouped[emoji];
+                var activeClass = data.myReaction ? ' active' : '';
+                reactionsHtml += '<span class="reaction-badge' + activeClass + '" onclick="toggleReaction(' + msg.id + ', \'' + emoji + '\')" title="' + data.users.join(', ') + '">' +
+                    emoji + ' <span class="reaction-count">' + data.count + '</span></span>';
+            }
+            reactionsHtml += '<button class="add-reaction-btn" onclick="showReactionPicker(' + msg.id + ', event)">+</button></div>';
+        }
+
+        div.innerHTML = avatarHtml +
+            '<div class="message-content">' +
+            '<div class="message-sender">' + escapeHtml(senderName) + '</div>' +
+            replyHtml +
+            content +
+            '<div class="message-meta">' +
+            '<span>' + formatTime(msg.created_at) + '</span>' +
             '</div>' +
-            '<a href="/uploads/' + msg.file_path + '" download="' + msg.file_name + '" class="icon-btn">⬇</a>' +
-            '</div>';
-    } else {
-        var decrypted = currentRoomKey && msg.encrypted ? E2E.decrypt(msg.content, currentRoomKey) : msg.content;
-        content = '<div class="message-bubble">' + parseMentions(escapeHtml(decrypted)) + '</div>';
+            readIndicatorHtml +
+            reactionsHtml +
+            '</div>' +
+            actionsHtml;
+
+        div._messageData = msg;
+        return div;
+
+    } catch (err) {
+        console.error('메시지 생성 오류:', err);
+        var errDiv = document.createElement('div');
+        errDiv.className = 'message system error';
+        errDiv.textContent = '메시지 렌더링 오류';
+        return errDiv;
+    }
+}
+
+// [v4.20] 헬퍼 함수: ID로 답장 설정 (onclick에서 사용)
+window.setReplyToFromId = function (msgId) {
+    var msgEl = document.querySelector('[data-message-id="' + msgId + '"]');
+    if (msgEl && msgEl._messageData) {
+        setReplyTo(msgEl._messageData);
+    }
+};
+
+function appendMessage(msg) {
+    var div = createMessageElement(msg);
+    if (div && elements.messagesContainer) {
+        elements.messagesContainer.appendChild(div);
     }
 
-    var unreadHtml = msg.unread_count > 0 ? '<span class="unread-count">' + msg.unread_count + '</span>' : '';
-
-    // 프로필 이미지 및 색상 처리 (헬퍼 함수 사용)
-    var avatarHtml = createAvatarHtml(msg.sender_name, msg.sender_image, msg.sender_id, 'message-avatar');
-
-    // 답장 버튼 및 자신의 메시지인 경우 수정/삭제 버튼 추가
-    var actionsHtml = '<div class="message-actions">' +
-        '<button class="message-action-btn" onclick="replyToMessage(' + msg.id + ')" title="답장">↩</button>';
-
-    // 자신의 메시지인 경우 수정/삭제 버튼 추가 (텍스트 메시지만)
-    if (isSent && msg.message_type !== 'image' && msg.message_type !== 'file') {
-        actionsHtml += '<button class="message-action-btn edit-btn" onclick="editMessage(' + msg.id + ')" title="수정">✏</button>';
-    }
-    if (isSent) {
-        actionsHtml += '<button class="message-action-btn delete-btn" onclick="deleteMessage(' + msg.id + ')" title="삭제">🗑</button>';
-    }
-    actionsHtml += '</div>';
-
-    // 답장 원본 메시지 표시
-    var replyHtml = '';
-    if (msg.reply_to && msg.reply_content) {
-        // 암호화된 답장 내용 복호화
-        var decryptedReply = currentRoomKey ? E2E.decrypt(msg.reply_content, currentRoomKey) : msg.reply_content;
-        // 복호화 실패 시 원본 표시
-        if (!decryptedReply || decryptedReply === '') {
-            decryptedReply = msg.reply_content;
-        }
-        replyHtml = '<div class="message-reply" onclick="scrollToMessage(' + msg.reply_to + ')" style="cursor:pointer;">' +
-            '<div class="reply-indicator">↩ ' + escapeHtml(msg.reply_sender || '사용자') + '에게 답장</div>' +
-            '<div class="reply-text">' + escapeHtml(decryptedReply) + '</div>' +
-            '</div>';
-    }
-
-    // sender_name null 체크
-    var senderName = msg.sender_name || '사용자';
-
-    // 읽음 표시 UI 개선 (보낸 메시지에만 표시)
-    var readIndicatorHtml = '';
-    if (isSent) {
-        if (msg.unread_count === 0) {
-            readIndicatorHtml = '<div class="message-read-indicator all-read"><span class="read-icon">✓✓</span>모두 읽음</div>';
-        } else if (msg.unread_count !== undefined && msg.unread_count > 0) {
-            readIndicatorHtml = '<div class="message-read-indicator"><span class="read-icon">✓</span>' + msg.unread_count + '명 안읽음</div>';
-        }
-    }
-
-    div.innerHTML = avatarHtml +
-        '<div class="message-content">' +
-        '<div class="message-sender">' + escapeHtml(senderName) + '</div>' +
-        replyHtml +
-        content +
-        '<div class="message-meta">' +
-        '<span>' + formatTime(msg.created_at) + '</span>' +
-        '</div>' +
-        readIndicatorHtml +
-        '</div>' +
-        actionsHtml;
-
-    // 메시지 객체 저장 (답장용)
-    div._messageData = msg;
-
-    elements.messagesContainer.appendChild(div);
 }
 
 function replyToMessage(messageId) {
@@ -1851,19 +2059,12 @@ function handleUserProfileUpdated(data) {
     }
 }
 
-function handleMessageDeleted(data) {
-    const msgEl = document.querySelector(`[data-message-id="${data.message_id}"] .message-bubble`);
-    if (msgEl) {
-        msgEl.textContent = '[삭제된 메시지]';
-        msgEl.style.opacity = '0.5';
-    }
-}
+// [v4.21] handleMessageDeleted/handleMessageEdited 함수는 line 1850/1866에서 정의됨 (중복 제거됨)
 
-function handleMessageEdited(data) {
-    const msgEl = document.querySelector(`[data-message-id="${data.message_id}"] .message-bubble`);
-    if (msgEl) {
-        msgEl.textContent = data.content;
-    }
+// [v4.20] 리액션 업데이트 핸들러
+function handleReactionUpdated(data) {
+    if (!currentRoom || data.room_id !== currentRoom.id) return;
+    updateMessageReactions(data.message_id, data.reactions);
 }
 
 async function updateUnreadCounts() {
@@ -1893,10 +2094,18 @@ async function loadOnlineUsers() {
     try {
         const users = await api('/api/users/online');
 
+        // [v4.18] API가 에러 객체를 반환하거나 배열이 아닌 경우 방어적 처리
+        if (!Array.isArray(users)) {
+            console.warn('온라인 사용자 API 응답이 배열이 아닙니다:', users);
+            if (elements.onlineUsersList) elements.onlineUsersList.innerHTML = '';
+            return;
+        }
+
         if (users.length === 0) {
             elements.onlineUsersList.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">온라인 사용자가 없습니다</span>';
             return;
         }
+
 
         elements.onlineUsersList.innerHTML = users.map(u => {
             var initial = (u.nickname && u.nickname.length > 0) ? u.nickname[0].toUpperCase() : '?';
@@ -1911,20 +2120,38 @@ async function loadOnlineUsers() {
 
         elements.onlineUsersList.querySelectorAll('.online-user').forEach(el => {
             el.onclick = async () => {
-                const userId = parseInt(el.dataset.userId);
-                const result = await api('/api/rooms', {
-                    method: 'POST',
-                    body: JSON.stringify({ members: [userId] })
-                });
-                if (result.success) {
-                    await loadRooms();
-                    const room = rooms.find(r => r.id === result.room_id);
-                    if (room) openRoom(room);
+                try {
+                    const userId = parseInt(el.dataset.userId);
+                    const result = await api('/api/rooms', {
+                        method: 'POST',
+                        body: JSON.stringify({ members: [userId] })
+                    });
+                    console.log('Online user click - API result:', result);
+                    if (result.success) {
+                        console.log('Calling loadRooms...');
+                        await loadRooms();
+                        console.log('loadRooms done, rooms count:', rooms.length);
+                        console.log('Looking for room_id:', result.room_id);
+                        const room = rooms.find(r => r.id === result.room_id);
+                        console.log('Found room:', room);
+                        if (room) {
+                            console.log('Calling openRoom via setTimeout...');
+                            setTimeout(() => openRoom(room), 0);
+                        } else {
+                            console.warn('Room not found in rooms array');
+                        }
+                    } else {
+                        showToast('대화 시작 실패: ' + (result.error || '알 수 없는 오류'), 'error');
+                    }
+                } catch (err) {
+                    console.error('대화 시작 오류:', err);
+                    showToast('대화 시작 오류: ' + (err.message || err), 'error');
                 }
             };
         });
     } catch (err) {
         console.error('온라인 사용자 로드 실패:', err);
+        // showToast('온라인 사용자 목록을 불러오지 못했습니다.', 'error'); // 너무 자주 뜰 수 있어 주석 처리
     }
 }
 
@@ -1965,29 +2192,57 @@ async function openNewChatModal() {
         $('newChatModal').classList.add('active');
     } catch (err) {
         console.error('사용자 목록 로드 실패:', err);
+        showToast('사용자 목록을 불러오지 못했습니다.', 'error');
     }
 }
 
+var isCreatingRoom = false; // [v4.25] Recursion guard
+
 async function createRoom() {
+    if (isCreatingRoom) return;
+
     const selected = [...document.querySelectorAll('#userList .user-item.selected')]
         .map(el => parseInt(el.dataset.userId));
 
     if (selected.length === 0) return;
 
+    var btn = $('createRoomBtn');
+    if (btn) btn.disabled = true;
+
+    isCreatingRoom = true;
+
     try {
+        console.log('Starting createRoom...');
         const result = await api('/api/rooms', {
             method: 'POST',
             body: JSON.stringify({ members: selected, name: $('roomName').value.trim() })
         });
+        console.log('createRoom API result:', result);
 
         if (result.success) {
             $('newChatModal').classList.remove('active');
             await loadRooms();
+            console.log('Searching for room_id:', result.room_id, 'Type:', typeof result.room_id);
             const room = rooms.find(r => r.id === result.room_id);
-            if (room) openRoom(room);
+            console.log('Found room:', room);
+            if (room) {
+                // [v4.25] Break call stack to prevent overflow
+                setTimeout(async () => {
+                    try {
+                        await openRoom(room);
+                    } catch (e) {
+                        console.error('Async openRoom failed:', e);
+                        showToast('대화방 열기 실패: ' + e.message, 'error');
+                    }
+                }, 0);
+            }
         }
     } catch (err) {
         console.error('대화방 생성 실패:', err);
+        showToast('대화방 생성 실패: ' + (err.message || err), 'error');
+    } finally {
+        isCreatingRoom = false;
+        if (btn) btn.disabled = false;
     }
 }
 
@@ -2356,23 +2611,41 @@ function showReactionPicker(messageId, targetEl) {
     let top = rect.top - popupRect.height - 8;
     let left = rect.left;
 
-    // 화면 밖으로 나가면 위치 조정
+    // 화면 벗어남 방지
     if (top < 10) top = rect.bottom + 8;
-    if (left + popupRect.width > window.innerWidth - 10) left = window.innerWidth - popupRect.width - 10;
+    if (left + popupRect.width > window.innerWidth) left = window.innerWidth - popupRect.width - 10;
 
     div.style.top = top + 'px';
     div.style.left = left + 'px';
-
-    // 외부 클릭 시 닫기
-    setTimeout(() => {
-        document.addEventListener('click', function close(e) {
-            if (!div.contains(e.target)) {
-                div.remove();
-                document.removeEventListener('click', close);
-            }
-        });
-    }, 0);
 }
+
+// [v4.24] Missing Action Handlers
+async function toggleReaction(msgId, emoji) {
+    try {
+        await api(`/api/messages/${msgId}/reactions`, {
+            method: 'POST',
+            body: JSON.stringify({ emoji: emoji })
+        });
+    } catch (e) {
+        console.error('Reaction failed:', e);
+    }
+}
+
+async function pinCurrentMessage(msgId, content) {
+    if (!currentRoom) return;
+    try {
+        // 공지 고정 API 호출 (구현 가정)
+        // 현재 API 명세에 /pin_message가 명확지 않으므로 room update로 처리하거나
+        // 별도 구현이 필요하나, 일단 에러 방지를 위해 빈 함수로라도 둠.
+        // 혹은 기존 pin logic 사용?
+        console.log('Pinning message:', msgId);
+        showToast('공지 기능은 현재 준비 중입니다.', 'info');
+    } catch (e) {
+        console.error('Pin failed:', e);
+    }
+}
+
+
 
 
 
@@ -3029,16 +3302,96 @@ function showMessagesSkeleton() {
 // [v4.0] 리액션 시스템
 // ============================================================================
 var quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+var activeReactionPicker = null;
+
+// [v4.20] 리액션 피커 표시
+function showReactionPicker(messageId, event) {
+    event.stopPropagation();
+
+    // 기존 피커 닫기
+    if (activeReactionPicker) {
+        activeReactionPicker.remove();
+        activeReactionPicker = null;
+    }
+
+    var picker = document.createElement('div');
+    picker.className = 'reaction-picker active';
+    picker.innerHTML = quickReactions.map(function (e) {
+        return '<button class="reaction-picker-item" onclick="selectReaction(' + messageId + ', \'' + e + '\', event)">' + e + '</button>';
+    }).join('');
+
+    // 메시지 요소 찾기
+    var msgEl = document.querySelector('[data-message-id="' + messageId + '"]');
+    if (!msgEl) return;
+
+    var actionsEl = msgEl.querySelector('.message-actions');
+    if (actionsEl) {
+        actionsEl.appendChild(picker);
+        activeReactionPicker = picker;
+    }
+
+    // 클릭 시 닫기
+    document.addEventListener('click', function closeHandler(e) {
+        if (!picker.contains(e.target)) {
+            picker.remove();
+            activeReactionPicker = null;
+            document.removeEventListener('click', closeHandler);
+        }
+    });
+}
+
+// [v4.20] 리액션 선택
+function selectReaction(messageId, emoji, event) {
+    event.stopPropagation();
+    toggleReaction(messageId, emoji);
+    if (activeReactionPicker) {
+        activeReactionPicker.remove();
+        activeReactionPicker = null;
+    }
+}
+
+// [v4.20] 답장 기능
+var currentReplyTo = null;
+
+function setReplyTo(msg) {
+    currentReplyTo = msg;
+    var preview = document.getElementById('replyPreview');
+    if (!preview) return;
+
+    var senderName = msg.sender_name || '사용자';
+    var content = msg.content;
+    if (currentRoomKey && msg.encrypted) {
+        content = E2E.decrypt(msg.content, currentRoomKey) || msg.content;
+    }
+
+    preview.className = 'reply-preview';
+    preview.innerHTML = '<div class="reply-preview-content">' +
+        '<div class="reply-preview-sender">' + escapeHtml(senderName) + '에게 답장</div>' +
+        '<div class="reply-preview-text">' + escapeHtml(content).substring(0, 100) + '</div>' +
+        '</div>' +
+        '<button class="reply-preview-close" onclick="clearReplyTo()">✕</button>';
+
+    if (elements.messageInput) {
+        elements.messageInput.focus();
+    }
+}
+
+function clearReplyTo() {
+    currentReplyTo = null;
+    var preview = document.getElementById('replyPreview');
+    if (preview) {
+        preview.className = 'reply-preview hidden';
+        preview.innerHTML = '';
+    }
+}
 
 function toggleReaction(messageId, emoji) {
     if (!currentRoom) return;
 
-    fetch(`/api/messages/${messageId}/reactions`, {
+    api(`/api/messages/${messageId}/reactions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emoji: emoji })
     })
-        .then(r => r.json())
         .then(data => {
             if (data.success) {
                 updateMessageReactions(messageId, data.reactions);
@@ -3620,8 +3973,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('모든 항목을 입력해주세요.', 'warning');
                 return;
             }
-            if (newPw.length < 4) {
-                showToast('새 비밀번호는 4자 이상이어야 합니다.', 'warning');
+            if (newPw.length < 8) {
+                showToast('새 비밀번호는 8자 이상이어야 합니다.', 'warning');
+                return;
+            }
+            if (!/[A-Za-z]/.test(newPw) || !/[0-9]/.test(newPw)) {
+                showToast('새 비밀번호는 영문자와 숫자를 포함해야 합니다.', 'warning');
                 return;
             }
             if (newPw !== confirmPw) {
@@ -3670,3 +4027,122 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 });
+
+// ============================================================================
+// [v4.23] 리액션 기능
+// ============================================================================
+var quickReactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
+async function toggleReaction(messageId, emoji) {
+    if (!currentRoom) return;
+
+    try {
+        const result = await api('/api/messages/' + messageId + '/reactions', {
+            method: 'POST',
+            body: JSON.stringify({ emoji: emoji })
+        });
+
+        if (result.success) {
+            // 소켓으로 다른 클라이언트에게 알림
+            socket.emit('reaction_updated', {
+                room_id: currentRoom.id,
+                message_id: messageId,
+                reactions: result.reactions
+            });
+
+            // 로컬 UI 업데이트
+            updateMessageReactions(messageId, result.reactions);
+        }
+    } catch (err) {
+        console.error('리액션 추가 실패:', err);
+        showToast('리액션 추가에 실패했습니다.', 'error');
+    }
+}
+
+function updateMessageReactions(messageId, reactions) {
+    var msgEl = document.querySelector('[data-message-id="' + messageId + '"]');
+    if (!msgEl) return;
+
+    var reactionsContainer = msgEl.querySelector('.message-reactions');
+    if (!reactionsContainer) {
+        // 리액션 컨테이너가 없으면 생성
+        reactionsContainer = document.createElement('div');
+        reactionsContainer.className = 'message-reactions';
+        var metaEl = msgEl.querySelector('.message-meta');
+        if (metaEl) {
+            metaEl.parentNode.insertBefore(reactionsContainer, metaEl.nextSibling);
+        }
+    }
+
+    // 리액션 그룹화
+    var grouped = {};
+    reactions.forEach(function (r) {
+        if (!grouped[r.emoji]) {
+            grouped[r.emoji] = { count: 0, users: [], myReaction: false };
+        }
+        grouped[r.emoji].count++;
+        grouped[r.emoji].users.push(r.nickname || r.user_id);
+        if (currentUser && r.user_id === currentUser.id) {
+            grouped[r.emoji].myReaction = true;
+        }
+    });
+
+    // 리액션 렌더링
+    var html = '';
+    for (var emoji in grouped) {
+        var data = grouped[emoji];
+        var activeClass = data.myReaction ? ' active' : '';
+        html += '<span class="reaction-badge' + activeClass + '" onclick="toggleReaction(' + messageId + ', \'' + emoji + '\')" title="' + data.users.join(', ') + '">' +
+            emoji + ' <span class="reaction-count">' + data.count + '</span></span>';
+    }
+
+    // 리액션 추가 버튼
+    html += '<button class="add-reaction-btn" onclick="showReactionPicker(' + messageId + ', event)">+</button>';
+
+    reactionsContainer.innerHTML = html;
+}
+
+function showReactionPicker(messageId, event) {
+    event.stopPropagation();
+
+    // 기존 피커 제거
+    document.querySelectorAll('.reaction-picker').forEach(function (p) { p.remove(); });
+
+    // 피커 생성
+    var picker = document.createElement('div');
+    picker.className = 'reaction-picker active';
+    picker.innerHTML = quickReactionEmojis.map(function (emoji) {
+        return '<span class="reaction-picker-item" onclick="toggleReaction(' + messageId + ', \'' + emoji + '\')">' + emoji + '</span>';
+    }).join('');
+
+    // 위치 설정
+    var target = event.target;
+    target.style.position = 'relative';
+    target.appendChild(picker);
+
+    // 바깥 클릭 시 닫기
+    setTimeout(function () {
+        document.addEventListener('click', function closePicker(e) {
+            if (!picker.contains(e.target)) {
+                picker.remove();
+                document.removeEventListener('click', closePicker);
+            }
+        });
+    }, 0);
+}
+
+function handleReactionUpdated(data) {
+    if (currentRoom && data.room_id === currentRoom.id) {
+        updateMessageReactions(data.message_id, data.reactions);
+    }
+}
+
+// 소켓 이벤트 핸들러 등록 - initSocket 이후에 호출
+if (typeof socket !== 'undefined' && socket) {
+    socket.on('reaction_updated', handleReactionUpdated);
+}
+
+// 전역 함수 노출
+window.toggleReaction = toggleReaction;
+window.showReactionPicker = showReactionPicker;
+

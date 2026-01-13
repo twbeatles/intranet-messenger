@@ -25,6 +25,9 @@ if not _SKIP_GEVENT:
 
 from flask import Flask
 from flask_socketio import SocketIO
+from app.extensions import limiter, csrf, compress
+from flask_session import Session
+
 
 # config 임포트 (PyInstaller 호환)
 try:
@@ -49,11 +52,21 @@ except ImportError:
 
 # 로깅 설정
 try:
+    from logging.handlers import RotatingFileHandler
+    # [v4.2] 로그 파일 로테이션 적용 (10MB, 5백업)
+    file_handler = RotatingFileHandler(
+        os.path.join(BASE_DIR, 'server.log'),
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(os.path.join(BASE_DIR, 'server.log'), encoding='utf-8'),
+            file_handler,
             logging.StreamHandler()
         ]
     )
@@ -105,13 +118,34 @@ def create_app():
             f.write(new_key)
         app.config['SECRET_KEY'] = new_key
     
+    # [v4.3] 보안 솔트 생성 및 로드 (비밀번호 해시용)
+    salt_file = os.path.join(BASE_DIR, '.security_salt')
+    if os.path.exists(salt_file):
+        with open(salt_file, 'r') as f:
+            app.config['PASSWORD_SALT'] = f.read().strip()
+    else:
+        # 기존 하드코딩된 값과의 호환성은 utils.py에서 처리하거나
+        # 새 설치 시에만 적용. 여기서는 새 솔트 생성.
+        new_salt = secrets.token_hex(16)
+        with open(salt_file, 'w') as f:
+            f.write(new_salt)
+        app.config['PASSWORD_SALT'] = new_salt
+    
     app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
     app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
     app.config['SESSION_COOKIE_SECURE'] = USE_HTTPS  # HTTPS일 때만 True
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=SESSION_TIMEOUT_HOURS)
-    app.config['SESSION_PERMANENT'] = True  # 영구 세션 활성화
+    
+    # [v4.6] Server-Side Session (Filesystem)
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = os.path.join(BASE_DIR, 'flask_session')
+    app.config['SESSION_PERMANENT'] = True
+    app.config['SESSION_USE_SIGNER'] = True
+    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+    Session(app)
+
     
     # Socket.IO 초기화 - 비동기 모드 선택
     # 우선순위: gevent > eventlet > threading
@@ -176,14 +210,37 @@ def create_app():
     from app.routes import register_routes
     register_routes(app)
     
+    # [v4.3] 보안 확장 초기화
+    limiter.init_app(app)
+    csrf.init_app(app)
+    
+    # [v4.4] 성능 최적화 - Gzip 압축 활성화
+    compress.init_app(app)
+    
     # Socket.IO 이벤트 등록
     from app.sockets import register_socket_events
     register_socket_events(socketio)
     
     # 데이터베이스 초기화
-    from app.models import init_db
+    # 데이터베이스 초기화
+    from app.models import init_db, close_thread_db
     init_db()
+    
+    # [v4.15] 요청 종료 시 DB 연결 정리 (스레드 로컬)
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        close_thread_db()
     
     logger.info(f"{APP_NAME} v{VERSION} 앱 초기화 완료")
     
+    # [v4.3] 보안 헤더 설정
+    @app.after_request
+    def add_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        # CSP: 기본적으로 self만 허용, 스타일은 inline 허용 (간단한 앱 호환성)
+        response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:;"
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        return response
+
     return app, socketio

@@ -1,0 +1,1354 @@
+﻿EEEEEEEEEEEEEEEEEEEEEEEE                                                 [100%]
+=================================== ERRORS ====================================
+_________________ ERROR at setup of test_kick_admin_by_admin __________________
+
+request = <SubRequest '_configure_application' for <Function test_kick_admin_by_admin>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176548416E0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_____________ ERROR at setup of test_kick_regular_member_by_admin _____________
+
+request = <SubRequest '_configure_application' for <Function test_kick_regular_member_by_admin>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765715BE10>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_______________ ERROR at setup of test_cannot_remove_last_admin _______________
+
+request = <SubRequest '_configure_application' for <Function test_cannot_remove_last_admin>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176571F6E70>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+________________ ERROR at setup of test_creator_is_auto_admin _________________
+
+request = <SubRequest '_configure_application' for <Function test_creator_is_auto_admin>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765723A7A0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+________________ ERROR at setup of test_member_can_delete_pin _________________
+
+request = <SubRequest '_configure_application' for <Function test_member_can_delete_pin>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765723B130>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+______ ERROR at setup of test_admin_can_remove_another_admin_if_not_last ______
+
+request = <SubRequest '_configure_application' for <Function test_admin_can_remove_another_admin_if_not_last>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765734C950>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_______________ ERROR at setup of test_invite_nonexistent_user ________________
+
+request = <SubRequest '_configure_application' for <Function test_invite_nonexistent_user>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765734D950>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_________________ ERROR at setup of test_invite_existing_user _________________
+
+request = <SubRequest '_configure_application' for <Function test_invite_existing_user>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765732EA80>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+____________ ERROR at setup of test_session_regeneration_on_login _____________
+
+request = <SubRequest '_configure_application' for <Function test_session_regeneration_on_login>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765732F5C0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+______________________ ERROR at setup of test_home_page _______________________
+
+request = <SubRequest '_configure_application' for <Function test_home_page>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765736C210>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+____________________ ERROR at setup of test_register_login ____________________
+
+request = <SubRequest '_configure_application' for <Function test_register_login>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765736C9F0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+______________________ ERROR at setup of test_login_fail ______________________
+
+request = <SubRequest '_configure_application' for <Function test_login_fail>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001765732A8F0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_________________ ERROR at setup of test_kick_member_success __________________
+
+request = <SubRequest '_configure_application' for <Function test_kick_member_success>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000017657177350>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+________________ ERROR at setup of test_kick_member_not_admin _________________
+
+request = <SubRequest '_configure_application' for <Function test_kick_member_not_admin>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000017657177290>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+______________________ ERROR at setup of test_kick_self _______________________
+
+request = <SubRequest '_configure_application' for <Function test_kick_self>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176572F3330>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+____________________ ERROR at setup of test_kick_nonmember ____________________
+
+request = <SubRequest '_configure_application' for <Function test_kick_nonmember>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176572F3A10>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_________________ ERROR at setup of test_close_expired_polls __________________
+
+request = <SubRequest '_configure_application' for <Function test_close_expired_polls>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000017657312030>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_______________ ERROR at setup of test_cleanup_old_access_logs ________________
+
+request = <SubRequest '_configure_application' for <Function test_cleanup_old_access_logs>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000017657312490>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_____________________ ERROR at setup of test_create_poll ______________________
+
+request = <SubRequest '_configure_application' for <Function test_create_poll>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176571E7C80>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+______________________ ERROR at setup of test_vote_poll _______________________
+
+request = <SubRequest '_configure_application' for <Function test_vote_poll>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176573C44D0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+______________________ ERROR at setup of test_close_poll ______________________
+
+request = <SubRequest '_configure_application' for <Function test_close_poll>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176573C4DD0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+________________ ERROR at setup of test_user_deletion_cleanup _________________
+
+request = <SubRequest '_configure_application' for <Function test_user_deletion_cleanup>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176573E0280>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+_____________ ERROR at setup of test_user_deletion_wrong_password _____________
+
+request = <SubRequest '_configure_application' for <Function test_user_deletion_wrong_password>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176573E0440>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+___________________ ERROR at setup of test_change_password ____________________
+
+request = <SubRequest '_configure_application' for <Function test_change_password>>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000176573E01A0>
+
+    @pytest.fixture(autouse=True)
+    def _configure_application(request, monkeypatch):
+        """Use `pytest.mark.options` decorator to pass options to your application
+        factory::
+    
+            @pytest.mark.options(debug=False)
+            def test_something(app):
+                assert not app.debug, 'the application works not in debug mode!'
+    
+        """
+        if "app" not in request.fixturenames:
+            return
+    
+>       app = getfixturevalue(request, "app")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\Python314\Lib\site-packages\pytest_flask\plugin.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\site-packages\pytest_flask\pytest_compat.py:3: in getfixturevalue
+    return request.getfixturevalue(value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def app():
+        # Create a temporary database file
+        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    
+        # 임시 업로드 폴더
+        upload_dir = tempfile.mkdtemp()
+    
+        # config 모듈의 DATABASE_PATH를 패치
+        import config
+        original_db_path = config.DATABASE_PATH
+        original_upload_folder = config.UPLOAD_FOLDER
+        config.DATABASE_PATH = db_path
+        config.UPLOAD_FOLDER = upload_dir
+    
+        # models 모듈 재로드하여 새 DB 경로 적용
+        import importlib
+        import app.models as models_module
+        importlib.reload(models_module)
+    
+        # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
+        models_module._db_initialized = False
+>       if hasattr(models_module._db_local, 'connection'):
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'app.models' has no attribute '_db_local'
+
+tests\conftest.py:34: AttributeError
+============================== warnings summary ===============================
+tests/test_admin_kick_protection.py::test_kick_admin_by_admin
+  G:\다른 컴퓨터\내 컴퓨터\google antigravity\intranet-messenger-main\app\__init__.py:21: MonkeyPatchWarning: Monkey-patching ssl after ssl has already been imported may lead to errors, including RecursionError on Python 3.6. It may also silently lead to incorrect behaviour on Python 3.7. Please monkey-patch earlier. See https://github.com/gevent/gevent/issues/1016. Modules that had direct imports (NOT patched): ['anyio.streams.tls (C:\\Python314\\Lib\\site-packages\\anyio\\streams\\tls.py)']. 
+    monkey.patch_all()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/test_admin_kick_protection.py::test_kick_admin_by_admin - Attribu...
+ERROR tests/test_admin_kick_protection.py::test_kick_regular_member_by_admin
+ERROR tests/test_admin_protection.py::test_cannot_remove_last_admin - Attribu...
+ERROR tests/test_admin_protection.py::test_creator_is_auto_admin - AttributeE...
+ERROR tests/test_admin_protection.py::test_member_can_delete_pin - AttributeE...
+ERROR tests/test_admin_protection.py::test_admin_can_remove_another_admin_if_not_last
+ERROR tests/test_authorization.py::test_invite_nonexistent_user - AttributeEr...
+ERROR tests/test_authorization.py::test_invite_existing_user - AttributeError...
+ERROR tests/test_authorization.py::test_session_regeneration_on_login - Attri...
+ERROR tests/test_basic.py::test_home_page - AttributeError: module 'app.model...
+ERROR tests/test_basic.py::test_register_login - AttributeError: module 'app....
+ERROR tests/test_basic.py::test_login_fail - AttributeError: module 'app.mode...
+ERROR tests/test_kick_member.py::test_kick_member_success - AttributeError: m...
+ERROR tests/test_kick_member.py::test_kick_member_not_admin - AttributeError:...
+ERROR tests/test_kick_member.py::test_kick_self - AttributeError: module 'app...
+ERROR tests/test_kick_member.py::test_kick_nonmember - AttributeError: module...
+ERROR tests/test_maintenance.py::test_close_expired_polls - AttributeError: m...
+ERROR tests/test_maintenance.py::test_cleanup_old_access_logs - AttributeErro...
+ERROR tests/test_polls.py::test_create_poll - AttributeError: module 'app.mod...
+ERROR tests/test_polls.py::test_vote_poll - AttributeError: module 'app.model...
+ERROR tests/test_polls.py::test_close_poll - AttributeError: module 'app.mode...
+ERROR tests/test_user_deletion.py::test_user_deletion_cleanup - AttributeErro...
+ERROR tests/test_user_deletion.py::test_user_deletion_wrong_password - Attrib...
+ERROR tests/test_user_deletion.py::test_change_password - AttributeError: mod...
+1 warning, 24 errors in 2.32s

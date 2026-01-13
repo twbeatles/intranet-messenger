@@ -1,8 +1,9 @@
 /**
  * Service Worker for Push Notifications
+ * [v4.4] 성능 최적화 업데이트
  */
 
-const CACHE_NAME = 'messenger-v3';
+const CACHE_NAME = 'messenger-v4';
 const STATIC_ASSETS = [
     '/',
     '/static/css/style.css',
@@ -38,7 +39,7 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// 페치 - 네트워크 우선 전략
+// [v4.4] 페치 - Stale-While-Revalidate 전략
 self.addEventListener('fetch', event => {
     // API 요청은 항상 네트워크 사용
     if (event.request.url.includes('/api/') ||
@@ -46,22 +47,22 @@ self.addEventListener('fetch', event => {
         return;
     }
 
+    // 정적 자원은 stale-while-revalidate 전략
     event.respondWith(
-        fetch(event.request)
-            .then(response => {
-                // 성공하면 캐시에 저장
-                if (response.status === 200) {
-                    const responseClone = response.clone();
+        caches.match(event.request).then(cachedResponse => {
+            // 캐시가 있으면 즉시 반환하고 백그라운드에서 업데이트
+            const fetchPromise = fetch(event.request).then(networkResponse => {
+                if (networkResponse && networkResponse.status === 200) {
+                    const responseClone = networkResponse.clone();
                     caches.open(CACHE_NAME).then(cache => {
                         cache.put(event.request, responseClone);
                     });
                 }
-                return response;
-            })
-            .catch(() => {
-                // 네트워크 실패 시 캐시에서 반환
-                return caches.match(event.request);
-            })
+                return networkResponse;
+            }).catch(() => cachedResponse);  // 네트워크 실패 시 캐시 반환
+
+            return cachedResponse || fetchPromise;
+        })
     );
 });
 

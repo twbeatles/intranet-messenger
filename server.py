@@ -82,7 +82,7 @@ def run_server_cli():
                 debug=False,
                 use_reloader=False,
                 log_output=False,
-                allow_unsafe_werkzeug=True,
+                allow_unsafe_werkzeug=False,
                 ssl_context=ssl_context
             )
         else:
@@ -93,7 +93,7 @@ def run_server_cli():
                 debug=False,
                 use_reloader=False,
                 log_output=False,
-                allow_unsafe_werkzeug=True
+                allow_unsafe_werkzeug=False
             )
     except OSError as e:
         if "10048" in str(e) or "Address already in use" in str(e):

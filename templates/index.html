@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🔒 사내 메신저 (E2E 암호화)</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <!-- Google Fonts: Inter for modern typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,7 +45,7 @@
                 </div>
                 <div class="form-group">
                     <label>비밀번호</label>
-                    <input type="password" id="regPassword" placeholder="4자 이상" required>
+                    <input type="password" id="regPassword" placeholder="8자 이상 (영문+숫자)" required>
                 </div>
                 <div class="form-group">
                     <label>닉네임</label>
@@ -269,7 +270,7 @@
                     </div>
                     <div class="form-group">
                         <label>새 비밀번호</label>
-                        <input type="password" id="newPassword" placeholder="새 비밀번호 (4자 이상)">
+                        <input type="password" id="newPassword" placeholder="8자 이상 (영문+숫자)">
                     </div>
                     <div class="form-group">
                         <label>새 비밀번호 확인</label>

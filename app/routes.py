@@ -4,6 +4,7 @@ Flask HTTP 라우트
 """
 
 import os
+import uuid
 import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify, session, send_from_directory, render_template
@@ -15,7 +16,7 @@ from app.models import (
     add_room_member, leave_room_db, update_room_name, get_room_by_id,
     pin_room, mute_room, get_online_users, delete_message, edit_message,
     search_messages, log_access, get_unread_count, update_user_profile,
-    get_user_by_id, is_room_member, get_db,
+    get_user_by_id, is_room_member, get_db, get_message_room_id,
     # v4.0 추가 기능
     pin_message, unpin_message, get_pinned_messages,
     create_poll, get_poll, get_room_polls, vote_poll, get_user_votes, close_poll,
@@ -23,9 +24,14 @@ from app.models import (
     add_reaction, remove_reaction, toggle_reaction, get_message_reactions, get_messages_reactions,
     set_room_admin, is_room_admin, get_room_admins, advanced_search,
     # v4.1 추가 기능
-    change_password, delete_user
+    change_password, delete_user,
+    # [v4.15] 파일 삭제 안전 함수
+    safe_file_delete,
+    # [v4.19] 성능 최적화 함수
+    get_room_last_reads
 )
-from app.utils import sanitize_input, allowed_file
+from app.utils import sanitize_input, allowed_file, validate_file_header
+from app.extensions import limiter
 
 # config 임포트 (PyInstaller 호환)
 try:
@@ -55,6 +61,7 @@ def register_routes(app):
         return jsonify({'logged_in': False})
     
     @app.route('/api/register', methods=['POST'])
+    @limiter.limit("5 per minute")
     def register():
         data = request.json
         username = data.get('username', '').strip()
@@ -63,10 +70,16 @@ def register_routes(app):
         
         if not username or not password:
             return jsonify({'error': '아이디와 비밀번호를 입력해주세요.'}), 400
-        if len(username) < 3:
-            return jsonify({'error': '아이디는 3자 이상이어야 합니다.'}), 400
-        if len(password) < 4:
-            return jsonify({'error': '비밀번호는 4자 이상이어야 합니다.'}), 400
+        
+        # [v4.15] 아이디 형식 검사
+        from app.utils import validate_username, validate_password
+        if not validate_username(username):
+            return jsonify({'error': '아이디는 3-20자 영문, 숫자, 밑줄만 사용 가능합니다.'}), 400
+        
+        # [v4.3] 비밀번호 강도 검사
+        is_valid, error_msg = validate_password(password)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
         
         user_id = create_user(username, password, nickname)
         if user_id:
@@ -74,17 +87,33 @@ def register_routes(app):
             return jsonify({'success': True, 'user_id': user_id})
         return jsonify({'error': '이미 존재하는 아이디입니다.'}), 400
     
+    from flask_wtf.csrf import generate_csrf
+
     @app.route('/api/login', methods=['POST'])
+    @limiter.limit("10 per minute")
     def login():
         data = request.json
         user = authenticate_user(data.get('username', ''), data.get('password', ''))
         if user:
+            # [v4.17] 세션 고정 공격 방지: 사용자 데이터만 교체 (CSRF 토큰 보존 방식 개선)
+            # session.clear()를 사용하면 CSRF 세션 토큰도 삭제되므로,
+            # 대신 사용자 관련 데이터만 교체하고 세션 ID 재생성
+            old_csrf = session.get('csrf_token')  # 기존 CSRF 토큰 백업
+            session.clear()
             session.permanent = True  # 세션 영구화 (새로고침 시 유지)
             session['user_id'] = user['id']
             session['username'] = user['username']
             session['nickname'] = user.get('nickname', user['username'])  # 성능 최적화용 캐싱
             log_access(user['id'], 'login', request.remote_addr, request.user_agent.string)
-            return jsonify({'success': True, 'user': user})
+            
+            # [v4.17] 새 CSRF 토큰 생성 - session 설정 후 호출해야 세션에 저장됨
+            new_csrf_token = generate_csrf()
+            
+            return jsonify({
+                'success': True, 
+                'user': user,
+                'csrf_token': new_csrf_token
+            })
         return jsonify({'error': '아이디 또는 비밀번호가 올바르지 않습니다.'}), 401
     
     @app.route('/api/logout', methods=['POST'])
@@ -121,8 +150,12 @@ def register_routes(app):
         room_type = 'direct' if len(member_ids) == 2 else 'group'
         name = data.get('name', '')
         
-        room_id = create_room(name, room_type, session['user_id'], member_ids)
-        return jsonify({'success': True, 'room_id': room_id})
+        try:
+            room_id = create_room(name, room_type, session['user_id'], member_ids)
+            return jsonify({'success': True, 'room_id': room_id})
+        except Exception as e:
+            logger.error(f"Room creation failed: {e}")
+            return jsonify({'error': '대화방 생성에 실패했습니다.'}), 500
     
     @app.route('/api/rooms/<int:room_id>/messages')
     def get_messages(room_id):
@@ -139,8 +172,12 @@ def register_routes(app):
             members = get_room_members(room_id)
             encryption_key = get_room_key(room_id)
             
-            for msg in messages:
-                msg['unread_count'] = get_unread_count(room_id, msg['id'])
+            # [v4.19] 읽음 상태 배치 조회로 N+1 쿼리 제거
+            if messages:
+                last_reads = get_room_last_reads(room_id)
+                for msg in messages:
+                    # 발신자는 안읽음 카운트에서 제외
+                    msg['unread_count'] = sum(1 for lr, uid in last_reads if lr < msg['id'] and uid != msg['sender_id'])
             
             return jsonify({'messages': messages, 'members': members, 'encryption_key': encryption_key})
         except Exception as e:
@@ -152,6 +189,10 @@ def register_routes(app):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
         
+        # [v4.5] 멤버십 확인 - 방 멤버만 초대 가능
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
+        
         data = request.json
         user_ids = data.get('user_ids', [])
         user_id = data.get('user_id')
@@ -159,8 +200,11 @@ def register_routes(app):
         if user_id:
             user_ids = [user_id]
         
+        # [v4.8] 존재하는 사용자만 필터링
+        valid_user_ids = [uid for uid in user_ids if get_user_by_id(uid)]
+        
         added = 0
-        for uid in user_ids:
+        for uid in valid_user_ids:
             if add_room_member(room_id, uid):
                 added += 1
         
@@ -176,10 +220,41 @@ def register_routes(app):
         leave_room_db(room_id, session['user_id'])
         return jsonify({'success': True})
     
+    @app.route('/api/rooms/<int:room_id>/members/<int:target_user_id>', methods=['DELETE'])
+    def kick_member(room_id, target_user_id):
+        """[v4.9] 관리자가 멤버를 강제 퇴장시키기"""
+        if 'user_id' not in session:
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # 관리자 권한 확인
+        if not is_room_admin(room_id, session['user_id']):
+            return jsonify({'error': '관리자만 멤버를 퇴장시킬 수 있습니다.'}), 403
+        
+        # 자기 자신은 퇴장시킬 수 없음
+        if target_user_id == session['user_id']:
+            return jsonify({'error': '자신을 퇴장시킬 수 없습니다.'}), 400
+        
+        # [v4.10] 대상이 관리자인지 확인 - 관리자는 강퇴 불가
+        if is_room_admin(room_id, target_user_id):
+            return jsonify({'error': '관리자는 강퇴할 수 없습니다.'}), 403
+        
+        # 대상이 해당 방의 멤버인지 확인
+        if not is_room_member(room_id, target_user_id):
+            return jsonify({'error': '해당 사용자는 대화방 멤버가 아닙니다.'}), 400
+        
+        leave_room_db(room_id, target_user_id)
+        return jsonify({'success': True})
+    
     @app.route('/api/rooms/<int:room_id>/name', methods=['PUT'])
     def update_room_name_route(room_id):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # [v4.4] 멤버십 및 관리자 권한 확인
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
+        if not is_room_admin(room_id, session['user_id']):
+            return jsonify({'error': '관리자만 대화방 이름을 변경할 수 있습니다.'}), 403
         
         data = request.json
         new_name = sanitize_input(data.get('name', ''), max_length=50)
@@ -194,6 +269,10 @@ def register_routes(app):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
         
+        # [v4.4] 멤버십 확인
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
+        
         data = request.json
         pinned = data.get('pinned', True)
         if pin_room(session['user_id'], room_id, pinned):
@@ -204,6 +283,10 @@ def register_routes(app):
     def mute_room_route(room_id):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # [v4.4] 멤버십 확인
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
         
         data = request.json
         muted = data.get('muted', True)
@@ -250,6 +333,10 @@ def register_routes(app):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
         
+        # [v4.8] 멤버십 확인 추가
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
+        
         room = get_room_by_id(room_id)
         if not room:
             return jsonify({'error': '대화방을 찾을 수 없습니다.'}), 404
@@ -260,6 +347,7 @@ def register_routes(app):
         return jsonify(room)
     
     @app.route('/api/search')
+    @limiter.limit("30 per minute")
     def search():
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
@@ -276,6 +364,11 @@ def register_routes(app):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
         
+        # [v4.2] 선제적 파일 크기 검사 (메모리 로드 전)
+        max_size = 16 * 1024 * 1024  # 16MB
+        if request.content_length and request.content_length > max_size:
+            return jsonify({'error': f'파일 크기는 16MB 이하여야 합니다.'}), 413
+        
         if 'file' not in request.files:
             return jsonify({'error': '파일이 없습니다.'}), 400
         
@@ -284,8 +377,14 @@ def register_routes(app):
             return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
         
         if file and allowed_file(file.filename):
+            # [v4.3] 파일 내용 검증 (Magic Number)
+            if not validate_file_header(file):
+                logger.warning(f"File signature mismatch: {file.filename}")
+                return jsonify({'error': '파일 내용이 확장자와 일치하지 않습니다.'}), 400
+
             filename = secure_filename(file.filename)
-            unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
+            # [v4.14] UUID 추가로 동시 업로드 시 파일명 충돌 방지
+            unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}_{filename}"
             file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
             file.save(file_path)
             return jsonify({
@@ -323,7 +422,11 @@ def register_routes(app):
         if not os.path.isfile(full_path):
             return jsonify({'error': '파일을 찾을 수 없습니다.'}), 404
         
-        return send_from_directory(os.path.dirname(full_path), os.path.basename(full_path))
+        # [v4.4] 캐시 헤더 추가 (성능 최적화)
+        response = send_from_directory(os.path.dirname(full_path), os.path.basename(full_path))
+        response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1년 캐시 (파일명에 타임스탬프 포함)
+        response.headers['Vary'] = 'Accept-Encoding'
+        return response
     
     # Service Worker
     @app.route('/sw.js')
@@ -386,6 +489,10 @@ def register_routes(app):
         if ext not in allowed_extensions:
             return jsonify({'error': '이미지 파일만 업로드 가능합니다.'}), 400
         
+        # [v4.3] 파일 내용 검증
+        if not validate_file_header(file):
+            return jsonify({'error': '유효하지 않은 이미지 파일입니다.'}), 400
+        
         # 파일 크기 제한 (5MB)
         file.seek(0, 2)
         size = file.tell()
@@ -397,23 +504,48 @@ def register_routes(app):
         profile_folder = os.path.join(UPLOAD_FOLDER, 'profiles')
         os.makedirs(profile_folder, exist_ok=True)
         
-        # 파일 저장
-        filename = f"{session['user_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
+        # [v4.12] 기존 프로필 이미지 삭제 (디스크 공간 절약)
+        user = get_user_by_id(session['user_id'])
+        if user and user.get('profile_image'):
+            try:
+                old_image_path = os.path.join(UPLOAD_FOLDER, user['profile_image'])
+                # [v4.14] safe_file_delete 사용
+                if safe_file_delete(old_image_path):
+                    logger.debug(f"Old profile image deleted: {user['profile_image']}")
+            except Exception as e:
+                logger.warning(f"Old profile image deletion failed: {e}")
+        
+        # 파일 저장 - [v4.14] UUID 추가로 동시 업로드 시 파일명 충돌 방지
+        filename = f"{session['user_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}.{ext}"
         file_path = os.path.join(profile_folder, filename)
         file.save(file_path)
         
         # DB 업데이트
-        profile_image = f"profiles/{filename}"
-        success = update_user_profile(session['user_id'], profile_image=profile_image)
-        
-        if success:
-            return jsonify({'success': True, 'profile_image': profile_image})
-        return jsonify({'error': '프로필 이미지 업데이트에 실패했습니다.'}), 500
+        try:
+            profile_image = f"profiles/{filename}"
+            success = update_user_profile(session['user_id'], profile_image=profile_image)
+            
+            if success:
+                return jsonify({'success': True, 'profile_image': profile_image})
+            return jsonify({'error': '프로필 이미지 데이터베이스 업데이트 실패'}), 500
+        except Exception as e:
+            logger.error(f"Profile update error: {e}")
+            return jsonify({'error': f'프로필 처리 중 오류가 발생했습니다: {str(e)}'}), 500
     
     @app.route('/api/profile/image', methods=['DELETE'])
     def delete_profile_image():
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # [v4.4] 기존 프로필 이미지 조회 후 삭제
+        user = get_user_by_id(session['user_id'])
+        if user and user.get('profile_image'):
+            try:
+                old_image_path = os.path.join(UPLOAD_FOLDER, user['profile_image'])
+                # [v4.14] safe_file_delete 사용
+                safe_file_delete(old_image_path)
+            except Exception as e:
+                logger.warning(f"Profile image file deletion failed: {e}")
         
         # DB에서 프로필 이미지 삭제 (null로 설정)
         success = update_user_profile(session['user_id'], profile_image='')
@@ -441,9 +573,7 @@ def register_routes(app):
         if not is_room_member(room_id, session['user_id']):
             return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
-        # [v4.1] 관리자만 공지 등록 가능
-        if not is_room_admin(room_id, session['user_id']):
-            return jsonify({'error': '관리자만 공지를 등록할 수 있습니다.'}), 403
+        # [v4.20] 모든 멤버가 공지 등록 가능 (관리자 제한 제거)
         
         data = request.json
         message_id = data.get('message_id')
@@ -463,6 +593,8 @@ def register_routes(app):
             return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
             return jsonify({'error': '접근 권한이 없습니다.'}), 403
+        
+        # [v4.20] 모든 멤버가 공지 삭제 가능 (관리자 제한 제거)
         
         if unpin_message(pin_id, session['user_id'], room_id):
             return jsonify({'success': True})
@@ -495,15 +627,29 @@ def register_routes(app):
         options = data.get('options', [])
         multiple_choice = data.get('multiple_choice', False)
         anonymous = data.get('anonymous', False)
+        ends_at = data.get('ends_at')  # [v4.8] ISO 형식 날짜/시간 문자열
         
         if not question:
             return jsonify({'error': '질문을 입력해주세요.'}), 400
         if len(options) < 2:
             return jsonify({'error': '최소 2개의 옵션이 필요합니다.'}), 400
         
+        # [v4.9] ends_at 형식 검증
+        if ends_at:
+            from datetime import datetime
+            try:
+                # ISO 형식 파싱 시도
+                ends_at_dt = datetime.fromisoformat(ends_at.replace('Z', '+00:00'))
+                if ends_at_dt < datetime.now(ends_at_dt.tzinfo) if ends_at_dt.tzinfo else ends_at_dt < datetime.now():
+                    return jsonify({'error': '마감 시간은 현재 시간 이후여야 합니다.'}), 400
+                # DB 저장 형식으로 변환 (UTC 없이 문자열)
+                ends_at = ends_at_dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                return jsonify({'error': '올바른 날짜/시간 형식이 아닙니다. (ISO 8601)'}), 400
+        
         options = [sanitize_input(opt, max_length=100) for opt in options[:10]]
         
-        poll_id = create_poll(room_id, session['user_id'], question, options, multiple_choice, anonymous)
+        poll_id = create_poll(room_id, session['user_id'], question, options, multiple_choice, anonymous, ends_at)
         if poll_id:
             poll = get_poll(poll_id)
             return jsonify({'success': True, 'poll': poll})
@@ -513,6 +659,13 @@ def register_routes(app):
     def vote_poll_route(poll_id):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # [v4.6] 투표가 속한 방의 멤버십 확인
+        poll = get_poll(poll_id)
+        if not poll:
+            return jsonify({'error': '투표를 찾을 수 없습니다.'}), 404
+        if not is_room_member(poll['room_id'], session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data = request.json
         option_id = data.get('option_id')
@@ -531,6 +684,13 @@ def register_routes(app):
     def close_poll_route(poll_id):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # [v4.5] 투표가 속한 방의 멤버십 확인
+        poll = get_poll(poll_id)
+        if not poll:
+            return jsonify({'error': '투표를 찾을 수 없습니다.'}), 404
+        if not is_room_member(poll['room_id'], session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         if close_poll(poll_id, session['user_id']):
             return jsonify({'success': True})
@@ -556,8 +716,10 @@ def register_routes(app):
             return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
             return jsonify({'error': '접근 권한이 없습니다.'}), 403
-        
-        success, file_path = delete_room_file(file_id, session['user_id'])
+        # [v4.8] 관리자도 파일 삭제 가능
+        is_admin = is_room_admin(room_id, session['user_id'])
+        # [v4.9] room_id 전달하여 다른 방 파일 삭제 방지
+        success, file_path = delete_room_file(file_id, session['user_id'], room_id=room_id, is_admin=is_admin)
         if success:
             return jsonify({'success': True})
         return jsonify({'error': '파일 삭제 권한이 없습니다.'}), 403
@@ -569,6 +731,12 @@ def register_routes(app):
     def get_reactions(message_id):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # [v4.4] 메시지 접근 권한 확인
+        room_id = get_message_room_id(message_id)
+        if room_id is None or not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
+        
         reactions = get_message_reactions(message_id)
         return jsonify(reactions)
     
@@ -576,6 +744,11 @@ def register_routes(app):
     def add_reaction_route(message_id):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        
+        # [v4.4] 메시지 접근 권한 확인
+        room_id = get_message_room_id(message_id)
+        if room_id is None or not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
         
         data = request.json
         emoji = data.get('emoji', '')
@@ -614,6 +787,12 @@ def register_routes(app):
         
         if not target_user_id:
             return jsonify({'error': '사용자를 선택해주세요.'}), 400
+        
+        # [v4.13] 마지막 관리자 해제 방지
+        if not is_admin:
+            admins = get_room_admins(room_id)
+            if len(admins) <= 1:
+                return jsonify({'error': '최소 한 명의 관리자가 필요합니다.'}), 400
         
         if set_room_admin(room_id, target_user_id, is_admin):
             return jsonify({'success': True})
@@ -661,8 +840,11 @@ def register_routes(app):
         if not current_password or not new_password:
             return jsonify({'error': '입력값이 부족합니다.'}), 400
             
-        if len(new_password) < 4:
-            return jsonify({'error': '비밀번호는 4자 이상이어야 합니다.'}), 400
+        # [v4.3] 비밀번호 강도 검사
+        from app.utils import validate_password
+        is_valid, error_msg = validate_password(new_password)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
             
         success, error = change_password(session['user_id'], current_password, new_password)
         

@@ -10,6 +10,12 @@ simple-websocket>=0.10.0
 pycryptodome>=3.18.0
 PyQt6>=6.5.0
 cryptography>=41.0.0
+bcrypt>=4.0.0  # [v4.2] 비밀번호 해시 강화
+Flask-Limiter>=3.3.0  # [v4.3] Rate Limiting
+Flask-WTF>=1.1.0      # [v4.3] CSRF Protection
+Flask-Compress>=1.13  # [v4.4] Response Gzip Compression
+pytest>=7.4.0         # [v4.3] Unit Testing
+pytest-flask>=1.2.0   # [v4.3] Flask Testing Comparison
 
 # ============================================================================
 # 고성능 동시 접속 지원 (선택, 권장)

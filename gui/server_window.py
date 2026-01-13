@@ -10,6 +10,7 @@ import os
 import sys
 import socket
 import winreg
+import multiprocessing
 from datetime import datetime
 
 # HiDPI 지원 (PyQt6 import 전에 설정)
@@ -27,11 +28,12 @@ from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QPixmap, QPainter
 # 부모 디렉토리에서 import
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import APP_NAME, VERSION, DEFAULT_PORT, USE_HTTPS, SSL_CERT_PATH, SSL_KEY_PATH, SSL_DIR
-
+from app.run_server import run_server_process  # [v4.16] 별도 프로세스 실행 모듈
 
 class ServerThread(QThread):
-    """Flask 서버를 별도 스레드에서 실행"""
+    """Flask 서버를 별도 프로세스에서 실행하고 모니터링"""
     log_signal = pyqtSignal(str)
+    stats_signal = pyqtSignal(dict)  # [v4.16] 통계 전송 시그널
     
     def __init__(self, host='0.0.0.0', port=5000, use_https=True):
         super().__init__()
@@ -39,66 +41,56 @@ class ServerThread(QThread):
         self.port = port
         self.use_https = use_https
         self.running = True
-    
+        self.process = None
+        self.queue = multiprocessing.Queue()
+        
     def run(self):
         try:
-            # DB 초기화를 스레드 내부로 이동
-            from app.models import init_db
-            init_db()
-            
-            from app import create_app
-            from app.models import server_stats
-            
-            app, socketio = create_app()
-            server_stats['start_time'] = datetime.now()
-            
-            protocol = "https" if self.use_https else "http"
-            self.log_signal.emit(f"서버 시작 중: {protocol}://{self.host}:{self.port}")
-            
-            # SSL 인증서 확인
-            ssl_context = None
+            # SSL 경로 설정
+            ssl_paths = None
             if self.use_https:
                 if os.path.exists(SSL_CERT_PATH) and os.path.exists(SSL_KEY_PATH):
-                    ssl_context = (SSL_CERT_PATH, SSL_KEY_PATH)
-                    self.log_signal.emit("SSL 인증서 로드됨")
-                else:
-                    self.log_signal.emit("SSL 인증서 없음. HTTP 모드로 실행")
+                    ssl_paths = (SSL_CERT_PATH, SSL_KEY_PATH)
             
-            if ssl_context:
-                socketio.run(
-                    app,
-                    host=self.host,
-                    port=self.port,
-                    debug=False,
-                    use_reloader=False,
-                    log_output=False,
-                    allow_unsafe_werkzeug=True,
-                    ssl_context=ssl_context
-                )
-            else:
-                socketio.run(
-                    app,
-                    host=self.host,
-                    port=self.port,
-                    debug=False,
-                    use_reloader=False,
-                    log_output=False,
-                    allow_unsafe_werkzeug=True
-                )
-        except OSError as e:
-            if "Address already in use" in str(e) or "10048" in str(e):
-                self.log_signal.emit(f"오류: 포트 {self.port}이 이미 사용 중입니다.")
-            else:
-                self.log_signal.emit(f"서버 오류: {str(e)}")
+            # 서버 프로세스 시작
+            self.process = multiprocessing.Process(
+                target=run_server_process,
+                args=(self.queue, self.host, self.port, self.use_https, ssl_paths)
+            )
+            self.process.start()
+            
+            # 로그 및 통계 모니터링
+            while self.running and self.process.is_alive():
+                try:
+                    # 큐에서 데이터 가져오기 (non-blocking, short timeout)
+                    kind, data = self.queue.get(timeout=0.1)
+                    if kind == 'log':
+                        self.log_signal.emit(data)
+                    elif kind == 'stats':
+                        self.stats_signal.emit(data)
+                except multiprocessing.queues.Empty:
+                    continue
+                except Exception as e:
+                    self.log_signal.emit(f"모니터링 오류: {e}")
+                    
         except Exception as e:
-            self.log_signal.emit(f"서버 오류: {str(e)}")
-            import traceback
-            self.log_signal.emit(traceback.format_exc())
+            self.log_signal.emit(f"서버 프로세스 시작 오류: {e}")
         finally:
-            self.running = False
-    
+            self.cleanup()
+
     def stop(self):
+        """서버 프로세스 종료"""
         self.running = False
+        self.cleanup()
+        
+    def cleanup(self):
+        """프로세스 정리"""
+        if self.process and self.process.is_alive():
+            self.log_signal.emit("서버 프로세스 종료 중...")
+            self.process.terminate()
+            self.process.join(timeout=2)
+            if self.process.is_alive():
+                self.process.kill()
 
 
 class ToastWidget(QLabel):
@@ -158,6 +150,7 @@ class ServerWindow(QMainWindow):
         super().__init__()
         self.server_thread = None
         self.settings = QSettings('MessengerServer', 'Settings')
+        self.local_stats = {}  # [v4.16] 로컬 통계 저장소
         self.init_ui()
         self.create_tray_icon()
         self.load_settings()
@@ -379,9 +372,9 @@ class ServerWindow(QMainWindow):
         self.port_spin.valueChanged.connect(self.update_urls)
         self.https_check.stateChanged.connect(self.update_urls)
         
-        # 통계 업데이트 타이머
+        # 통계 UI 업데이트 타이머 (데이터는 signal로 받지만 UI 갱신은 부하 분산을 위해 유지)
         self.stats_timer = QTimer()
-        self.stats_timer.timeout.connect(self.update_stats)
+        self.stats_timer.timeout.connect(self.update_stats_ui)
         self.stats_timer.start(1000)
     
     def update_ssl_status(self):
@@ -478,16 +471,13 @@ class ServerWindow(QMainWindow):
         if self.server_thread and self.server_thread.isRunning():
             return
         
-        # [v4.1] GUI 모드에서는 gevent 비활성화 (PyQt6 충돌 방지)
-        import os
-        os.environ['SKIP_GEVENT_PATCH'] = '1'
-        
         self.server_thread = ServerThread(
             port=self.port_spin.value(),
             use_https=self.https_check.isChecked()
         )
         self.server_thread.log_signal.connect(self.add_log)
-        self.server_thread.finished.connect(self.on_server_finished)  # [v4.1] 스레드 종료 핸들러
+        self.server_thread.stats_signal.connect(self.update_local_stats)
+        self.server_thread.finished.connect(self.on_server_finished)
         self.server_thread.start()
         
         self.start_btn.setEnabled(False)
@@ -497,7 +487,6 @@ class ServerWindow(QMainWindow):
         self.status_label.setText('🟢 서버 실행 중')
         self.status_label.setStyleSheet('font-size: 14px; color: #10B981;')
         
-        self.add_log('서버가 시작되었습니다.')
         self.show_toast('서버가 시작되었습니다', 'success')
         self.tray_icon.showMessage(APP_NAME, '서버가 시작되었습니다.', QSystemTrayIcon.MessageIcon.Information, 2000)
     
@@ -509,11 +498,13 @@ class ServerWindow(QMainWindow):
         self.https_check.setEnabled(True)
         self.status_label.setText('⚪ 서버 중지됨')
         self.status_label.setStyleSheet('font-size: 14px; color: #94A3B8;')
-        self.add_log('서버 스레드가 종료되었습니다.')
+        self.add_log('서버 프로세스가 종료되었습니다.')
     
     def stop_server(self):
+        """[v4.2] Graceful shutdown"""
         if self.server_thread:
-            self.server_thread.terminate()
+            # ServerThread.stop() 내부에서 process.terminate 호출
+            self.server_thread.stop()
             self.server_thread.wait(1000)
             self.server_thread = None
         
@@ -533,13 +524,7 @@ class ServerWindow(QMainWindow):
         self.log_text.append(f'[{timestamp}] {message}')
     
     def show_toast(self, message: str, toast_type: str = "info", duration: int = 3000):
-        """토스트 알림 표시
-        
-        Args:
-            message: 알림 메시지
-            toast_type: 알림 타입 (success, error, warning, info)
-            duration: 표시 시간 (ms)
-        """
+        """토스트 알림 표시"""
         toast = ToastWidget(self, message, toast_type, duration)
         toast.move(self.width() - toast.width() - 20, 60)
         toast.show()
@@ -555,16 +540,22 @@ class ServerWindow(QMainWindow):
         self.local_url.setText(f'🖥️ 로컬 접속: {protocol}://localhost:{port}')
         self.network_url.setText(f'🌐 네트워크 접속: {protocol}://{local_ip}:{port}')
     
-    def update_stats(self):
+    def update_local_stats(self, stats):
+        """[v4.16] 서버 프로세스로부터 받은 통계 저장"""
+        self.local_stats = stats
+        
+    def update_stats_ui(self):
+        """[v4.16] 저장된 통계로 UI 업데이트"""
         try:
-            from app.models import server_stats
+            # 로컬 스코프의 self.local_stats 사용
+            stats = self.local_stats
             
-            self.stats_labels['active_connections'].setText(str(server_stats.get('active_connections', 0)))
-            self.stats_labels['total_connections'].setText(str(server_stats.get('total_connections', 0)))
-            self.stats_labels['total_messages'].setText(str(server_stats.get('total_messages', 0)))
+            self.stats_labels['active_connections'].setText(str(stats.get('active_connections', 0)))
+            self.stats_labels['total_connections'].setText(str(stats.get('total_connections', 0)))
+            self.stats_labels['total_messages'].setText(str(stats.get('total_messages', 0)))
             
-            if server_stats.get('start_time'):
-                uptime = datetime.now() - server_stats['start_time']
+            if stats.get('start_time'):
+                uptime = datetime.now() - stats['start_time']
                 hours, remainder = divmod(int(uptime.total_seconds()), 3600)
                 minutes, seconds = divmod(remainder, 60)
                 self.stats_labels['uptime'].setText(f'{hours}시간 {minutes}분 {seconds}초')

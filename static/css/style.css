@@ -710,6 +710,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    position: relative;
+    z-index: 50;
 }
 
 .chat-header-info {
@@ -757,9 +759,11 @@ body {
     border-radius: var(--radius-sm);
     padding: 8px 0;
     min-width: 180px;
-    z-index: 100;
+    z-index: 1000;
     display: none;
     box-shadow: var(--shadow);
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 .dropdown-menu.active {
@@ -4187,4 +4191,813 @@ html {
     100% {
         background: transparent;
     }
+}
+
+/* ============================================================================
+   [v5.0] ENHANCED UI/UX REFACTORING
+   Comprehensive visual improvements for premium user experience
+   ============================================================================ */
+
+/* ============================================
+   Authentication Screen Enhancements
+   ============================================ */
+
+/* Animated gradient background */
+.auth-container {
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-container::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 30% 20%, var(--primary-light), transparent 50%),
+        radial-gradient(ellipse at 70% 80%, rgba(99, 102, 241, 0.08), transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(244, 63, 94, 0.05), transparent 60%);
+    animation: authBgFloat 20s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes authBgFloat {
+
+    0%,
+    100% {
+        opacity: 0.6;
+        transform: scale(1) rotate(0deg);
+    }
+
+    33% {
+        opacity: 0.8;
+        transform: scale(1.05) rotate(1deg);
+    }
+
+    66% {
+        opacity: 0.7;
+        transform: scale(1.02) rotate(-1deg);
+    }
+}
+
+/* Staggered form field animations */
+.auth-box .form-group {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: formFieldAppear 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.auth-box .form-group:nth-child(1) {
+    animation-delay: 0.1s;
+}
+
+.auth-box .form-group:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.auth-box .form-group:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.auth-box .form-group:nth-child(4) {
+    animation-delay: 0.4s;
+}
+
+@keyframes formFieldAppear {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Enhanced input focus with glow */
+.auth-box .form-group input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px var(--primary-light),
+        0 0 30px -5px var(--primary),
+        inset 0 1px 2px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+/* Auth button enhanced hover */
+.auth-box .btn-primary {
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-box .btn-primary::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.auth-box .btn-primary:hover::after {
+    left: 100%;
+}
+
+/* Encryption badge pulse */
+.encryption-badge {
+    animation: badgePulse 3s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+
+    0%,
+    100% {
+        box-shadow: 0 2px 10px rgba(16, 185, 129, 0.15);
+    }
+
+    50% {
+        box-shadow: 0 2px 20px rgba(16, 185, 129, 0.35);
+    }
+}
+
+/* ============================================
+   Sidebar & Navigation Enhancements
+   ============================================ */
+
+/* Enhanced room item hover */
+.room-item {
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.room-item:hover {
+    background: rgba(30, 41, 59, 0.7);
+    transform: translateX(6px);
+    border-color: rgba(16, 185, 129, 0.2);
+    box-shadow: -4px 0 0 var(--primary);
+}
+
+.room-item.active {
+    transform: translateX(0);
+    box-shadow: 0 4px 20px -5px var(--primary);
+}
+
+/* Online user pulse ring */
+.online-user {
+    position: relative;
+}
+
+.online-user::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 2px solid var(--success);
+    opacity: 0;
+    animation: onlineRingPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes onlineRingPulse {
+
+    0%,
+    100% {
+        opacity: 0;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.6;
+        transform: scale(1.15);
+    }
+}
+
+/* Search box enhanced focus */
+.search-box input {
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.search-box input:focus {
+    background: rgba(30, 41, 59, 0.95);
+    box-shadow: 0 0 0 4px var(--primary-light),
+        0 4px 20px -5px var(--primary);
+    transform: scale(1.01);
+}
+
+/* Icon button enhanced interactions */
+.user-actions .icon-btn {
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.user-actions .icon-btn:hover {
+    transform: scale(1.15) translateY(-2px);
+    box-shadow: 0 4px 15px -3px var(--primary);
+}
+
+.user-actions .icon-btn:active {
+    transform: scale(0.9);
+}
+
+/* ============================================
+   Chat Area Improvements
+   ============================================ */
+
+/* Enhanced message entrance */
+.message {
+    animation: messageSlideIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes messageSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Sent message with extra polish */
+.message.sent {
+    animation: messageSentSlide 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes messageSentSlide {
+    from {
+        opacity: 0;
+        transform: translateY(20px) translateX(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) translateX(0) scale(1);
+    }
+}
+
+/* Message bubble hover enhancement */
+.message-bubble {
+    transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.message:hover .message-bubble {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.message.sent:hover .message-bubble {
+    box-shadow: 0 8px 25px -5px var(--primary);
+}
+
+/* Message actions fade-in */
+.message-actions {
+    opacity: 0;
+    transform: translateY(-5px);
+    transition: all 0.2s ease;
+}
+
+.message:hover .message-actions {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Enhanced scroll to bottom button */
+.scroll-to-bottom-btn {
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+}
+
+.scroll-to-bottom-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 6px 30px rgba(16, 185, 129, 0.5);
+}
+
+.scroll-to-bottom-btn:not(.hidden) {
+    animation: scrollBtnBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes scrollBtnBounce {
+    0% {
+        transform: scale(0) translateY(20px);
+    }
+
+    60% {
+        transform: scale(1.1) translateY(-5px);
+    }
+
+    100% {
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Enhanced typing indicator */
+.typing-indicator {
+    animation: typingAppear 0.3s ease;
+}
+
+@keyframes typingAppear {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================================
+   Modal & Dialog Improvements
+   ============================================ */
+
+/* Spring-based modal animation */
+.modal-overlay.active .modal {
+    animation: modalSpring 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalSpring {
+    0% {
+        opacity: 0;
+        transform: scale(0.8) translateY(40px);
+    }
+
+    50% {
+        transform: scale(1.02) translateY(-8px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Enhanced modal backdrop */
+.modal-overlay {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: backdrop-filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* Modal tab transitions */
+.modal-tab {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modal-tab::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 0;
+    height: 2px;
+    background: var(--primary);
+    transition: all 0.25s ease;
+    transform: translateX(-50%);
+}
+
+.modal-tab:hover::before {
+    width: 50%;
+}
+
+.modal-tab.active::before {
+    width: 100%;
+}
+
+/* Tab content transition */
+.tab-content {
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: all 0.25s ease;
+}
+
+.tab-content.active {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Settings color option enhanced */
+.color-option {
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.color-option:hover {
+    transform: scale(1.2) translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.color-option.active {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 3px var(--text), 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Micro-interactions & Visual Polish
+   ============================================ */
+
+/* Enhanced button shimmer effect */
+.btn-primary {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.btn-primary::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.15) 50%,
+            transparent 100%);
+    transition: left 0.6s ease;
+    z-index: 1;
+}
+
+.btn-primary:hover::before {
+    left: 100%;
+}
+
+/* Enhanced badge pop animation */
+.unread-badge {
+    animation: unreadPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes unreadPop {
+    0% {
+        transform: scale(0);
+    }
+
+    60% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Shadow transitions for interactive elements */
+.room-item,
+.user-item,
+.message-bubble,
+.modal {
+    transition-property: transform, box-shadow, background, border-color;
+    transition-duration: 0.25s;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Enhanced focus states for accessibility */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 4px var(--primary-light);
+}
+
+/* Smooth selection color */
+::selection {
+    background: var(--primary);
+    color: white;
+}
+
+::-moz-selection {
+    background: var(--primary);
+    color: white;
+}
+
+/* Send button enhanced */
+.send-btn {
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.send-btn:hover {
+    transform: scale(1.12) rotate(10deg);
+    box-shadow: 0 8px 30px -5px var(--primary);
+}
+
+.send-btn:active {
+    transform: scale(0.9) rotate(0deg);
+}
+
+/* Chat header actions hover */
+.chat-header-actions .icon-btn {
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.chat-header-actions .icon-btn:hover {
+    transform: scale(1.12);
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+/* Emoji picker animation */
+.emoji-picker {
+    animation: emojiPickerAppear 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes emojiPickerAppear {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Form validation visual feedback */
+.form-group input:valid:not(:placeholder-shown) {
+    border-color: var(--success);
+}
+
+/* Loading state improvements */
+.btn.loading {
+    pointer-events: none;
+    position: relative;
+}
+
+.btn.loading::after {
+    content: '';
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: buttonSpin 0.7s linear infinite;
+}
+
+@keyframes buttonSpin {
+    to {
+        transform: translateY(-50%) rotate(360deg);
+    }
+}
+
+/* Toast notification enhanced entrance */
+.toast {
+    animation: toastEnter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes toastEnter {
+    0% {
+        opacity: 0;
+        transform: translateX(100%) scale(0.8);
+    }
+
+    60% {
+        transform: translateX(-10px) scale(1.02);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+/* Mobile sidebar animation */
+@media (max-width: 768px) {
+    .sidebar {
+        transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .sidebar.active {
+        box-shadow: 10px 0 40px rgba(0, 0, 0, 0.5);
+    }
+}
+
+/* Lightbox enhanced transitions */
+.lightbox {
+    transition: opacity 0.3s ease, visibility 0.3s;
+}
+
+.lightbox.active .lightbox-content {
+    animation: lightboxZoom 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes lightboxZoom {
+    from {
+        opacity: 0;
+        transform: scale(0.85);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Poll option hover enhancement */
+.poll-option {
+    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.poll-option:hover {
+    transform: translateX(4px);
+    border-color: var(--primary);
+    box-shadow: -4px 0 0 var(--primary);
+}
+
+/* File item hover */
+.file-item {
+    transition: all 0.25s ease;
+}
+
+.file-item:hover {
+    background: var(--bg-light);
+    transform: translateX(4px);
+}
+
+/* ============================================
+   [v4.23] 설정 메뉴 드롭다운 위치 개선
+   ============================================ */
+#roomSettingsMenu {
+    position: fixed;
+    top: auto;
+    right: 20px;
+    margin-top: 8px;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    z-index: 2000;
+}
+
+/* 드롭다운 구분선 스타일 */
+.dropdown-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 0;
+}
+
+/* ============================================
+   [v4.23] 답장 메시지 UI 개선
+   ============================================ */
+.message-reply {
+    background: var(--primary-light);
+    border-left: 3px solid var(--primary);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.message-reply:hover {
+    background: rgba(var(--primary), 0.2);
+    transform: translateX(2px);
+}
+
+.reply-indicator {
+    color: var(--primary);
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.reply-text {
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+/* 답장 미리보기 (입력창 위) */
+.reply-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-light);
+    border-left: 3px solid var(--primary);
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+}
+
+.reply-preview-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.reply-preview-sender {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--primary);
+}
+
+.reply-preview-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reply-preview-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 14px;
+}
+
+.reply-preview-close:hover {
+    color: var(--danger);
+}
+
+/* ============================================
+   [v4.23] 리액션 UI
+   ============================================ */
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.reaction-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.reaction-badge:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+}
+
+.reaction-badge.active {
+    background: var(--primary-light);
+    border-color: var(--primary);
+}
+
+.reaction-count {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* 리액션 선택 버튼 */
+.add-reaction-btn {
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+}
+
+.add-reaction-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light);
+}
+
+/* 리액션 피커 */
+.reaction-picker {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+    display: none;
+    box-shadow: var(--shadow);
+    z-index: 1000;
+}
+
+.reaction-picker.active {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    max-width: 200px;
+}
+
+.reaction-picker-item {
+    padding: 4px 6px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.2s;
+    font-size: 16px;
+}
+
+.reaction-picker-item:hover {
+    background: var(--primary-light);
 }

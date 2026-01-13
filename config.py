@@ -43,7 +43,8 @@ TEMPLATE_FOLDER = os.path.join(BUNDLE_DIR, 'templates')
 # ============================================================================
 USE_HTTPS = False
 DEFAULT_PORT = 5000
-SESSION_TIMEOUT_HOURS = 24
+SESSION_TIMEOUT_HOURS = 72  # 3일
+# 보안 솔트 (기본값 - 실제 사용 시 app/__init__.py에서 파일 기반 솔트로 대체됨)
 PASSWORD_SALT = "messenger_secure_salt_2024"
 
 # ============================================================================
@@ -52,7 +53,9 @@ PASSWORD_SALT = "messenger_secure_salt_2024"
 # 비동기 모드: 'gevent' (권장, 고성능), 'eventlet', 'threading' (기본, 제한적)
 # gevent를 사용하려면: pip install gevent gevent-websocket
 # eventlet을 사용하려면: pip install eventlet
-ASYNC_MODE = 'gevent'  # 수십~수백 명 동시 접속 지원
+# ASYNC_MODE = 'gevent'  # 수십~수백 명 동시 접속 지원
+# ASYNC_MODE = 'gevent'  # 수십~수백 명 동시 접속 지원
+ASYNC_MODE = 'threading'  # 동시 접속 제한적 (디버깅용 안정성 확보)
 
 # Socket.IO 설정
 PING_TIMEOUT = 120  # 클라이언트 연결 타임아웃 (초)

@@ -11,7 +11,7 @@ from flask import session, request
 from flask_socketio import emit, join_room, leave_room
 
 from app.models import (
-    update_user_status, get_user_by_id, is_room_member,
+    update_user_status, get_user_by_id, is_room_member, is_room_admin,
     create_message, update_last_read, get_unread_count, server_stats,
     get_user_rooms, edit_message, delete_message
 )
@@ -29,6 +29,11 @@ user_cache = {}  # {user_id: {'nickname': str, 'rooms': [int], 'updated': float}
 cache_lock = Lock()
 MAX_CACHE_SIZE = 1000  # [v4.1] 최대 캐시 크기
 CACHE_TTL = 300  # [v4.1] 캐시 유효 시간 (5분)
+
+# [v4.14] 타이핑 이벤트 레이트 리미팅
+typing_last_emit = {}  # {(user_id, room_id): timestamp}
+typing_rate_lock = Lock()
+TYPING_RATE_LIMIT = 1.0  # 최소 1초 간격
 
 
 def cleanup_old_cache():
@@ -124,6 +129,7 @@ def register_socket_events(socketio):
     def handle_disconnect():
         user_id = None
         still_online = False
+        room_ids = []  # [v4.2] 락 내에서 미리 저장
         
         with online_users_lock:
             user_id = online_users.pop(request.sid, None)
@@ -133,16 +139,28 @@ def register_socket_events(socketio):
                 still_online = len(user_sids[user_id]) > 0
                 if not still_online:
                     del user_sids[user_id]
+                    # [v4.2] 락 내에서 방 목록 캐시 복사
+                    if user_id in user_cache:
+                        room_ids = user_cache[user_id].get('rooms', []).copy()
         
+        # [v4.2] 락 해제 후 DB 작업 및 브로드캐스트 (락 내에서 가져온 정보 사용)
         if user_id and not still_online:
             update_user_status(user_id, 'offline')
-            # 해당 사용자의 방에만 상태 전송
+            # 캐시가 없었으면 DB에서 조회
+            if not room_ids:
+                room_ids = get_user_room_ids(user_id)
             try:
-                for room_id in get_user_room_ids(user_id):
+                for room_id in room_ids:
                     emit('user_status', {'user_id': user_id, 'status': 'offline'}, 
                          room=f'room_{room_id}')
             except Exception as e:
                 logger.error(f"Disconnect broadcast error: {e}")
+            
+            # [v4.15] 사용자의 타이핑 레이트 리밋 정보 정리 (메모리 누수 방지)
+            with typing_rate_lock:
+                keys_to_remove = [k for k in typing_last_emit if k[0] == user_id]
+                for k in keys_to_remove:
+                    del typing_last_emit[k]
         
         with stats_lock:
             server_stats['active_connections'] = max(0, server_stats['active_connections'] - 1)
@@ -186,17 +204,32 @@ def register_socket_events(socketio):
             if 'user_id' not in session:
                 return
             
+            # [v4.2] 입력 유효성 검사 강화
             room_id = data.get('room_id')
+            if not isinstance(room_id, int) or room_id <= 0:
+                emit('error', {'message': '잘못된 대화방 ID입니다.'})
+                return
+            
             content = data.get('content', '')
             if isinstance(content, str):
-                content = content.strip()
+                content = content.strip()[:10000]  # 최대 10000자 제한
+            else:
+                content = ''
+            
             message_type = data.get('type', 'text')
+            # 허용된 메시지 타입만 사용
+            allowed_types = {'text', 'file', 'image', 'system'}
+            if message_type not in allowed_types:
+                message_type = 'text'
+            
             file_path = data.get('file_path')
             file_name = data.get('file_name')
             reply_to = data.get('reply_to')
-            encrypted = data.get('encrypted', True)
+            if reply_to is not None and not isinstance(reply_to, int):
+                reply_to = None
+            encrypted = bool(data.get('encrypted', True))
             
-            if not room_id or (not content and not file_path):
+            if not content and not file_path:
                 return
             
             # 캐시된 방 목록으로 빠른 확인
@@ -210,7 +243,19 @@ def register_socket_events(socketio):
                 room_id, session['user_id'], content, message_type, file_path, file_name, reply_to, encrypted
             )
             if message:
-                message['unread_count'] = get_unread_count(room_id, message['id'])
+                message['unread_count'] = get_unread_count(room_id, message['id'], session['user_id'])
+                if message_type in ('file', 'image') and file_path:
+                    from app.models import add_room_file
+                    import os
+                    from config import UPLOAD_FOLDER
+                    
+                    try:
+                        full_path = os.path.join(UPLOAD_FOLDER, file_path)
+                        file_size = os.path.getsize(full_path) if os.path.exists(full_path) else None
+                        add_room_file(room_id, session['user_id'], file_path, file_name, file_size, message_type, message['id'])
+                    except Exception as e:
+                        logger.error(f"Failed to add room file record: {e}")
+
                 emit('new_message', message, room=f'room_{room_id}')
                 # broadcast 대신 해당 방 멤버들의 모든 세션에 전송
                 emit('room_updated', {'room_id': room_id}, room=f'room_{room_id}')
@@ -232,6 +277,10 @@ def register_socket_events(socketio):
             message_id = data.get('message_id')
             
             if room_id and message_id:
+                # [v4.13] 멤버십 확인
+                if not is_room_member(room_id, session['user_id']):
+                    return
+                
                 update_last_read(room_id, session['user_id'], message_id)
                 emit('read_updated', {
                     'room_id': room_id,
@@ -251,16 +300,36 @@ def register_socket_events(socketio):
             if not room_id:
                 return
             
+            user_id = session['user_id']
+            
+            # [v4.21] 멤버십 검증
+            if not is_room_member(room_id, user_id):
+                return
+            
+            # [v4.14] 타이핑 레이트 리미팅
+            current_time = time.time()
+            rate_key = (user_id, room_id)
+            with typing_rate_lock:
+                last_emit = typing_last_emit.get(rate_key, 0)
+                if current_time - last_emit < TYPING_RATE_LIMIT:
+                    return  # 너무 빈번한 이벤트 무시
+                typing_last_emit[rate_key] = current_time
+                # 오래된 항목 정리 (5분 이상)
+                if len(typing_last_emit) > 1000:
+                    expired = [k for k, v in typing_last_emit.items() if current_time - v > 300]
+                    for k in expired:
+                        del typing_last_emit[k]
+            
             is_typing = data.get('is_typing', False)
             # 세션에서 닉네임 가져오기 (없으면 DB 조회)
             nickname = session.get('nickname', '')
             if not nickname:
-                user = get_user_by_id(session['user_id'])
+                user = get_user_by_id(user_id)
                 nickname = user.get('nickname', '사용자') if user else '사용자'
             
             emit('user_typing', {
                 'room_id': room_id,
-                'user_id': session['user_id'],
+                'user_id': user_id,
                 'nickname': nickname,
                 'is_typing': is_typing
             }, room=f'room_{room_id}', include_self=False)
@@ -274,6 +343,11 @@ def register_socket_events(socketio):
             room_id = data.get('room_id')
             new_name = data.get('name')
             if room_id and new_name and 'user_id' in session:
+                # [v4.9] 관리자 권한 확인
+                if not is_room_admin(room_id, session['user_id']):
+                    emit('error', {'message': '관리자만 방 이름을 변경할 수 있습니다.'})
+                    return
+                
                 # 시스템 메시지 생성
                 nickname = session.get('nickname', '사용자')
                 content = f"{nickname}님이 방 이름을 '{new_name}'(으)로 변경했습니다."
@@ -291,6 +365,10 @@ def register_socket_events(socketio):
     @socketio.on('room_members_updated')
     def handle_room_members_updated(data):
         try:
+            # [v4.14] 세션 검증 추가
+            if 'user_id' not in session:
+                return
+            
             room_id = data.get('room_id')
             if room_id:
                 # 관련 사용자들의 캐시 무효화
@@ -326,7 +404,7 @@ def register_socket_events(socketio):
                 return
             
             message_id = data.get('message_id')
-            content = data.get('content', '').strip()
+            content = data.get('content', '').strip()[:10000]  # [v4.10] 최대 10000자 제한
             encrypted = data.get('encrypted', True)
             
             if not message_id or not content:
@@ -383,7 +461,10 @@ def register_socket_events(socketio):
             message_id = data.get('message_id')
             reactions = data.get('reactions', [])
             
-            if room_id and message_id:
+            # [v4.9] 멤버십 확인
+            if room_id and message_id and 'user_id' in session:
+                if not is_room_member(room_id, session['user_id']):
+                    return
                 emit('reaction_updated', {
                     'message_id': message_id,
                     'reactions': reactions
@@ -398,7 +479,10 @@ def register_socket_events(socketio):
             room_id = data.get('room_id')
             poll = data.get('poll')
             
-            if room_id and poll:
+            # [v4.9] 멤버십 확인
+            if room_id and poll and 'user_id' in session:
+                if not is_room_member(room_id, session['user_id']):
+                    return
                 emit('poll_updated', {
                     'poll': poll
                 }, room=f'room_{room_id}')
@@ -412,7 +496,10 @@ def register_socket_events(socketio):
             room_id = data.get('room_id')
             poll = data.get('poll')
             
-            if room_id and poll:
+            # [v4.9] 멤버십 확인
+            if room_id and poll and 'user_id' in session:
+                if not is_room_member(room_id, session['user_id']):
+                    return
                 emit('poll_created', {
                     'poll': poll
                 }, room=f'room_{room_id}')
@@ -427,6 +514,11 @@ def register_socket_events(socketio):
             pins = data.get('pins', [])
             
             if room_id and 'user_id' in session:
+                # [v4.10] 모든 멤버가 공지 가능
+                if not is_room_member(room_id, session['user_id']):
+                    emit('error', {'message': '대화방 멤버만 공지를 수정할 수 있습니다.'})
+                    return
+                
                 # 시스템 메시지 생성
                 nickname = session.get('nickname', '사용자')
                 content = f"{nickname}님이 공지사항을 업데이트했습니다."
@@ -447,14 +539,18 @@ def register_socket_events(socketio):
     def handle_admin_updated(data):
         try:
             room_id = data.get('room_id')
-            user_id = data.get('user_id')
-            is_admin = data.get('is_admin')
+            target_user_id = data.get('user_id')
+            is_admin_flag = data.get('is_admin')
             
-            if room_id and user_id is not None:
+            # [v4.9] 관리자 권한 확인
+            if room_id and target_user_id is not None and 'user_id' in session:
+                if not is_room_admin(room_id, session['user_id']):
+                    emit('error', {'message': '관리자만 권한을 변경할 수 있습니다.'})
+                    return
                 emit('admin_updated', {
                     'room_id': room_id,
-                    'user_id': user_id,
-                    'is_admin': is_admin
+                    'user_id': target_user_id,
+                    'is_admin': is_admin_flag
                 }, room=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Admin update broadcast error: {e}")
