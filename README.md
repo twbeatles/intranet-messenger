@@ -601,7 +601,7 @@ xcopy /E /I uploads_backup uploads
 
 MIT License
 
-Copyright (c) 2026 사내 메신저 개발팀
+Copyright (c) 2026 
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -636,3 +636,4 @@ SOFTWARE.
 ---
 
 **Made with ❤️ for secure internal communication**
+
