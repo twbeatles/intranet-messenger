@@ -124,6 +124,11 @@ def register_socket_events(socketio):
             with stats_lock:
                 server_stats['total_connections'] += 1
                 server_stats['active_connections'] += 1
+                # [v4.22] 100개 연결마다 캐시 정리 (메모리 누수 방지)
+                should_cleanup = server_stats['total_connections'] % 100 == 0
+            
+            if should_cleanup:
+                cleanup_old_cache()
     
     @socketio.on('disconnect')
     def handle_disconnect():
@@ -461,14 +466,21 @@ def register_socket_events(socketio):
             message_id = data.get('message_id')
             reactions = data.get('reactions', [])
             
-            # [v4.9] 멤버십 확인
-            if room_id and message_id and 'user_id' in session:
-                if not is_room_member(room_id, session['user_id']):
-                    return
-                emit('reaction_updated', {
-                    'message_id': message_id,
-                    'reactions': reactions
-                }, room=f'room_{room_id}')
+            # [v4.21] 세션 및 멤버십 확인 강화
+            if 'user_id' not in session:
+                emit('error', {'message': '로그인이 필요합니다.'})
+                return
+            if not room_id or not message_id:
+                emit('error', {'message': '잘못된 요청입니다.'})
+                return
+            if not is_room_member(room_id, session['user_id']):
+                emit('error', {'message': '대화방 멤버만 리액션을 추가할 수 있습니다.'})
+                return
+            
+            emit('reaction_updated', {
+                'message_id': message_id,
+                'reactions': reactions
+            }, room=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Reaction update broadcast error: {e}")
     
@@ -479,13 +491,20 @@ def register_socket_events(socketio):
             room_id = data.get('room_id')
             poll = data.get('poll')
             
-            # [v4.9] 멤버십 확인
-            if room_id and poll and 'user_id' in session:
-                if not is_room_member(room_id, session['user_id']):
-                    return
-                emit('poll_updated', {
-                    'poll': poll
-                }, room=f'room_{room_id}')
+            # [v4.21] 세션 및 멤버십 확인 강화
+            if 'user_id' not in session:
+                emit('error', {'message': '로그인이 필요합니다.'})
+                return
+            if not room_id or not poll:
+                emit('error', {'message': '잘못된 요청입니다.'})
+                return
+            if not is_room_member(room_id, session['user_id']):
+                emit('error', {'message': '대화방 멤버만 투표를 업데이트할 수 있습니다.'})
+                return
+            
+            emit('poll_updated', {
+                'poll': poll
+            }, room=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Poll update broadcast error: {e}")
     
@@ -496,13 +515,20 @@ def register_socket_events(socketio):
             room_id = data.get('room_id')
             poll = data.get('poll')
             
-            # [v4.9] 멤버십 확인
-            if room_id and poll and 'user_id' in session:
-                if not is_room_member(room_id, session['user_id']):
-                    return
-                emit('poll_created', {
-                    'poll': poll
-                }, room=f'room_{room_id}')
+            # [v4.21] 세션 및 멤버십 확인 강화
+            if 'user_id' not in session:
+                emit('error', {'message': '로그인이 필요합니다.'})
+                return
+            if not room_id or not poll:
+                emit('error', {'message': '잘못된 요청입니다.'})
+                return
+            if not is_room_member(room_id, session['user_id']):
+                emit('error', {'message': '대화방 멤버만 투표를 생성할 수 있습니다.'})
+                return
+            
+            emit('poll_created', {
+                'poll': poll
+            }, room=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Poll created broadcast error: {e}")
     

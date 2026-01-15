@@ -1,172 +1,145 @@
 # -*- mode: python ; coding: utf-8 -*-
-# ============================================================================
-# 사내 메신저 v4.3 PyInstaller Spec (경량화 최적화)
-# 
-# 빌드: pyinstaller messenger.spec --clean
-# 결과: dist/사내메신저v4.3/사내메신저v4.3.exe
-# ============================================================================
-
-import os
-import sys
+# 사내 메신저 v4.3 PyInstaller 빌드 명세서
+# 경량화 최적화 버전
 
 block_cipher = None
-BASE_PATH = os.path.dirname(os.path.abspath(SPEC))
 
-# ============================================================================
-# Analysis - 파일 수집 및 의존성 분석
-# ============================================================================
+# 제외할 모듈 목록 (경량화)
+EXCLUDES = [
+    # GUI 라이브러리 (사용하지 않는 것)
+    'tkinter', '_tkinter', 'Tkinter',
+    
+    # 과학/데이터 라이브러리
+    'matplotlib', 'numpy', 'pandas', 'scipy', 'PIL', 'cv2',
+    
+    # 테스트/개발 도구
+    'unittest', 'pytest', 'doctest', 'pydoc', 'lib2to3',
+    'pip',
+    
+    # 불필요한 이메일/HTTP 테스트
+    'email.test', 'http.test', 'test',
+    
+    # XML 파서 (불필요)
+    'xml.dom', 'xml.sax',
+    
+    # 기타 불필요한 모듈
+    'IPython', 'jupyter',
+]
+
 a = Analysis(
     ['server.py'],
-    pathex=[BASE_PATH],
+    pathex=[],
     binaries=[],
     datas=[
-        # 필수 리소스만 포함 (경량화)
         ('static', 'static'),
         ('templates', 'templates'),
-        ('app', 'app'),
-        ('gui', 'gui'),
-        ('config.py', '.'),
-        # certs 폴더가 있는 경우에만 포함
     ],
     hiddenimports=[
-        # ========================================
-        # Socket.IO 필수
-        # ========================================
-        'engineio.async_drivers.threading',
-        'simple_websocket',
-        'flask_socketio',
-        'socketio',
-        'engineio',
-        
-        # ========================================
-        # gevent (CLI 모드 고성능 처리)
-        # ========================================
+        # Gevent 관련
+        'engineio.async_drivers.gevent',
         'gevent',
         'gevent.monkey',
-        'geventwebsocket',
-        'geventwebsocket.handler',
+        'gevent.ssl',
+        'gevent.builtins',
+        'gevent.resolver_thread',
+        'gevent._socket3',
+        'greenlet',
         
-        # ========================================
-        # 암호화 (E2E)
-        # ========================================
+        # Socket.IO 관련
+        'engineio',
+        'engineio.async_drivers.threading',
+        'flask_socketio',
+        'socketio',
+        
+        # Flask 관련
+        'flask',
+        'flask_session',
+        'flask_limiter',
+        'flask_wtf',
+        'flask_compress',
+        'cachelib.file',
+        
+        # 암호화 관련
         'Crypto',
         'Crypto.Cipher',
         'Crypto.Cipher.AES',
         'Crypto.Random',
         'Crypto.Util.Padding',
         
-        # ========================================
-        # PyQt6 핵심 모듈만
-        # ========================================
-        'PyQt6',
-        'PyQt6.QtCore',
-        'PyQt6.QtWidgets',
-        'PyQt6.QtGui',
-        'PyQt6.sip',
+        # 앱 모듈
+        'app',
+        'app.routes',
+        'app.sockets',
+        'app.models',
+        'app.utils',
+        'app.extensions',
+        'app.crypto_manager',
+        'app.control_api',
+        'app.server_launcher',
+        
+        # GUI 모듈
+        'gui',
+        'gui.server_window',
+        
+        # 이메일 관련 (계정 기능)
+        'email.mime',
+        'email.mime.text',
+        'email.mime.multipart',
+        
+        # 기타 필수
+        'simple_websocket',
+        'wsproto',
+        'bcrypt',
+        'werkzeug',
+        'werkzeug.security',
+        'jinja2',
+        'markupsafe',
     ],
-    hookspath=['.'],
+    hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        # ========================================
-        # 대형 불필요 라이브러리 (★ 용량 절감 핵심)
-        # ========================================
-        'matplotlib', 'numpy', 'pandas', 'scipy', 'sklearn',
-        'tensorflow', 'torch', 'keras',
-        'tkinter', '_tkinter', 'tk', 'tcl',
-        'cv2', 'PIL', 'pillow', 'Pillow',
-        'IPython', 'notebook', 'jupyter', 'nbconvert', 'nbformat',
-        'pytest', 'unittest', 'doctest', 'nose',
-        'setuptools', 'pip', 'wheel',
-        'sphinx', 'docutils', 'pygments',
-        'xml.etree.ElementTree',
-        'email', 'html', 'http.server',
-        'multiprocessing.popen_spawn_win32',
-        
-        # ========================================
-        # PyQt5/PySide (충돌 방지)
-        # ========================================
-        'PyQt5', 'PySide2', 'PySide6',
-        
-        # ========================================
-        # PyQt6 미사용 모듈 (★ 경량화 핵심)
-        # ========================================
-        'PyQt6.Qt3DAnimation', 'PyQt6.Qt3DCore', 'PyQt6.Qt3DExtras',
-        'PyQt6.Qt3DInput', 'PyQt6.Qt3DLogic', 'PyQt6.Qt3DRender',
-        'PyQt6.QtBluetooth', 'PyQt6.QtCharts', 'PyQt6.QtDataVisualization',
-        'PyQt6.QtDBus', 'PyQt6.QtDesigner', 'PyQt6.QtHelp',
-        'PyQt6.QtMultimedia', 'PyQt6.QtMultimediaWidgets',
-        'PyQt6.QtNetwork', 'PyQt6.QtNetworkAuth',
-        'PyQt6.QtNfc', 'PyQt6.QtOpenGL', 'PyQt6.QtOpenGLWidgets',
-        'PyQt6.QtPdf', 'PyQt6.QtPdfWidgets',
-        'PyQt6.QtPositioning', 'PyQt6.QtPrintSupport',
-        'PyQt6.QtQml', 'PyQt6.QtQuick', 'PyQt6.QtQuickWidgets', 'PyQt6.QtQuick3D',
-        'PyQt6.QtRemoteObjects', 'PyQt6.QtSensors', 'PyQt6.QtSerialPort',
-        'PyQt6.QtSpatialAudio', 'PyQt6.QtSql', 'PyQt6.QtSvg', 'PyQt6.QtSvgWidgets',
-        'PyQt6.QtTest', 'PyQt6.QtTextToSpeech',
-        'PyQt6.QtWebChannel', 'PyQt6.QtWebEngine', 'PyQt6.QtWebEngineCore',
-        'PyQt6.QtWebEngineWidgets', 'PyQt6.QtWebSockets',
-        'PyQt6.QtXml', 'PyQt6.QtVirtualKeyboard',
-    ],
+    excludes=EXCLUDES,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
 
-# ============================================================================
-# PYZ - Python 모듈 압축
-# ============================================================================
-pyz = PYZ(
-    a.pure,
-    a.zipped_data,
-    cipher=block_cipher,
-)
+# 바이너리에서 불필요한 파일 제거 (경량화)
+a.binaries = [x for x in a.binaries if not x[0].startswith('libopenblas')]
+a.binaries = [x for x in a.binaries if not x[0].startswith('libblas')]
+a.binaries = [x for x in a.binaries if not x[0].startswith('liblapack')]
 
-# ============================================================================
-# EXE - 실행 파일 생성
-# ============================================================================
+# 데이터에서 불필요한 파일 제거
+a.datas = [x for x in a.datas if not x[0].startswith('share/')]
+a.datas = [x for x in a.datas if not x[0].endswith('.pyi')]
+a.datas = [x for x in a.datas if 'test' not in x[0].lower() or 'static' in x[0].lower()]
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='사내메신저v4.3',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,  # Windows에서는 strip 비활성화
-    upx=True,     # UPX 압축 활성화
-    console=False,  # GUI 모드 (콘솔 숨김)
+    strip=True,  # 심볼 제거 (경량화)
+    upx=True,    # UPX 압축 활성화
+    upx_exclude=[
+        'vcruntime140.dll',
+        'python*.dll',
+        'ucrtbase.dll',
+    ],
+    runtime_tmpdir=None,
+    console=False,  # 콘솔 창 숨김
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # 아이콘 경로 지정 가능: 'icon.ico'
-)
-
-# ============================================================================
-# COLLECT - 최종 배포 폴더 생성
-# ============================================================================
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,  # Windows 호환
-    upx=True,     # UPX 압축
-    upx_exclude=[
-        # UPX 압축 제외 (호환성 문제 방지)
-        'vcruntime140.dll',
-        'vcruntime140_1.dll',
-        'python*.dll',
-        'Qt*.dll',
-        'VCRUNTIME*.dll',
-        'MSVCP*.dll',
-        'api-ms-*.dll',
-        'ucrtbase.dll',
-        '_ssl.pyd',
-        '_hashlib.pyd',
-    ],
-    name='사내메신저v4.3',
+    icon=None,  # 아이콘 파일이 있으면 'icon.ico' 지정
 )

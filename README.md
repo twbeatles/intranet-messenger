@@ -1,4 +1,4 @@
-# 🔒 사내 웹메신저 v4.15
+# 🔒 사내 웹메신저 v4.3
 
 Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 
@@ -11,7 +11,7 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 ## 📋 목차
 
 - [주요 기능](#-주요-기능)
-- [최신 업데이트](#-v415-업데이트-2026-01-11)
+- [최신 업데이트](#-v43-업데이트-2026-01-15)
 - [시스템 요구사항](#-시스템-요구사항)
 - [설치 방법](#-설치-방법)
 - [실행 방법](#-실행-방법)
@@ -33,6 +33,7 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 - **Rate Limiting**: Flask-Limiter로 무차별 대입 공격 및 DoS 방지
 - **보안 헤더**: X-Frame-Options, CSP, X-Content-Type-Options 등 적용
 - **안전한 세션 관리**: 서버 사이드 세션 + HttpOnly 쿠키
+- **XSS 방지**: 모든 사용자 입력 이스케이프 처리
 
 ### 💬 메시징 기능
 - **실시간 채팅**: Socket.IO 기반 양방향 통신
@@ -40,12 +41,14 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 - **읽음 확인 (Read Receipt)**: 메시지 읽음 상태 실시간 표시
 - **타이핑 인디케이터**: 상대방 입력 상태 실시간 표시
 - **메시지 답장**: 특정 메시지에 대한 답장 기능
-- **메시지 반응**: 이모지 리액션 기능
+- **메시지 리액션**: 이모지 리액션 기능
+- **메시지 수정/삭제**: 본인 메시지 수정 및 삭제 기능
 
 ### 📁 파일 및 미디어
 - **파일 공유**: 드래그앤드롭 지원, 최대 16MB
 - **안전한 파일명**: UUID 기반 파일명으로 보안 강화
 - **프로필 이미지**: 사용자 프로필 사진 업로드 및 관리
+- **이미지 lazy loading**: IntersectionObserver 기반 지연 로딩
 - **지원 파일 형식**: 이미지, 문서, 압축 파일 등 다양한 형식 지원
 
 ### 👥 사용자 관리
@@ -62,28 +65,92 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 
 ### 🔍 고급 기능
 - **메시지 검색**: 날짜, 작성자, 파일 필터링 검색
-- **메시지 삭제**: 본인 메시지 삭제 기능
+- **@멘션**: 특정 사용자 호출 기능
 - **데이터 무결성**: 사용자 삭제 시 관련 데이터 자동 정리
 - **고아 데이터 방지**: 참조 무결성 보장
 
 ---
 
-## 🆕 v4.15 업데이트 (2026-01-11)
+## 🆕 v4.3 업데이트 (2026-01-15)
 
-### 🛡️ 보안 및 안전성 강화 (Major Update)
-- **보안 헤더 및 CSRF 보호** - `Flask-WTF` 및 표준 보안 헤더(`X-Frame-Options` 등) 적용
-- **API 레이트 리미팅** - `Flask-Limiter` 도입으로 무차별 대입 공격 및 DoS 방지
-- **데이터 무결성 보장** - 사용자 삭제 시 관련 데이터(방, 투표, 파일)의 완벽한 정리 및 고아 데이터 방지
-- **Username 유효성 검사** - 회원가입 시 아이디 형식 검증 강화
+### 🎨 UI/UX 리팩토링 (Major Update)
+- **마이크로 애니메이션**: 
+  - 대화방 목록 hover 효과 개선 (translateX + box-shadow)
+  - 메시지 전송 시 bounce 애니메이션
+  - 버튼 리플 효과 추가
+- **스켈레톤 로딩**: shimmer 효과가 적용된 로딩 플레이스홀더
+- **모달 애니메이션**: scale + translateY 전환, 배경 blur 효과
+- **빈 상태 UX 개선**: floating 아이콘 애니메이션, radial gradient 배경
+- **입력창 UX**: 
+  - 포커스 시 glowing border 효과
+  - 전송 버튼 pulse 애니메이션 (입력 있을 때)
+- **접근성 강화**:
+  - `:focus-visible` 포커스 링 개선
+  - `prefers-reduced-motion` 지원
+  - `prefers-contrast: high` 고대비 모드 지원
+- **커스텀 스크롤바**: 테마별 스타일링
 
-### 🛠️ 시스템 안정성 개선
-- **DB 커넥션 관리 최적화** - `teardown_appcontext`를 통한 스레드 로컬 DB 연결 자동 정리 (OperationalError 해결)
-- **메시지 삭제 원자성** - DB 트랜잭션과 파일 삭제 간의 정합성 보장 (파일 삭제 실패 시에도 DB 일관성 유지)
-- **메모리 누수 방지** - 소켓 연결 해제 시 타이핑 인디케이터 등 임시 데이터 즉시 정리
+### ⚡ 성능 최적화 (Major Update)
+- **클라이언트 측 최적화**:
+  - DOM 배치 업데이트 (DocumentFragment 활용)
+  - 이벤트 위임 (대화방 목록 클릭: N개 → 1개 리스너)
+  - DOM 요소 캐싱 (최대 100개)
+  - requestIdleCallback 활용 비동기 처리
+  - 메모리 효율적인 배열 청크 처리
+- **이미지 최적화**:
+  - `loading="lazy"` 속성 적용
+  - IntersectionObserver 기반 lazy loading
+- **서버 측 확인**:
+  - gzip 응답 압축 (flask-compress)
+  - 사용자 캐시 시스템 (TTL 5분)
+  - DB 연결 풀링 (스레드 로컬)
 
-### 🧪 테스트 인프라
-- **Pytest 도입** - 단위/통합 테스트 슈트 구축 (24개 테스트 케이스)
-- **검증된 안정성** - 전체 회귀 테스트 통과 (Exit Code 0)
+### 🛡️ 기능 안정성 개선
+- **Socket 연결 확인 추가**:
+  - `message_read`, `send_message`, `typing` 등 모든 emit 전 `socket.connected` 확인
+  - 네트워크 불안정 상황 대응 강화
+- **XSS 방지 강화**:
+  - 프로필 이미지 경로에 `safeImagePath` 적용
+  - 모든 사용자 입력 `escapeHtml` 처리
+- **에러 핸들링 개선**:
+  - 리액션, 메시지 전송 실패 시 사용자 피드백 (toast 메시지)
+  - 네트워크 오프라인 감지 및 안내
+
+---
+
+## 📝 v4.2 업데이트 (2026-01-14)
+
+### 🚀 GUI 고성능 모드 리팩토링 (Major Update)
+- **Gevent 기반 Subprocess 아키텍처**: GUI와 서버 프로세스 분리로 안정성 및 성능 향상
+- **HTTP 제어 API**: `/control/status`, `/control/stats`, `/control/logs`, `/control/shutdown` 엔드포인트 추가
+- **자동 Gevent 감지**: `app/__init__.py`에서 monkey patching 자동 감지 및 gevent 모드 전환
+- **독립 서버 실행**: `app/server_launcher.py`를 통한 독립적인 서버 프로세스 실행
+
+### 🛡️ 보안 및 인증 개선
+- **CSRF 예외 처리**: `/api/register`, `/api/login`, `/api/logout` 엔드포인트에 CSRF 예외 적용
+  - 미인증 사용자의 회원가입/로그인 가능하도록 개선
+  - 로그아웃 시 세션 삭제 작업으로 CSRF 위험 낮음
+- **오류 메시지 개선**: 로그인/회원가입 실패 시 서버 오류 메시지 정확히 표시
+  - "서버 연결 오류" 대신 "아이디 또는 비밀번호가 올바르지 않습니다" 등 구체적 메시지
+
+### 💾 데이터베이스 최적화
+- **DB 초기화 로직 개선**: `init_db()` 함수에서 직접 sqlite3 연결 생성으로 스레드 로컬 문제 해결
+- **Busy Timeout 설정**: `PRAGMA busy_timeout=30000` 추가로 DB 잠금 문제 완화
+- **중복 초기화 방지**: `_db_initialized` 플래그로 중복 초기화 방지
+- **트랜잭션 안정성**: try-except-finally 블록으로 연결 관리 강화
+
+### 🎨 UI/UX 개선
+- **로그아웃 캐시 무효화**: 
+  - `sessionStorage.clear()` 추가
+  - 타임스탬프 URL (`/?_=timestamp`) 사용으로 캐시 방지
+  - 상태 변수 초기화 (`currentUser = null` 등)
+- **리액션 기능 수정**: `showReactionPicker` 함수가 event 객체 지원하도록 개선
+- **메시지 오류 처리**: `err.message` 사용으로 정확한 오류 메시지 표시
+
+### 🧪 테스트 및 안정성
+- **Pytest 통과**: 전체 회귀 테스트 통과 (Exit Code 0)
+- **Gevent 모드 검증**: `socketio.async_mode = 'gevent'` 확인
+- **DB 테이블 생성 검증**: `users` 테이블 등 모든 필수 테이블 생성 확인
 
 ---
 
@@ -121,7 +188,7 @@ cd intranet-messenger-main
 ```powershell
 # Windows PowerShell
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+.\\venv\\Scripts\\Activate.ps1
 
 # Linux/macOS
 python3 -m venv venv
@@ -158,8 +225,9 @@ python server.py
 
 **특징:**
 - PyQt6 기반 시스템 트레이 인터페이스
+- Gevent 고성능 모드 (subprocess 아키텍처)
 - 서버 시작/중지 GUI 제어
-- 실시간 통계 모니터링
+- 실시간 통계 모니터링 (HTTP 제어 API)
 - 자동 브라우저 실행
 
 ### CLI 모드 (서버/대규모 접속용)
@@ -213,21 +281,21 @@ pyinstaller messenger.spec --clean
 빌드가 완료되면 다음 경로에 실행 파일이 생성됩니다:
 
 ```
-dist/사내메신저v4.3/사내메신저v4.3.exe
+dist/사내메신저v4.2/사내메신저v4.2.exe
 ```
 
 #### 4. 배포
 
-`dist/사내메신저v4.3/` 폴더 전체를 압축하여 배포합니다.
+`dist/사내메신저v4.2/` 폴더 전체를 압축하여 배포합니다.
 
 ### 빌드 옵션 커스터마이징
 
 `messenger.spec` 파일을 수정하여 다음을 변경할 수 있습니다:
 
-- **아이콘**: `icon='icon.ico'` (145번째 줄)
-- **실행 파일 이름**: `name='사내메신저v4.3'` (134번째 줄)
-- **콘솔 표시**: `console=False` (139번째 줄)
-- **UPX 압축**: `upx=True` (138번째 줄)
+- **아이콘**: `icon='icon.ico'`
+- **실행 파일 이름**: `name='사내메신저v4.2'`
+- **콘솔 표시**: `console=False`
+- **UPX 압축**: `upx=True`
 
 ---
 
@@ -245,10 +313,16 @@ intranet-messenger-main/
 │   ├── __init__.py              # Flask 앱 팩토리
 │   ├── routes.py                # HTTP 라우트 (REST API)
 │   ├── sockets.py               # Socket.IO 이벤트 핸들러
-│   ├── models.py                # 데이터베이스 모델 및 쿼리
+│   ├── models/                  # 데이터베이스 모델 (모듈화)
+│   │   ├── __init__.py
+│   │   ├── base.py              # DB 연결 및 초기화
+│   │   ├── users.py             # 사용자 관련 모델
+│   │   └── rooms.py             # 대화방 관련 모델
 │   ├── utils.py                 # 유틸리티 함수 (보안, 검증 등)
 │   ├── crypto_manager.py        # E2E 암호화 관리
 │   ├── extensions.py            # Flask 확장 (Limiter, CSRF 등)
+│   ├── control_api.py           # 제어 API (GUI 모드용)
+│   ├── server_launcher.py       # 독립 서버 실행 모듈
 │   └── run_server.py            # 멀티프로세스 서버 실행 모듈
 │
 ├── gui/                         # PyQt6 데스크탑 UI
@@ -261,7 +335,9 @@ intranet-messenger-main/
 │   ├── js/
 │   │   ├── app.js               # 메인 애플리케이션 로직
 │   │   ├── socket.io.min.js     # Socket.IO 클라이언트 (로컬)
-│   │   └── crypto-js.min.js     # Crypto-JS 라이브러리 (로컬)
+│   │   ├── crypto-js.min.js     # Crypto-JS 라이브러리 (로컬)
+│   │   ├── storage.js           # 로컬 스토리지 관리
+│   │   └── notification.js      # 알림 관리
 │   └── uploads/                 # 업로드된 파일 저장소
 │       └── profiles/            # 프로필 이미지
 │
@@ -274,9 +350,10 @@ intranet-messenger-main/
 │
 ├── flask_session/               # 서버 사이드 세션 저장소
 │
-├── backup/                      # 백업 파일
-│
-├── _cleanup_20260113/           # 정리된 테스트/디버그 파일
+├── tests/                       # Pytest 테스트 슈트
+│   ├── conftest.py
+│   ├── test_basic.py
+│   └── test_routes.py
 │
 ├── messenger.db                 # SQLite 데이터베이스
 ├── messenger.db-wal             # WAL 모드 로그
@@ -300,7 +377,7 @@ intranet-messenger-main/
 | **Flask** | 2.3+ | 웹 프레임워크 |
 | **Flask-SocketIO** | 5.3+ | 실시간 양방향 통신 |
 | **SQLite3** | - | 데이터베이스 (WAL 모드) |
-| **Gevent** | 23.0+ | 비동기 처리 (CLI 모드) |
+| **Gevent** | 23.0+ | 비동기 처리 (GUI/CLI 모드) |
 | **PyCryptodome** | 3.18+ | 서버 측 암호화 |
 | **Bcrypt** | 4.0+ | 비밀번호 해싱 |
 | **Flask-Limiter** | 3.3+ | Rate Limiting |
@@ -321,7 +398,6 @@ intranet-messenger-main/
 |------|------|------|
 | **PyQt6** | 6.5+ | GUI 프레임워크 |
 | **QSystemTrayIcon** | - | 시스템 트레이 |
-| **QWebEngineView** | - | 내장 브라우저 (선택) |
 
 ### 개발 및 테스트
 | 기술 | 버전 | 용도 |
@@ -354,11 +430,12 @@ intranet-messenger-main/
 ### 4. CSRF 보호
 - **구현**: Flask-WTF
 - **토큰**: 세션별 고유 토큰
-- **검증**: 모든 POST/PUT/DELETE 요청
+- **검증**: 인증된 사용자의 POST/PUT/DELETE 요청
+- **예외**: `/api/register`, `/api/login`, `/api/logout` (미인증 접근 허용)
 
 ### 5. Rate Limiting
-- **로그인**: 5회/분
-- **회원가입**: 3회/시간
+- **로그인**: 10회/분
+- **회원가입**: 5회/분
 - **메시지 전송**: 100회/분
 - **파일 업로드**: 10회/분
 
@@ -380,6 +457,7 @@ intranet-messenger-main/
 
 ### 1. 데이터베이스
 - **WAL 모드**: 동시 읽기/쓰기 성능 향상
+- **Busy Timeout**: 30초 대기로 잠금 문제 완화
 - **스레드 로컬 연결**: 커넥션 풀링
 - **자동 정리**: `teardown_appcontext`로 연결 해제
 - **인덱싱**: 주요 쿼리 최적화
@@ -392,8 +470,8 @@ intranet-messenger-main/
   - Max Buffer: 10MB
 
 ### 3. 비동기 처리
-- **Gevent**: CLI 모드에서 고성능 비동기 처리
-- **Threading**: GUI 모드에서 안정성 우선
+- **Gevent**: GUI/CLI 모드에서 고성능 비동기 처리
+- **Subprocess 아키텍처**: GUI와 서버 프로세스 분리
 - **이벤트 기반**: Socket.IO 이벤트 루프
 
 ### 4. 메모리 관리
@@ -434,21 +512,7 @@ pip install gevent gevent-websocket
 ASYNC_MODE = 'threading'
 ```
 
-### 3. PyQt6 GUI가 표시되지 않음
-
-**증상**: GUI 윈도우가 나타나지 않음
-
-**해결**:
-```powershell
-# PyQt6 재설치
-pip uninstall PyQt6
-pip install PyQt6
-
-# 또는 CLI 모드로 실행
-python server.py --cli
-```
-
-### 4. 데이터베이스 잠금 오류
+### 3. 데이터베이스 잠금 오류
 
 **증상**: `sqlite3.OperationalError: database is locked`
 
@@ -460,6 +524,16 @@ del messenger.db-wal
 del messenger.db-shm
 ```
 
+### 4. 회원가입/로그인 실패
+
+**증상**: "서버 연결 오류" 또는 "CSRF 토큰 누락"
+
+**해결**:
+- 브라우저 캐시 삭제 (Ctrl+Shift+Delete)
+- 하드 새로고침 (Ctrl+F5)
+- InPrivate/Incognito 모드에서 테스트
+- Rate limit 확인 (1분 대기 후 재시도)
+
 ### 5. 파일 업로드 실패
 
 **증상**: 파일 업로드 시 오류 발생
@@ -469,23 +543,10 @@ del messenger.db-shm
 # uploads 폴더 권한 확인
 # 폴더 수동 생성
 mkdir uploads
-mkdir uploads\profiles
+mkdir uploads\\profiles
 
 # config.py에서 크기 제한 확인
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
-```
-
-### 6. SSL 인증서 오류
-
-**증상**: HTTPS 접속 시 인증서 오류
-
-**해결**:
-```powershell
-# HTTP 모드로 변경 (config.py)
-USE_HTTPS = False
-
-# 또는 인증서 재생성
-python -c "from certs.generate_cert import generate_certificate; generate_certificate('certs/cert.pem', 'certs/key.pem')"
 ```
 
 ---
@@ -601,7 +662,7 @@ xcopy /E /I uploads_backup uploads
 
 MIT License
 
-Copyright (c) 2026 
+Copyright (c) 2026 사내 메신저 개발팀
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -636,4 +697,3 @@ SOFTWARE.
 ---
 
 **Made with ❤️ for secure internal communication**
-

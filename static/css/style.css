@@ -449,6 +449,8 @@ body {
     margin-bottom: 4px;
     position: relative;
     border: 1px solid transparent;
+    /* [v4.30] 성능 최적화: 레이아웃 격리 */
+    contain: layout style;
 }
 
 .room-item:hover {
@@ -795,6 +797,9 @@ body {
     display: flex;
     margin-bottom: 8px;
     animation: fadeIn 0.2s ease;
+    /* [v4.30] 성능 최적화: 레이아웃 격리 및 GPU 가속 */
+    contain: layout style;
+    will-change: transform, opacity;
 }
 
 @keyframes fadeIn {
@@ -806,6 +811,29 @@ body {
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+/* [v4.33] 메시지 하이라이트 효과 (답장 클릭 시) */
+.message.highlight {
+    animation: messageHighlight 2s ease-out;
+}
+
+@keyframes messageHighlight {
+    0% {
+        background-color: rgba(16, 185, 129, 0.3);
+        transform: scale(1.02);
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+
+    50% {
+        background-color: rgba(16, 185, 129, 0.15);
+    }
+
+    100% {
+        background-color: transparent;
+        transform: scale(1);
+        box-shadow: none;
     }
 }
 
@@ -909,6 +937,67 @@ body {
     margin-top: 8px;
     cursor: pointer;
 }
+
+/* [v4.34] Message action buttons (hover) */
+.message-actions {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    display: none;
+    flex-direction: row;
+    gap: 4px;
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px;
+    box-shadow: var(--shadow);
+    z-index: 10;
+}
+
+.message:hover .message-actions {
+    display: flex;
+}
+
+.message.sent .message-actions {
+    left: -8px;
+    right: auto;
+}
+
+.message-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    font-size: 16px;
+}
+
+.message-action-btn:hover {
+    background: var(--primary-light);
+    color: var(--primary);
+    transform: scale(1.1);
+}
+
+.message-action-btn:active {
+    transform: scale(0.95);
+}
+
+.message-action-btn.delete-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+}
+
+.message-action-btn.edit-btn:hover {
+    background: rgba(234, 179, 8, 0.1);
+    color: var(--warning);
+}
+
 
 /* 날짜 구분선 */
 .date-divider {
@@ -4074,12 +4163,19 @@ html {
 
 /* 드롭다운 메뉴 개선 */
 .dropdown-menu {
-    background: rgba(30, 41, 59, 0.95);
+    background: var(--bg-light);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
     animation: dropdownAppear 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* [v4.21] 라이트모드 드롭다운 개선 */
+[data-theme="light"] .dropdown-menu {
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 @keyframes dropdownAppear {
@@ -4096,10 +4192,11 @@ html {
 
 .dropdown-item {
     transition: all 0.15s ease;
+    color: var(--text);
 }
 
 .dropdown-item:hover {
-    background: rgba(16, 185, 129, 0.1);
+    background: var(--primary-light);
     padding-left: 20px;
 }
 
@@ -5000,4 +5097,464 @@ a:focus-visible {
 
 .reaction-picker-item:hover {
     background: var(--primary-light);
+}
+
+/* [v4.21] 오래된 메시지 로더 */
+.older-messages-loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.older-messages-loader.loading {
+    opacity: 1;
+}
+
+.older-messages-loader .loader-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ============================================
+   [v4.30] UI/UX 개선 - 마이크로 애니메이션
+   ============================================ */
+
+/* 향상된 대화방 목록 애니메이션 */
+.room-item {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, background-color;
+}
+
+.room-item:hover {
+    transform: translateX(6px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    background: rgba(30, 41, 59, 0.7);
+}
+
+.room-item.active {
+    transform: scale(1.02);
+}
+
+/* 메시지 전송 애니메이션 */
+@keyframes messageSend {
+    0% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.9);
+    }
+
+    60% {
+        transform: translateY(-5px) scale(1.02);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.message {
+    animation: messageSend 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.message.mine .message-content {
+    transition: transform 0.2s ease;
+}
+
+.message.mine:hover .message-content {
+    transform: translateX(-4px);
+}
+
+.message:not(.mine):hover .message-content {
+    transform: translateX(4px);
+}
+
+/* ============================================
+   [v4.30] 스켈레톤 로딩
+   ============================================ */
+.skeleton {
+    background: linear-gradient(90deg,
+            var(--bg-light) 25%,
+            rgba(255, 255, 255, 0.1) 50%,
+            var(--bg-light) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.skeleton-message {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+}
+
+.skeleton-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+.skeleton-content {
+    flex: 1;
+}
+
+.skeleton-line {
+    height: 14px;
+    margin-bottom: 8px;
+}
+
+.skeleton-line:first-child {
+    width: 120px;
+}
+
+.skeleton-line:last-child {
+    width: 80%;
+}
+
+/* ============================================
+   [v4.30] 모달 애니메이션
+   ============================================ */
+.modal-overlay {
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+}
+
+.modal-overlay .modal {
+    transform: scale(0.9) translateY(30px);
+    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-overlay.active .modal {
+    transform: scale(1) translateY(0);
+}
+
+/* 모달 뒷배경 블러 */
+.modal-overlay.active {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+/* ============================================
+   [v4.30] 빈 상태 UX 개선
+   ============================================ */
+.empty-state-enhanced {
+    position: relative;
+    overflow: hidden;
+}
+
+.empty-state-enhanced::before {
+    content: '';
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--primary-light) 0%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+.empty-illustration {
+    font-size: 100px;
+    margin-bottom: 24px;
+    animation: float 4s ease-in-out infinite;
+    filter: drop-shadow(0 10px 20px rgba(16, 185, 129, 0.3));
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0) rotate(0deg);
+    }
+
+    25% {
+        transform: translateY(-10px) rotate(2deg);
+    }
+
+    75% {
+        transform: translateY(-5px) rotate(-2deg);
+    }
+}
+
+.empty-state-enhanced h3 {
+    font-size: 24px;
+    margin-bottom: 12px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.empty-state-enhanced p {
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.empty-actions .btn {
+    padding: 14px 28px;
+    font-size: 15px;
+    box-shadow: 0 8px 24px -6px var(--primary);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.empty-actions .btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 32px -6px var(--primary);
+}
+
+/* ============================================
+   [v4.30] 입력창 UX 개선
+   ============================================ */
+.chat-input-wrapper {
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.chat-input-wrapper:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px var(--primary-light), 0 0 30px -5px var(--primary);
+}
+
+.chat-input::placeholder {
+    transition: all 0.3s ease;
+}
+
+.chat-input:focus::placeholder {
+    opacity: 0.5;
+    transform: translateX(10px);
+}
+
+/* 전송 버튼 상태 */
+.send-btn {
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.send-btn:disabled {
+    opacity: 0.5;
+    transform: scale(0.9);
+    cursor: not-allowed;
+}
+
+.send-btn.has-content {
+    animation: pulse 2s ease infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 4px 15px -3px var(--primary);
+    }
+
+    50% {
+        box-shadow: 0 6px 25px -3px var(--primary);
+    }
+}
+
+/* ============================================
+   [v4.30] 버튼 리플 효과
+   ============================================ */
+.btn-primary,
+.icon-btn {
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-primary::after,
+.icon-btn::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.4s ease, height 0.4s ease;
+}
+
+.btn-primary:active::after,
+.icon-btn:active::after {
+    width: 200px;
+    height: 200px;
+}
+
+/* ============================================
+   [v4.30] 향상된 토스트 애니메이션
+   ============================================ */
+@keyframes toastSlideIn {
+    0% {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes toastSlideOut {
+    0% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+/* ============================================
+   [v4.30] 접근성 개선 - 포커스 링
+   ============================================ */
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* 고대비 모드 */
+@media (prefers-contrast: high) {
+    .message-content {
+        border: 2px solid var(--text);
+    }
+
+    .btn {
+        border: 2px solid currentColor;
+    }
+}
+
+/* 줄어든 모션 설정 */
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ============================================
+   [v4.30] 대화방 읽지 않음 카운트 애니메이션
+   ============================================ */
+.unread-badge {
+    animation: badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badgePop {
+    0% {
+        transform: scale(0);
+    }
+
+    60% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ============================================
+   [v4.30] 스크롤바 스타일링
+   ============================================ */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================
+   [v4.30] 연결 상태 개선
+   ============================================ */
+.connection-status {
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.connection-status.visible {
+    transform: translateX(0);
+}
+
+.connection-status:not(.visible) {
+    transform: translateX(120%);
+}
+
+.connection-status.connected .status-dot {
+    animation: statusPulse 2s ease infinite;
+}
+
+@keyframes statusPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+    }
 }

@@ -3,6 +3,46 @@
  * IndexedDB를 사용한 오프라인 메시지 캐싱
  */
 
+// ============================================================================
+// E2E 암호화 폴백 (crypto-js 기반)
+// ============================================================================
+var E2E = window.E2E || {
+    encrypt: function (text, key) {
+        if (typeof CryptoJS !== 'undefined' && key) {
+            try {
+                return CryptoJS.AES.encrypt(text, key).toString();
+            } catch (e) {
+                console.error('Encrypt error:', e);
+            }
+        }
+        return text;
+    },
+    decrypt: function (encrypted, key) {
+        if (typeof CryptoJS !== 'undefined' && key) {
+            try {
+                var bytes = CryptoJS.AES.decrypt(encrypted, key);
+                return bytes.toString(CryptoJS.enc.Utf8) || encrypted;
+            } catch (e) {
+                return encrypted;
+            }
+        }
+        return encrypted;
+    },
+    generateKey: function () {
+        if (typeof CryptoJS !== 'undefined') {
+            return CryptoJS.lib.WordArray.random(32).toString();
+        }
+        // 폴백: 랜덤 문자열 생성
+        var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        var result = '';
+        for (var i = 0; i < 64; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    }
+};
+window.E2E = E2E;
+
 const MessengerStorage = {
     db: null,
     DB_NAME: 'MessengerDB',
@@ -209,6 +249,41 @@ const MessengerStorage = {
     },
 
     /**
+     * 드래프트(임시 저장) 저장
+     */
+    async saveDraft(roomId, content) {
+        return this.setSetting('draft_' + roomId, content);
+    },
+
+    /**
+     * 드래프트 조회
+     */
+    async getDraft(roomId) {
+        return this.getSetting('draft_' + roomId, '');
+    },
+
+    /**
+     * 드래프트 삭제 
+     */
+    async clearDraft(roomId) {
+        if (!this.db) return;
+
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction(['settings'], 'readwrite');
+                const store = transaction.objectStore('settings');
+                store.delete('draft_' + roomId);
+
+                transaction.oncomplete = () => resolve(true);
+                transaction.onerror = () => reject(transaction.error);
+            } catch (err) {
+                console.error('드래프트 삭제 실패:', err);
+                resolve(false);
+            }
+        });
+    },
+
+    /**
      * 캐시 정리 (오래된 메시지 삭제)
      */
     async cleanup(daysToKeep = 7) {
@@ -250,3 +325,33 @@ const MessengerStorage = {
 
 // 전역으로 내보내기
 window.MessengerStorage = MessengerStorage;
+
+// ============================================================================
+// 드래프트 래퍼 함수 (전역 사용용)
+// ============================================================================
+
+/**
+ * 드래프트 저장
+ */
+async function saveDraft(roomId, content) {
+    return MessengerStorage.saveDraft(roomId, content);
+}
+
+/**
+ * 드래프트 조회
+ */
+async function getDraft(roomId) {
+    return MessengerStorage.getDraft(roomId);
+}
+
+/**
+ * 드래프트 삭제
+ */
+async function clearDraft(roomId) {
+    return MessengerStorage.clearDraft(roomId);
+}
+
+// 전역 노출
+window.saveDraft = saveDraft;
+window.getDraft = getDraft;
+window.clearDraft = clearDraft;

@@ -31,7 +31,7 @@ from app.models import (
     get_room_last_reads
 )
 from app.utils import sanitize_input, allowed_file, validate_file_header
-from app.extensions import limiter
+from app.extensions import limiter, csrf
 
 # config 임포트 (PyInstaller 호환)
 try:
@@ -61,6 +61,7 @@ def register_routes(app):
         return jsonify({'logged_in': False})
     
     @app.route('/api/register', methods=['POST'])
+    @csrf.exempt  # [v4.2] 회원가입은 미인증 상태이므로 CSRF 예외
     @limiter.limit("5 per minute")
     def register():
         data = request.json
@@ -90,6 +91,7 @@ def register_routes(app):
     from flask_wtf.csrf import generate_csrf
 
     @app.route('/api/login', methods=['POST'])
+    @csrf.exempt  # [v4.2] 로그인은 미인증 상태이므로 CSRF 예외
     @limiter.limit("10 per minute")
     def login():
         data = request.json
@@ -117,6 +119,7 @@ def register_routes(app):
         return jsonify({'error': '아이디 또는 비밀번호가 올바르지 않습니다.'}), 401
     
     @app.route('/api/logout', methods=['POST'])
+    @csrf.exempt  # [v4.2] 로그아웃 CSRF 예외 (세션 삭제 작업으로 위험 낮음)
     def logout():
         if 'user_id' in session:
             log_access(session['user_id'], 'logout', request.remote_addr, request.user_agent.string)
@@ -692,9 +695,12 @@ def register_routes(app):
         if not is_room_member(poll['room_id'], session['user_id']):
             return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
-        if close_poll(poll_id, session['user_id']):
+        # [v4.21] 투표 생성자 또는 관리자만 마감 가능
+        is_admin = is_room_admin(poll['room_id'], session['user_id'])
+        success, error = close_poll(poll_id, session['user_id'], is_admin=is_admin)
+        if success:
             return jsonify({'success': True})
-        return jsonify({'error': '투표 마감에 실패했습니다.'}), 403
+        return jsonify({'error': error or '투표 마감에 실패했습니다.'}), 403
     
     # ============================================================================
     # 파일 저장소 (Room Files) API
@@ -802,6 +808,9 @@ def register_routes(app):
     def check_admin(room_id):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        # [v4.22] 멤버십 확인 추가
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         is_admin = is_room_admin(room_id, session['user_id'])
         return jsonify({'is_admin': is_admin})
     
@@ -846,11 +855,18 @@ def register_routes(app):
         if not is_valid:
             return jsonify({'error': error_msg}), 400
             
-        success, error = change_password(session['user_id'], current_password, new_password)
+        # [v4.21] 새 세션 토큰과 함께 비밀번호 변경
+        success, error, new_session_token = change_password(session['user_id'], current_password, new_password)
         
         if success:
+            # 현재 세션에 새 토큰 저장 (다른 세션은 무효화됨)
+            if new_session_token:
+                session['session_token'] = new_session_token
             log_access(session['user_id'], 'change_password', request.remote_addr, request.user_agent.string)
-            return jsonify({'success': True})
+            return jsonify({
+                'success': True,
+                'message': '비밀번호가 변경되었습니다. 다른 기기에서의 세션은 로그아웃됩니다.'
+            })
         else:
             return jsonify({'error': error}), 400
 

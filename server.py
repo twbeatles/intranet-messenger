@@ -118,10 +118,24 @@ def run_server_gui():
 
 if __name__ == '__main__':
     # 명령줄 인수 확인
-    if len(sys.argv) > 1 and sys.argv[1] == '--cli':
-        run_server_cli()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--cli':
+            run_server_cli()
+        elif sys.argv[1] == '--worker':
+            # [v4.4] PyInstaller 대응: subprocess 서버 워커로 실행
+            # --worker 인자를 제거하고 server_launcher 실행
+            sys.argv.pop(1)
+            from app.server_launcher import main as launcher_main
+            launcher_main()
+        else:
+            # 기본: GUI 모드
+            try:
+                run_server_gui()
+            except ImportError:
+                print("PyQt6를 찾을 수 없습니다. CLI 모드로 실행합니다.")
+                run_server_cli()
     else:
-        # 기본: GUI 모드
+        # 인수가 없으면 GUI 모드
         try:
             run_server_gui()
         except ImportError:

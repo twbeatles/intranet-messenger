@@ -43,8 +43,8 @@ TEMPLATE_FOLDER = os.path.join(BUNDLE_DIR, 'templates')
 # ============================================================================
 USE_HTTPS = False
 DEFAULT_PORT = 5000
+CONTROL_PORT = 5001  # GUI-서버 제어 API 포트
 SESSION_TIMEOUT_HOURS = 72  # 3일
-# 보안 솔트 (기본값 - 실제 사용 시 app/__init__.py에서 파일 기반 솔트로 대체됨)
 PASSWORD_SALT = "messenger_secure_salt_2024"
 
 # ============================================================================
@@ -55,7 +55,7 @@ PASSWORD_SALT = "messenger_secure_salt_2024"
 # eventlet을 사용하려면: pip install eventlet
 # ASYNC_MODE = 'gevent'  # 수십~수백 명 동시 접속 지원
 # ASYNC_MODE = 'gevent'  # 수십~수백 명 동시 접속 지원
-ASYNC_MODE = 'threading'  # 동시 접속 제한적 (디버깅용 안정성 확보)
+ASYNC_MODE = 'gevent'  # 수십~수백 명 동시 접속 지원 (권장)
 
 # Socket.IO 설정
 PING_TIMEOUT = 120  # 클라이언트 연결 타임아웃 (초)
@@ -73,4 +73,4 @@ MESSAGE_QUEUE = None  # 단일 서버 모드
 # 앱 정보
 # ============================================================================
 APP_NAME = "사내 메신저 서버"
-VERSION = "4.1"
+VERSION = "4.3"

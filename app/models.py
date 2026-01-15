@@ -328,6 +328,7 @@ def init_db():
     close_expired_polls()
     cleanup_old_access_logs()
     cleanup_empty_rooms()  # [v4.12] 빈 대화방 정리 추가
+    cleanup_old_session_files()  # [v4.21] 만료된 세션 파일 정리
     
     logger.info("데이터베이스 초기화 완료")
 
@@ -397,8 +398,58 @@ def safe_file_delete(file_path: str, max_retries: int = 3) -> bool:
     return False
 
 
+def cleanup_old_session_files(max_age_hours=24):
+    """[v4.21] 만료된 Flask 세션 파일 정리
+    
+    서버 재시작 시 호출되어 오래된 세션 파일을 삭제합니다.
+    Flask-Session의 파일 기반 세션은 자동 정리되지 않으므로 수동 정리 필요.
+    
+    Args:
+        max_age_hours: 이 시간보다 오래된 세션 파일 삭제 (기본 24시간)
+    
+    Returns:
+        삭제된 파일 수
+    """
+    import os
+    from datetime import datetime, timedelta
+    
+    try:
+        from config import BASE_DIR
+    except ImportError:
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    session_dir = os.path.join(BASE_DIR, 'flask_session')
+    if not os.path.exists(session_dir):
+        return 0
+    
+    cutoff = datetime.now() - timedelta(hours=max_age_hours)
+    removed = 0
+    
+    try:
+        for filename in os.listdir(session_dir):
+            filepath = os.path.join(session_dir, filename)
+            if os.path.isfile(filepath):
+                try:
+                    mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
+                    if mtime < cutoff:
+                        if safe_file_delete(filepath):
+                            removed += 1
+                except (OSError, ValueError):
+                    continue
+        
+        if removed > 0:
+            logger.info(f"Cleaned up {removed} expired session files (older than {max_age_hours}h)")
+    except Exception as e:
+        logger.error(f"Session cleanup error: {e}")
+    
+    return removed
+
+
 def cleanup_empty_rooms():
-    """[v4.7] 멤버가 없는 빈 대화방 정리"""
+    """[v4.7] 멤버가 없는 빈 대화방 정리
+    
+    [v4.31] 트랜잭션 안전성 추가 - 부분 삭제 방지
+    """
     import os
     conn = get_db()
     cursor = conn.cursor()
@@ -415,8 +466,11 @@ def cleanup_empty_rooms():
         if not empty_rooms:
             return 0
         
+        # [v4.31] 명시적 트랜잭션 시작
+        cursor.execute('BEGIN IMMEDIATE')
+        
         for room_id in empty_rooms:
-            # 관련 파일 삭제
+            # 관련 파일 삭제 (트랜잭션 외부 - 파일 시스템 작업)
             cursor.execute('SELECT file_path FROM room_files WHERE room_id = ?', (room_id,))
             files = cursor.fetchall()
             for f in files:
@@ -435,6 +489,11 @@ def cleanup_empty_rooms():
         logger.info(f"Cleaned up {len(empty_rooms)} empty rooms: {empty_rooms}")
         return len(empty_rooms)
     except Exception as e:
+        # [v4.31] 오류 시 롤백
+        try:
+            conn.rollback()
+        except:
+            pass
         logger.error(f"Cleanup empty rooms error: {e}")
         return 0
     finally:
@@ -892,16 +951,13 @@ def add_room_member(room_id, user_id):
 
 
 def leave_room_db(room_id, user_id):
-    """대화방 나가기 - 관리자 권한도 함께 제거, 마지막 관리자면 자동 위임"""
+    """[v4.21] 대화방 나가기 - 관리자 권한도 함께 제거, 마지막 관리자면 자동 위임
+    
+    트랜잭션 안전성 개선 - get_db_context() 대신 명시적 에러 처리
+    """
     conn = get_db()
-    # [v4.15] 동시성 제어를 위해 즉시 트랜잭션 시작 (Lock)
-    # 이미 트랜잭션 중일 수 있으므로 try-except로 감싸거나 격리
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-    except Exception:
-        pass # 이미 트랜잭션 중이면 무시
-        
     cursor = conn.cursor()
+    
     try:
         # [v4.13] 나가는 사용자가 마지막 관리자인 경우 다른 멤버에게 권한 위임
         # 트랜잭션 내에서 읽고 쓰므로 정합성 보장
@@ -1042,9 +1098,12 @@ def create_message(room_id, sender_id, content, message_type='text', file_path=N
         conn.commit()
         
         cursor.execute('''
-            SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image
+            SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image,
+                   rm.content as reply_content, ru.nickname as reply_sender
             FROM messages m
             JOIN users u ON m.sender_id = u.id
+            LEFT JOIN messages rm ON m.reply_to = rm.id
+            LEFT JOIN users ru ON rm.sender_id = ru.id
             WHERE m.id = ?
         ''', (message_id,))
         message = cursor.fetchone()
@@ -1350,7 +1409,22 @@ def get_pinned_messages(room_id: int):
 # ============================================================================
 def create_poll(room_id: int, created_by: int, question: str, options: list,
                 multiple_choice: bool = False, anonymous: bool = False, ends_at: str = None):
-    """투표 생성"""
+    """투표 생성
+    
+    [v4.21] 옵션 검증 추가: 빈 옵션 필터링 및 개수 제한
+    """
+    # [v4.21] 옵션 검증 - models.py 레벨에서도 검증
+    if not options:
+        logger.warning(f"Poll creation failed: no options provided")
+        return None
+    
+    # 빈 옵션 필터링 및 최대 10개 제한
+    options = [opt.strip() for opt in options if opt and isinstance(opt, str) and opt.strip()][:10]
+    
+    if len(options) < 2:
+        logger.warning(f"Poll creation failed: insufficient valid options (need 2+, got {len(options)})")
+        return None
+    
     conn = get_db()
     cursor = conn.cursor()
     try:

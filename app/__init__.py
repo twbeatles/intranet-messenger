@@ -12,10 +12,21 @@ from datetime import timedelta
 
 # gevent monkey patching (반드시 다른 import 전에 실행)
 # [v4.1] GUI 모드에서는 PyQt6와 충돌하므로 비활성화
+# [v4.2] server_launcher.py에서 이미 패치한 경우 감지
 _SKIP_GEVENT = os.environ.get('SKIP_GEVENT_PATCH', '0') == '1'
 _GEVENT_AVAILABLE = False
+_GEVENT_ALREADY_PATCHED = False
 
-if not _SKIP_GEVENT:
+# 이미 gevent가 패치되었는지 확인
+try:
+    from gevent import monkey
+    _GEVENT_ALREADY_PATCHED = monkey.is_module_patched('socket')
+    if _GEVENT_ALREADY_PATCHED:
+        _GEVENT_AVAILABLE = True
+except ImportError:
+    pass
+
+if not _SKIP_GEVENT and not _GEVENT_ALREADY_PATCHED:
     try:
         from gevent import monkey
         monkey.patch_all()
@@ -148,19 +159,15 @@ def create_app():
 
     
     # Socket.IO 초기화 - 비동기 모드 선택
-    # 우선순위: gevent > eventlet > threading
+    # 우선순위: gevent (이미 패치된 경우) > config 설정 > threading
     _async_mode = None
     
-    # config에서 설정한 모드 시도
-    if ASYNC_MODE == 'gevent' and _GEVENT_AVAILABLE:
+    # [v4.2] gevent가 이미 패치되었으면 무조건 gevent 모드 사용
+    if _GEVENT_AVAILABLE:
         try:
             import gevent  # noqa: F401
             from gevent import pywsgi  # noqa: F401
-            try:
-                from geventwebsocket.handler import WebSocketHandler  # noqa: F401
-                _async_mode = 'gevent_uwsgi'
-            except ImportError:
-                _async_mode = 'gevent'
+            _async_mode = 'gevent'
             logger.info(f"gevent 비동기 모드 활성화 (고성능 동시 접속 지원)")
         except ImportError:
             logger.warning("gevent를 찾을 수 없습니다. 다른 모드로 대체합니다.")
@@ -238,8 +245,8 @@ def create_app():
     def add_security_headers(response):
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-        # CSP: 기본적으로 self만 허용, 스타일은 inline 허용 (간단한 앱 호환성)
-        response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:;"
+        # CSP: 기본적으로 self만 허용, 스타일과 스크립트 inline 허용 (onclick 핸들러 필요)
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:;"
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         return response
 
