@@ -125,6 +125,14 @@ async function createPoll() {
         return;
     }
 
+    // [v4.32] 중복 옵션 검사
+    var uniqueOptions = options.filter(function (v, i, self) { return self.indexOf(v) === i; });
+    if (uniqueOptions.length !== options.length) {
+        showToast('중복된 옵션이 있습니다.', 'warning');
+        return;
+    }
+    options = uniqueOptions;
+
     try {
         var result = await api('/api/rooms/' + currentRoom.id + '/polls', {
             method: 'POST',
@@ -244,6 +252,7 @@ function renderPollList(polls) {
 
 /**
  * 투표 요소 생성
+ * [v4.31] 마감시간 UI 추가
  */
 function createPollElement(poll) {
     var div = document.createElement('div');
@@ -257,6 +266,32 @@ function createPollElement(poll) {
     var statusBadge = isClosed
         ? '<span class="poll-status closed">종료됨</span>'
         : '<span class="poll-status active">진행중</span>';
+
+    // [v4.31] 마감시간 표시
+    var deadlineHtml = '';
+    if (poll.ends_at && !isClosed) {
+        var endsAt = new Date(poll.ends_at);
+        var now = new Date();
+        var diffMs = endsAt - now;
+
+        if (diffMs > 0) {
+            var diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            var diffDays = Math.floor(diffHours / 24);
+
+            var timeText;
+            if (diffDays > 0) {
+                timeText = diffDays + '일 후 마감';
+            } else if (diffHours > 0) {
+                timeText = diffHours + '시간 후 마감';
+            } else {
+                var diffMinutes = Math.floor(diffMs / (1000 * 60));
+                timeText = diffMinutes + '분 후 마감';
+            }
+            deadlineHtml = '<span class="poll-deadline">⏰ ' + timeText + '</span>';
+        } else {
+            deadlineHtml = '<span class="poll-deadline expired">⏰ 마감됨</span>';
+        }
+    }
 
     var optionsHtml = poll.options.map(function (opt) {
         var percent = totalVotes > 0 ? Math.round((opt.vote_count || 0) / totalVotes * 100) : 0;
@@ -283,6 +318,7 @@ function createPollElement(poll) {
         '<span class="poll-icon">📊</span>' +
         '<span class="poll-title">' + escapeHtml(poll.question) + '</span>' +
         statusBadge +
+        deadlineHtml +
         '</div>' +
         '<div class="poll-options">' + optionsHtml + '</div>' +
         '<div class="poll-footer">' +
@@ -690,6 +726,12 @@ function chatSearchPrev() {
 // 고급 검색
 // ============================================================================
 
+// [v4.32] 검색 페이지네이션 상태
+var advSearchPage = 0;
+var advSearchLimit = 20;
+var advSearchHasMore = false;
+var advSearchLastParams = null;
+
 /**
  * 고급 검색 모달 열기
  */
@@ -709,12 +751,20 @@ function openAdvancedSearch() {
     if (advSearchDateTo) advSearchDateTo.value = '';
     if (advSearchFileOnly) advSearchFileOnly.checked = false;
     if (advSearchResults) advSearchResults.innerHTML = '';
+
+    // [v4.32] 페이지네이션 상태 초기화
+    advSearchPage = 0;
+    advSearchHasMore = false;
+    advSearchLastParams = null;
 }
 
 /**
  * 고급 검색 실행
+ * [v4.32] 페이지네이션 지원 추가
  */
-async function doAdvancedSearch() {
+async function doAdvancedSearch(loadMore) {
+    loadMore = loadMore || false;
+
     var advSearchQuery = $('advSearchQuery');
     var advSearchDateFrom = $('advSearchDateFrom');
     var advSearchDateTo = $('advSearchDateTo');
@@ -725,6 +775,16 @@ async function doAdvancedSearch() {
     var dateTo = advSearchDateTo ? advSearchDateTo.value : '';
     var fileOnly = advSearchFileOnly ? advSearchFileOnly.checked : false;
 
+    // [v4.32] 검색 조건 유효성 검사 (백엔드와 일치)
+    if (!loadMore && !query && !dateFrom && !dateTo && !fileOnly) {
+        showToast('검색어를 입력하거나 필터를 선택해주세요.', 'warning');
+        return;
+    }
+    if (query && query.length < 2) {
+        showToast('검색어는 2자 이상 입력해주세요.', 'warning');
+        return;
+    }
+
     var params = new URLSearchParams();
     if (query) params.append('q', query);
     if (dateFrom) params.append('date_from', dateFrom);
@@ -732,9 +792,20 @@ async function doAdvancedSearch() {
     if (fileOnly) params.append('file_only', '1');
     if (currentRoom) params.append('room_id', currentRoom.id);
 
+    // [v4.32] 페이지네이션
+    if (loadMore && advSearchLastParams) {
+        advSearchPage++;
+    } else {
+        advSearchPage = 0;
+        advSearchLastParams = params.toString();
+    }
+    params.append('offset', advSearchPage * advSearchLimit);
+    params.append('limit', advSearchLimit);
+
     try {
         var results = await api('/api/search?' + params.toString());
-        renderAdvancedSearchResults(results);
+        advSearchHasMore = results && results.length >= advSearchLimit;
+        renderAdvancedSearchResults(results, loadMore);
     } catch (e) {
         console.error('Search error:', e);
         showToast('검색에 실패했습니다.', 'error');
@@ -743,23 +814,48 @@ async function doAdvancedSearch() {
 
 /**
  * 고급 검색 결과 렌더링
+ * [v4.32] 페이지네이션 지원 및 접근성 개선
  */
-function renderAdvancedSearchResults(results) {
+function renderAdvancedSearchResults(results, append) {
     var container = $('advancedSearchResults');
     if (!container) return;
 
     if (!results || results.length === 0) {
-        container.innerHTML = '<div class="empty-results">검색 결과가 없습니다</div>';
+        if (!append) {
+            container.innerHTML = '<div class="empty-results" role="status">검색 결과가 없습니다</div>';
+        }
         return;
     }
 
-    container.innerHTML = results.map(function (r) {
-        return '<div class="search-result-item" onclick="goToMessage(' + r.room_id + ', ' + r.id + ')">' +
+    // [v4.32] 기존 "더 보기" 버튼 제거
+    var existingLoadMore = container.querySelector('.load-more-btn');
+    if (existingLoadMore) existingLoadMore.remove();
+
+    var resultsHtml = results.map(function (r) {
+        return '<div class="search-result-item" role="listitem" tabindex="0" onclick="goToMessage(' + r.room_id + ', ' + r.id + ')" onkeydown="if(event.key===\'Enter\')goToMessage(' + r.room_id + ', ' + r.id + ')">' +
             '<div class="search-result-sender">' + escapeHtml(r.sender_name || '알 수 없음') + '</div>' +
             '<div class="search-result-content">' + escapeHtml(r.content) + '</div>' +
             '<div class="search-result-time">' + formatTime(r.created_at) + '</div>' +
             '</div>';
     }).join('');
+
+    if (append) {
+        container.insertAdjacentHTML('beforeend', resultsHtml);
+    } else {
+        container.innerHTML = resultsHtml;
+        container.setAttribute('role', 'list');
+        container.setAttribute('aria-label', '검색 결과');
+    }
+
+    // [v4.32] "더 보기" 버튼 추가
+    if (advSearchHasMore) {
+        var loadMoreBtn = document.createElement('button');
+        loadMoreBtn.className = 'load-more-btn btn btn-secondary';
+        loadMoreBtn.textContent = '더 보기';
+        loadMoreBtn.setAttribute('aria-label', '검색 결과 더 보기');
+        loadMoreBtn.onclick = function () { doAdvancedSearch(true); };
+        container.appendChild(loadMoreBtn);
+    }
 }
 
 /**

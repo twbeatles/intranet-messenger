@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# 사내 메신저 v4.3 PyInstaller 빌드 명세서
+# 사내 메신저 v4.34 PyInstaller 빌드 명세서
 # 경량화 최적화 버전
 
 block_cipher = None
@@ -124,7 +124,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='사내메신저v4.3',
+    name='사내메신저v4.34',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,  # 심볼 제거 (경량화)

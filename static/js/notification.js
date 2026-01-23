@@ -39,7 +39,7 @@ const MessengerNotification = {
         try {
             const notification = new Notification('새 메시지', {
                 body: `${senderName}: ${content.substring(0, 100)}`,
-                icon: '/static/icon.png',
+                icon: '/static/img/icon.png',
                 tag: `room-${roomId}`, // 같은 방의 알림은 덮어쓰기
                 requireInteraction: false,
                 silent: false

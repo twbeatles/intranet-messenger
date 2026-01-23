@@ -134,6 +134,14 @@ async function handleProfileImageUpload(e) {
     var file = e.target.files[0];
     if (!file) return;
 
+    // [v4.32] 이미지 파일 타입 검사
+    var validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+        showToast('JPG, PNG, GIF, WEBP 이미지만 업로드 가능합니다.', 'error');
+        e.target.value = '';
+        return;
+    }
+
     // 파일 크기 체크 (5MB)
     if (file.size > 5 * 1024 * 1024) {
         showToast('이미지 크기는 5MB 이하여야 합니다.', 'error');
@@ -269,6 +277,12 @@ async function changePassword() {
 
     if (newPw.length < 8) {
         showToast('비밀번호는 8자 이상이어야 합니다.', 'error');
+        return;
+    }
+
+    // [v4.32] 비밀번호 복잡도 검증 추가 (auth.js doRegister와 일치)
+    if (!/[A-Za-z]/.test(newPw) || !/[0-9]/.test(newPw)) {
+        showToast('비밀번호는 영문자와 숫자를 포함해야 합니다.', 'error');
         return;
     }
 

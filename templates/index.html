@@ -16,6 +16,12 @@
 </head>
 
 <body>
+    <!-- [v4.34] 스킵 링크 (접근성) -->
+    <a href="#messagesContainer" class="skip-link">메인 콘텐츠로 건너뛰기</a>
+
+    <!-- [v4.34] 스크린 리더용 알림 영역 -->
+    <div id="srAnnouncements" aria-live="polite" aria-atomic="true" class="visually-hidden"></div>
+
     <!-- 인증 화면 -->
     <div id="authContainer" class="auth-container">
         <div class="auth-box">
@@ -39,17 +45,49 @@
 
             <!-- 회원가입 폼 -->
             <form id="registerForm" class="hidden" onsubmit="return false;">
-                <div class="form-group">
+                <!-- [v4.34] 회원가입 단계 표시기 -->
+                <div class="step-indicator" id="stepIndicator">
+                    <div class="step active" data-step="1">
+                        <div class="step-circle">1</div>
+                        <div class="step-label">아이디</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="2">
+                        <div class="step-circle">2</div>
+                        <div class="step-label">비밀번호</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="3">
+                        <div class="step-circle">3</div>
+                        <div class="step-label">닉네임</div>
+                    </div>
+                </div>
+
+                <div class="form-group" data-step="1">
                     <label>아이디</label>
-                    <input type="text" id="regUsername" placeholder="3자 이상" required>
+                    <input type="text" id="regUsername" placeholder="3자 이상" required aria-label="아이디 입력"
+                        onfocus="updateStepIndicator(1)" onblur="validateStep(1)">
                 </div>
-                <div class="form-group">
+                <div class="form-group" data-step="2">
                     <label>비밀번호</label>
-                    <input type="password" id="regPassword" placeholder="8자 이상 (영문+숫자)" required>
+                    <input type="password" id="regPassword" placeholder="8자 이상 (영문+숫자)" required
+                        oninput="updatePasswordStrength(this.value)" aria-label="비밀번호 입력"
+                        aria-describedby="passwordStrength" onfocus="updateStepIndicator(2)" onblur="validateStep(2)">
+                    <!-- [v4.33] 패스워드 강도 표시기 -->
+                    <div id="passwordStrength" class="password-strength" style="display:none">
+                        <div class="strength-bar-container">
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                        </div>
+                        <span class="strength-label"></span>
+                    </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group" data-step="3">
                     <label>닉네임</label>
-                    <input type="text" id="regNickname" placeholder="표시될 이름">
+                    <input type="text" id="regNickname" placeholder="표시될 이름" aria-label="닉네임 입력"
+                        onfocus="updateStepIndicator(3)" onblur="validateStep(3)">
                 </div>
                 <button type="button" class="btn btn-primary" id="registerBtn">회원가입</button>
             </form>
@@ -74,10 +112,15 @@
                     <input type="text" id="searchInput" placeholder="대화 검색...">
                 </div>
             </div>
-            <div class="room-list" id="roomList"></div>
+            <div class="room-list" id="roomList" role="list" aria-label="대화방 목록"></div>
+            <!-- [v4.33] 접기/펴기 가능한 온라인 섹션 -->
             <div class="online-section" id="onlineSection">
-                <h4><span class="dot"></span> 온라인 사용자</h4>
-                <div class="online-users-list" id="onlineUsersList"></div>
+                <div class="online-section-header" onclick="toggleOnlineSection()" role="button" aria-expanded="true"
+                    aria-controls="onlineUsersList">
+                    <h4><span class="dot"></span> 온라인 사용자</h4>
+                    <span class="online-section-toggle">▼</span>
+                </div>
+                <div class="online-users-list" id="onlineUsersList" role="list" aria-label="온라인 사용자 목록"></div>
             </div>
             <div class="user-section">
                 <div class="user-avatar clickable" id="userAvatar" title="프로필 수정"></div>
@@ -173,10 +216,10 @@
     </div>
 
     <!-- 새 대화 모달 -->
-    <div class="modal-overlay" id="newChatModal">
+    <div class="modal-overlay" id="newChatModal" role="dialog" aria-modal="true" aria-labelledby="newChatModalTitle">
         <div class="modal">
             <div class="modal-header">
-                <h3>새 대화 시작</h3>
+                <h3 id="newChatModalTitle">새 대화 시작</h3>
                 <button class="modal-close" id="closeNewChatModal">✕</button>
             </div>
             <div class="form-group">
@@ -190,10 +233,10 @@
     </div>
 
     <!-- 초대 모달 -->
-    <div class="modal-overlay" id="inviteModal">
+    <div class="modal-overlay" id="inviteModal" role="dialog" aria-modal="true" aria-labelledby="inviteModalTitle">
         <div class="modal">
             <div class="modal-header">
-                <h3>멤버 초대</h3>
+                <h3 id="inviteModalTitle">멤버 초대</h3>
                 <button class="modal-close" id="closeInviteModal">✕</button>
             </div>
             <div class="user-list" id="inviteUserList"></div>
@@ -202,10 +245,10 @@
     </div>
 
     <!-- 멤버 보기 모달 -->
-    <div class="modal-overlay" id="membersModal">
+    <div class="modal-overlay" id="membersModal" role="dialog" aria-modal="true" aria-labelledby="membersModalTitle">
         <div class="modal">
             <div class="modal-header">
-                <h3>👥 대화방 멤버</h3>
+                <h3 id="membersModalTitle">👥 대화방 멤버</h3>
                 <button class="modal-close" id="closeMembersModal">✕</button>
             </div>
             <div class="members-info" id="membersInfo">
@@ -220,10 +263,10 @@
     </div>
 
     <!-- 프로필 수정 모달 -->
-    <div class="modal-overlay" id="profileModal">
+    <div class="modal-overlay" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
         <div class="modal">
             <div class="modal-header">
-                <h3>⚙ 프로필 수정</h3>
+                <h3 id="profileModalTitle">⚙ 프로필 수정</h3>
                 <button class="modal-close" id="closeProfileModal">✕</button>
             </div>
             <div class="modal-tabs">
@@ -293,10 +336,10 @@
     </div>
 
     <!-- 설정 모달 -->
-    <div class="modal-overlay" id="settingsModal">
+    <div class="modal-overlay" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
         <div class="modal" style="max-width: 480px;">
             <div class="modal-header">
-                <h3>🎨 화면 설정</h3>
+                <h3 id="settingsModalTitle">🎨 화면 설정</h3>
                 <button class="modal-close" id="closeSettingsModal">✕</button>
             </div>
             <div class="settings-content">
@@ -346,10 +389,10 @@
     </div>
 
     <!-- 도움말 모달 -->
-    <div class="modal-overlay" id="helpModal">
+    <div class="modal-overlay" id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
         <div class="modal" style="max-width: 520px;">
             <div class="modal-header">
-                <h3>❓ 도움말</h3>
+                <h3 id="helpModalTitle">❓ 도움말</h3>
                 <button class="modal-close" id="closeHelpModal">✕</button>
             </div>
             <div class="help-content" style="max-height: 400px; overflow-y: auto;">
@@ -420,10 +463,10 @@
     </div>
 
     <!-- v4.0 투표 생성 모달 -->
-    <div class="modal-overlay" id="pollModal">
+    <div class="modal-overlay" id="pollModal" role="dialog" aria-modal="true" aria-labelledby="pollModalTitle">
         <div class="modal" style="max-width: 500px;">
             <div class="modal-header">
-                <h3>📋 투표 만들기</h3>
+                <h3 id="pollModalTitle">📋 투표 만들기</h3>
                 <button class="modal-close" id="closePollModal">✕</button>
             </div>
             <div class="form-group">

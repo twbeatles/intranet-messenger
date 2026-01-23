@@ -83,6 +83,11 @@ function initSocket() {
                         console.log('Synced ' + newMessages.length + ' missed messages');
                     }
                 }
+
+                // [v4.32] 재연결 시 방 기능 재초기화 (투표, 공지 등)
+                if (typeof initRoomV4Features === 'function') {
+                    initRoomV4Features();
+                }
             } catch (err) {
                 console.warn('Failed to sync messages on reconnect:', err);
             }
@@ -264,6 +269,7 @@ function updateConnectionStatus(status) {
 
 /**
  * 새 메시지 수신 처리
+ * [v4.31] 멘션 알림 기능 추가
  */
 function handleNewMessage(msg) {
     var messagesContainer = document.getElementById('messagesContainer');
@@ -293,6 +299,14 @@ function handleNewMessage(msg) {
         if (socket && socket.connected) {
             socket.emit('message_read', { room_id: currentRoom.id, message_id: msg.id });
         }
+
+        // [v4.31] 멘션 알림: 현재 방에서 내가 멘션된 경우 알림 표시
+        if (msg.sender_id !== currentUser.id && currentUser.nickname) {
+            var mentionPattern = new RegExp('@' + currentUser.nickname + '(?:\\s|$)', 'i');
+            if (mentionPattern.test(msg.content)) {
+                showMentionNotification(msg);
+            }
+        }
     } else {
         // 다른 방 알림
         if (window.MessengerNotification && msg.sender_id !== currentUser.id) {
@@ -307,52 +321,136 @@ function handleNewMessage(msg) {
 }
 
 /**
+ * [v4.31] 멘션 알림 표시
+ */
+function showMentionNotification(msg) {
+    // 토스트 알림
+    if (typeof showToast === 'function') {
+        showToast('💬 ' + msg.sender_name + '님이 회원님을 언급했습니다', 'info');
+    }
+
+    // 브라우저 알림 (권한 있는 경우)
+    if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+            var notification = new Notification('멘션됨 - ' + msg.sender_name, {
+                body: msg.content.substring(0, 100),
+                icon: '/static/img/icon.png',
+                tag: 'mention-' + msg.id,
+                requireInteraction: false
+            });
+            notification.onclick = function () {
+                window.focus();
+                notification.close();
+            };
+            // 5초 후 자동 닫기
+            setTimeout(function () { notification.close(); }, 5000);
+        } catch (e) {
+            console.warn('멘션 알림 생성 실패:', e);
+        }
+    }
+}
+
+/**
  * 읽음 상태 업데이트 처리
+ * [v4.32] 이벤트 데이터를 updateUnreadCounts에 전달
  */
 function handleReadUpdated(data) {
     if (currentRoom && data.room_id === currentRoom.id) {
-        if (typeof updateUnreadCounts === 'function') updateUnreadCounts();
+        if (typeof updateUnreadCounts === 'function') updateUnreadCounts(data);
     }
 }
 
 /**
  * 읽지 않은 메시지 수 업데이트
+ * [v4.32] 성능 최적화: 전체 메시지 재조회 대신 UI만 업데이트
  */
-async function updateUnreadCounts() {
+function updateUnreadCounts() {
     if (!currentRoom) return;
 
-    try {
-        var result = await api('/api/rooms/' + currentRoom.id + '/messages');
-        result.messages.forEach(function (msg) {
-            var el = document.querySelector('[data-message-id="' + msg.id + '"] .unread-count');
-            if (el) {
-                if (msg.unread_count > 0) {
-                    el.textContent = msg.unread_count;
+    var messagesContainer = document.getElementById('messagesContainer');
+    if (!messagesContainer) return;
+
+    // 내가 보낸 메시지들의 읽음 표시 업데이트
+    var myMessages = messagesContainer.querySelectorAll('.message.sent');
+    myMessages.forEach(function (msgEl) {
+        var readIndicator = msgEl.querySelector('.message-read-indicator');
+        if (readIndicator && !readIndicator.classList.contains('all-read')) {
+            // 읽음 이벤트가 발생하면 카운트 감소
+            var match = readIndicator.textContent.match(/(\d+)명/);
+            if (match) {
+                var count = parseInt(match[1]) - 1;
+                if (count <= 0) {
+                    readIndicator.classList.add('all-read');
+                    readIndicator.innerHTML = '<span class="read-icon">✓✓</span>모두 읽음';
                 } else {
-                    el.remove();
+                    readIndicator.innerHTML = '<span class="read-icon">✓</span>' + count + '명 안읽음';
                 }
             }
-        });
-    } catch (err) {
-        console.error('읽음 수 업데이트 실패:', err);
-    }
+        }
+    });
 }
 
 /**
  * 타이핑 처리
+ * [v4.31] 다중 사용자 타이핑 지원
  */
+var typingUsers = {};  // {user_id: {nickname, timeout}}
+
 function handleUserTyping(data) {
     var typingIndicator = document.getElementById('typingIndicator');
     if (!typingIndicator) return;
 
     if (currentRoom && data.room_id === currentRoom.id) {
         if (data.is_typing) {
-            typingIndicator.textContent = data.nickname + '님이 입력 중...';
-            typingIndicator.classList.remove('hidden');
+            // 타이핑 사용자 추가/업데이트
+            if (typingUsers[data.user_id]) {
+                clearTimeout(typingUsers[data.user_id].timeout);
+            }
+            typingUsers[data.user_id] = {
+                nickname: data.nickname,
+                timeout: setTimeout(function () {
+                    delete typingUsers[data.user_id];
+                    updateTypingIndicator();
+                }, 3000)  // 3초 후 자동 제거
+            };
         } else {
-            typingIndicator.classList.add('hidden');
+            // 타이핑 사용자 제거
+            if (typingUsers[data.user_id]) {
+                clearTimeout(typingUsers[data.user_id].timeout);
+                delete typingUsers[data.user_id];
+            }
         }
+        updateTypingIndicator();
     }
+}
+
+function updateTypingIndicator() {
+    var typingIndicator = document.getElementById('typingIndicator');
+    if (!typingIndicator) return;
+
+    var names = Object.values(typingUsers).map(function (u) { return u.nickname; });
+
+    if (names.length === 0) {
+        typingIndicator.classList.add('hidden');
+    } else if (names.length === 1) {
+        typingIndicator.textContent = names[0] + '님이 입력 중...';
+        typingIndicator.classList.remove('hidden');
+    } else if (names.length === 2) {
+        typingIndicator.textContent = names[0] + ', ' + names[1] + '님이 입력 중...';
+        typingIndicator.classList.remove('hidden');
+    } else {
+        typingIndicator.textContent = names[0] + ' 외 ' + (names.length - 1) + '명이 입력 중...';
+        typingIndicator.classList.remove('hidden');
+    }
+}
+
+// [v4.31] 방 전환 시 타이핑 상태 초기화
+function clearTypingUsers() {
+    Object.values(typingUsers).forEach(function (u) {
+        if (u.timeout) clearTimeout(u.timeout);
+    });
+    typingUsers = {};
+    updateTypingIndicator();
 }
 
 /**
@@ -442,3 +540,8 @@ window.handleRoomNameUpdated = handleRoomNameUpdated;
 window.handleRoomMembersUpdated = handleRoomMembersUpdated;
 window.handleUserProfileUpdated = handleUserProfileUpdated;
 window.handleReactionUpdated = handleReactionUpdated;
+// [v4.31] 다중 타이핑 지원 함수
+window.clearTypingUsers = clearTypingUsers;
+window.updateTypingIndicator = updateTypingIndicator;
+// [v4.31] 멘션 알림 함수
+window.showMentionNotification = showMentionNotification;

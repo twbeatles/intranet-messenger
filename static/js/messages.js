@@ -125,8 +125,11 @@ function renderMessages(messages, lastReadId) {
     var todayStr = new Date().toISOString().split('T')[0];
     var localTodayDividerShown = false;
     var unreadDividerShown = false;
+    var lastSenderId = null;
+    var lastMessageTime = null;
+    var groupStartIndex = -1;
 
-    messages.forEach(function (msg) {
+    messages.forEach(function (msg, index) {
         var msgDate = msg.created_at.split(' ')[0] || msg.created_at.split('T')[0];
 
         // 날짜 구분선
@@ -142,6 +145,9 @@ function renderMessages(messages, lastReadId) {
                 fragment.appendChild(divider);
 
                 if (isToday) localTodayDividerShown = true;
+                // 날짜 구분선 후 그룹화 초기화
+                lastSenderId = null;
+                lastMessageTime = null;
             }
         }
 
@@ -152,12 +158,42 @@ function renderMessages(messages, lastReadId) {
             unreadDivider.innerHTML = '<span>여기서부터 읽지 않음</span>';
             fragment.appendChild(unreadDivider);
             unreadDividerShown = true;
+            // 읽지 않음 구분선 후 그룹화 초기화
+            lastSenderId = null;
+            lastMessageTime = null;
         }
 
-        var msgEl = createMessageElement(msg);
+        // [v4.34] 메시지 그룹화 판단
+        var msgTime = new Date(msg.created_at.replace(' ', 'T')).getTime();
+        var isGrouped = false;
+        var isFirstInGroup = false;
+        var isLastInGroup = false;
+        var nextMsg = messages[index + 1];
+
+        // 같은 발신자이고 3분 이내이면 그룹화
+        if (lastSenderId === msg.sender_id && lastMessageTime && (msgTime - lastMessageTime) < 180000) {
+            isGrouped = true;
+        } else {
+            isFirstInGroup = true;
+        }
+
+        // 다음 메시지와 그룹화 여부 확인
+        if (nextMsg) {
+            var nextMsgTime = new Date(nextMsg.created_at.replace(' ', 'T')).getTime();
+            if (nextMsg.sender_id !== msg.sender_id || (nextMsgTime - msgTime) >= 180000) {
+                isLastInGroup = true;
+            }
+        } else {
+            isLastInGroup = true;
+        }
+
+        var msgEl = createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup);
         if (msgEl) {
             fragment.appendChild(msgEl);
         }
+
+        lastSenderId = msg.sender_id;
+        lastMessageTime = msgTime;
     });
 
     messagesContainer.appendChild(fragment);
@@ -189,8 +225,9 @@ function scrollToBottom() {
 
 /**
  * 메시지 요소 생성
+ * [v4.34] isGrouped, isFirstInGroup, isLastInGroup 파라미터 추가
  */
-function createMessageElement(msg) {
+function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
     try {
         // 시스템 메시지 처리
         if (msg.message_type === 'system') {
@@ -202,7 +239,15 @@ function createMessageElement(msg) {
 
         var isSent = msg.sender_id === currentUser.id;
         var div = document.createElement('div');
-        div.className = 'message ' + (isSent ? 'sent' : '');
+
+        // [v4.34] 그룹화 클래스 추가
+        var classList = ['message'];
+        if (isSent) classList.push('sent');
+        if (isGrouped) classList.push('grouped');
+        if (isFirstInGroup) classList.push('first-in-group');
+        if (isLastInGroup) classList.push('last-in-group');
+        div.className = classList.join(' ');
+
         div.dataset.messageId = msg.id;
         div.dataset.senderId = msg.sender_id;
 
@@ -219,7 +264,9 @@ function createMessageElement(msg) {
                 '</div>';
         } else {
             var decrypted = currentRoomKey && msg.encrypted ? E2E.decrypt(msg.content, currentRoomKey) : msg.content;
-            content = '<div class="message-bubble">' + parseMentions(escapeHtml(decrypted)) + '</div>';
+            // [v4.34] 코드 블록 파싱 추가
+            var parsedContent = parseCodeBlocks(parseMentions(escapeHtml(decrypted)));
+            content = '<div class="message-bubble">' + parsedContent + '</div>';
         }
 
         var senderName = msg.sender_name || '사용자';
@@ -285,13 +332,18 @@ function createMessageElement(msg) {
             reactionsHtml += '<button class="add-reaction-btn" onclick="showReactionPicker(' + msg.id + ', this)">+</button></div>';
         }
 
+        // [v4.34] 시간 툴팁 (상세 날짜/시간 표시)
+        var fullDateTime = formatFullDateTime(msg.created_at);
+        var timeHtml = '<span style="position:relative;cursor:help;">' + formatTime(msg.created_at) +
+            '<span class="message-time-tooltip">' + fullDateTime + '</span></span>';
+
         div.innerHTML = avatarHtml +
             '<div class="message-content">' +
             '<div class="message-sender">' + escapeHtml(senderName) + '</div>' +
             replyHtml +
             content +
             '<div class="message-meta">' +
-            '<span>' + formatTime(msg.created_at) + '</span>' +
+            timeHtml +
             '</div>' +
             readIndicatorHtml +
             reactionsHtml +
@@ -377,8 +429,13 @@ function handleTyping() {
         socket.emit('typing', { room_id: currentRoom.id, is_typing: true });
 
         clearTimeout(typingTimeout);
+        // [v4.31] 현재 방 ID 캡처 (타임아웃 후 방이 변경될 수 있음)
+        var currentRoomIdForTyping = currentRoom.id;
         typingTimeout = setTimeout(function () {
-            socket.emit('typing', { room_id: currentRoom.id, is_typing: false });
+            // [v4.31] socket 연결 상태 재확인 (CLAUDE.md 가이드라인)
+            if (socket && socket.connected) {
+                socket.emit('typing', { room_id: currentRoomIdForTyping, is_typing: false });
+            }
         }, 2000);
     }
 }
@@ -439,18 +496,25 @@ function deleteMessage(messageId) {
 
 /**
  * 메시지 삭제 처리
+ * [v4.30] 성능 최적화: loadRooms() 호출 제거, 모션 감소 모드 지원
  */
 function handleMessageDeleted(data) {
     var msgEl = document.querySelector('[data-message-id="' + data.message_id + '"]');
     if (msgEl) {
-        msgEl.style.transition = 'opacity 0.3s, transform 0.3s';
-        msgEl.style.opacity = '0';
-        msgEl.style.transform = 'translateX(-20px)';
-        setTimeout(function () {
+        // 모션 감소 모드 확인
+        var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        if (reduceMotion) {
             msgEl.remove();
-        }, 300);
+        } else {
+            msgEl.style.transition = 'opacity 0.2s ease';
+            msgEl.style.opacity = '0';
+            setTimeout(function () {
+                msgEl.remove();
+            }, 200);
+        }
     }
-    loadRooms();
+    // [v4.30] loadRooms() 호출 제거 - 메시지 삭제 시 전체 방 목록 리로드 불필요
 }
 
 /**
@@ -699,6 +763,7 @@ function parseMentions(text) {
 
 /**
  * 파일 업로드 처리
+ * [v4.31] 업로드 진행률 표시 추가
  */
 async function handleFileUpload(e) {
     var file = e.target.files[0];
@@ -709,51 +774,89 @@ async function handleFileUpload(e) {
 
     // CSRF 토큰 추가
     var csrfToken = document.querySelector('meta[name="csrf-token"]');
-    var headers = {};
-    if (csrfToken) {
-        headers['X-CSRFToken'] = csrfToken.getAttribute('content');
-    }
 
-    try {
-        var res = await fetch('/api/upload', {
-            method: 'POST',
-            headers: headers,
-            body: formData
-        });
-        var result = await res.json();
+    // [v4.31] XMLHttpRequest로 진행률 추적
+    var xhr = new XMLHttpRequest();
+    var progressToastId = null;
 
-        if (result.success) {
-            // [v4.21] Socket 연결 상태 확인
-            if (!socket || !socket.connected) {
-                if (typeof showToast === 'function') {
-                    showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
-                }
-                e.target.value = '';
-                return;
-            }
-
-            var isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(file.name.split('.').pop().toLowerCase());
-            socket.emit('send_message', {
-                room_id: currentRoom.id,
-                content: file.name,
-                type: isImage ? 'image' : 'file',
-                file_path: result.file_path,
-                file_name: result.file_name,
-                encrypted: false
-            });
-        } else {
-            if (typeof showToast === 'function') {
-                showToast(result.error || '파일 업로드 실패', 'error');
+    xhr.upload.onprogress = function (event) {
+        if (event.lengthComputable) {
+            var percent = Math.round((event.loaded / event.total) * 100);
+            // [v4.32] 진행률 토스트 개선: 25%, 50%, 75%에서 업데이트
+            if (percent >= 25 && !progressToastId) {
+                progressToastId = 25;
+                showToast('📤 파일 업로드 시작... 25%', 'info');
+            } else if (percent >= 50 && progressToastId < 50) {
+                progressToastId = 50;
+                showToast('📤 파일 업로드 중... 50%', 'info');
+            } else if (percent >= 75 && progressToastId < 75) {
+                progressToastId = 75;
+                showToast('📤 거의 완료... 75%', 'info');
             }
         }
-    } catch (err) {
-        console.error('파일 업로드 실패:', err);
+    };
+
+    xhr.onload = function () {
+        try {
+            var result = JSON.parse(xhr.responseText);
+
+            if (result.success) {
+                // [v4.21] Socket 연결 상태 확인
+                if (!socket || !socket.connected) {
+                    if (typeof showToast === 'function') {
+                        showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
+                    }
+                    e.target.value = '';
+                    return;
+                }
+
+                var isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(file.name.split('.').pop().toLowerCase());
+                socket.emit('send_message', {
+                    room_id: currentRoom.id,
+                    content: file.name,
+                    type: isImage ? 'image' : 'file',
+                    file_path: result.file_path,
+                    file_name: result.file_name,
+                    encrypted: false
+                });
+                showToast('파일 업로드 완료!', 'success');
+            } else {
+                if (typeof showToast === 'function') {
+                    showToast(result.error || '파일 업로드 실패', 'error');
+                }
+            }
+        } catch (err) {
+            console.error('파일 업로드 응답 파싱 실패:', err);
+            if (typeof showToast === 'function') {
+                showToast('파일 업로드 응답 처리 실패', 'error');
+            }
+        }
+        e.target.value = '';
+    };
+
+    xhr.onerror = function () {
+        console.error('파일 업로드 실패');
         if (typeof showToast === 'function') {
             showToast('파일 업로드에 실패했습니다.', 'error');
         }
-    }
+        e.target.value = '';
+    };
 
-    e.target.value = '';
+    // [v4.32] 타임아웃 처리 추가 (2분)
+    xhr.timeout = 120000;
+    xhr.ontimeout = function () {
+        console.error('파일 업로드 타임아웃');
+        if (typeof showToast === 'function') {
+            showToast('파일 업로드 시간이 초과되었습니다. 더 작은 파일을 시도하거나 네트워크 연결을 확인하세요.', 'error');
+        }
+        e.target.value = '';
+    };
+
+    xhr.open('POST', '/api/upload');
+    if (csrfToken) {
+        xhr.setRequestHeader('X-CSRFToken', csrfToken.getAttribute('content'));
+    }
+    xhr.send(formData);
 }
 
 
@@ -840,6 +943,9 @@ function showReactionPicker(messageId, targetEl) {
 
     var div = document.createElement('div');
     div.className = 'reaction-picker-popup';
+    // [v4.32] 접근성 개선: aria 속성 추가
+    div.setAttribute('role', 'menu');
+    div.setAttribute('aria-label', '리액션 선택');
     Object.assign(div.style, {
         position: 'fixed',
         zIndex: '10000',
@@ -853,7 +959,7 @@ function showReactionPicker(messageId, targetEl) {
     });
 
     div.innerHTML = quickReactions.map(function (emoji) {
-        return '<button class="reaction-picker-btn" onclick="toggleReaction(' + messageId + ', \'' + emoji + '\'); closeAllReactionPickers();" ' +
+        return '<button class="reaction-picker-btn" role="menuitem" aria-label="리액션 ' + emoji + '" onclick="toggleReaction(' + messageId + ', \'' + emoji + '\'); closeAllReactionPickers();" ' +
             'style="background:none; border:none; font-size:1.4rem; cursor:pointer; padding:4px; border-radius:50%;">' +
             emoji + '</button>';
     }).join('');
@@ -863,11 +969,34 @@ function showReactionPicker(messageId, targetEl) {
     var rect = targetEl.getBoundingClientRect();
     var popupRect = div.getBoundingClientRect();
 
-    var top = rect.top - popupRect.height - 8;
-    var left = rect.left;
+    // [v4.32] 개선된 뷰포트 경계 처리 (모바일 지원)
+    var padding = 10;
+    var viewportWidth = window.innerWidth;
+    var viewportHeight = window.innerHeight;
 
-    if (top < 10) top = rect.bottom + 8;
-    if (left + popupRect.width > window.innerWidth) left = window.innerWidth - popupRect.width - 10;
+    // 기본 위치: 대상 요소 위
+    var top = rect.top - popupRect.height - 8;
+    var left = rect.left + (rect.width / 2) - (popupRect.width / 2);
+
+    // 상단 경계 체크: 화면 밖이면 아래로 배치
+    if (top < padding) {
+        top = rect.bottom + 8;
+    }
+
+    // 하단 경계 체크: 그래도 화면 밖이면 뷰포트 내 배치
+    if (top + popupRect.height > viewportHeight - padding) {
+        top = viewportHeight - popupRect.height - padding;
+    }
+
+    // 좌측 경계 체크
+    if (left < padding) {
+        left = padding;
+    }
+
+    // 우측 경계 체크
+    if (left + popupRect.width > viewportWidth - padding) {
+        left = viewportWidth - popupRect.width - padding;
+    }
 
     div.style.top = top + 'px';
     div.style.left = left + 'px';
@@ -981,50 +1110,68 @@ function handleDroppedFiles(files) {
     }
 }
 
-async function uploadFile(file) {
+function uploadFile(file) {
     if (!currentRoom) return;
     var formData = new FormData();
     formData.append('file', file);
     formData.append('room_id', currentRoom.id);
 
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    const headers = {};
-    if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+    var csrfToken = document.querySelector('meta[name="csrf-token"]');
 
-    try {
-        var response = await fetch('/api/upload', {
-            method: 'POST',
-            headers: headers,
-            body: formData
-        });
-        var result = await response.json();
-        if (result.success) {
-            var messageType = file.type.startsWith('image/') ? 'image' : 'file';
-            // [v4.21] Socket 연결 상태 확인 개선
-            if (window.socket && window.socket.connected) {
-                window.socket.emit('send_message', {
-                    room_id: currentRoom.id,
-                    content: '',
-                    type: messageType,
-                    file_path: result.file_path,
-                    file_name: result.file_name,
-                    encrypted: false,
-                    reply_to: (typeof replyingTo !== 'undefined' && replyingTo) ? replyingTo.id : null
-                });
-                if (typeof clearReply === 'function') clearReply();
-                if (typeof showToast === 'function') showToast('파일이 전송되었습니다.', 'success');
-            } else {
-                if (typeof showToast === 'function') {
-                    showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
+    // [v4.32] XMLHttpRequest로 변경 - 타임아웃 지원
+    var xhr = new XMLHttpRequest();
+
+    xhr.onload = function () {
+        try {
+            var result = JSON.parse(xhr.responseText);
+            if (result.success) {
+                var messageType = file.type.startsWith('image/') ? 'image' : 'file';
+                // [v4.21] Socket 연결 상태 확인 개선
+                if (window.socket && window.socket.connected) {
+                    window.socket.emit('send_message', {
+                        room_id: currentRoom.id,
+                        content: '',
+                        type: messageType,
+                        file_path: result.file_path,
+                        file_name: result.file_name,
+                        encrypted: false,
+                        reply_to: (typeof replyingTo !== 'undefined' && replyingTo) ? replyingTo.id : null
+                    });
+                    if (typeof clearReply === 'function') clearReply();
+                    if (typeof showToast === 'function') showToast('파일이 전송되었습니다.', 'success');
+                } else {
+                    if (typeof showToast === 'function') {
+                        showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
+                    }
                 }
+            } else {
+                if (typeof showToast === 'function') showToast(result.error || '파일 업로드 실패', 'error');
             }
-        } else {
-            if (typeof showToast === 'function') showToast(result.error || '파일 업로드 실패', 'error');
+        } catch (err) {
+            console.error('파일 업로드 응답 파싱 실패:', err);
+            if (typeof showToast === 'function') showToast('파일 업로드에 실패했습니다.', 'error');
         }
-    } catch (err) {
-        console.error('파일 업로드 오류:', err);
+    };
+
+    xhr.onerror = function () {
+        console.error('파일 업로드 실패');
         if (typeof showToast === 'function') showToast('파일 업로드에 실패했습니다.', 'error');
+    };
+
+    // [v4.32] 타임아웃 처리 (2분)
+    xhr.timeout = 120000;
+    xhr.ontimeout = function () {
+        console.error('파일 업로드 타임아웃');
+        if (typeof showToast === 'function') {
+            showToast('파일 업로드 시간이 초과되었습니다.', 'error');
+        }
+    };
+
+    xhr.open('POST', '/api/upload');
+    if (csrfToken) {
+        xhr.setRequestHeader('X-CSRFToken', csrfToken.getAttribute('content'));
     }
+    xhr.send(formData);
 }
 
 // ============================================================================
@@ -1133,7 +1280,189 @@ window.hideSkeletonLoading = hideSkeletonLoading;
 window.updateInputState = updateInputState;
 window.initInputEnhancements = initInputEnhancements;
 
+// [v4.31] LazyLoadObserver 정리 함수
+// [v4.32] 상태 변수 초기화 추가 (메모리 누수 및 stale state 방지)
+function cleanupLazyLoadObserver() {
+    if (lazyLoadObserver) {
+        lazyLoadObserver.disconnect();
+        lazyLoadObserver = null;
+    }
+    isLoadingOlderMessages = false;
+    hasMoreOlderMessages = true;
+    oldestMessageId = null;
+}
+window.cleanupLazyLoadObserver = cleanupLazyLoadObserver;
+
 // DOMContentLoaded에서 입력창 개선 초기화
 document.addEventListener('DOMContentLoaded', function () {
     initInputEnhancements();
+    // [v4.34] 모바일인 경우 스와이프 답장 및 사이드바 초기화
+    if (window.innerWidth <= 768) {
+        initMobileSwipeReply();
+        initMobileSidebar();
+    }
 });
+
+// ============================================================================
+// [v4.34] 모바일 스와이프 답장
+// ============================================================================
+
+var touchStartX = 0;
+var touchStartY = 0;
+var swipeThreshold = 80;
+var currentSwipingMessage = null;
+
+/**
+ * [v4.34] 모바일 스와이프 답장 초기화
+ */
+function initMobileSwipeReply() {
+    var messagesContainer = document.getElementById('messagesContainer');
+    if (!messagesContainer) return;
+
+    messagesContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    messagesContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    messagesContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+}
+
+function handleTouchStart(e) {
+    var message = e.target.closest('.message:not(.system)');
+    if (!message) return;
+
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    currentSwipingMessage = message;
+
+    // 스와이프 인디케이터 추가 (없으면)
+    if (!message.querySelector('.swipe-reply-indicator')) {
+        var indicator = document.createElement('div');
+        indicator.className = 'swipe-reply-indicator';
+        indicator.textContent = '↩';
+        message.appendChild(indicator);
+    }
+}
+
+function handleTouchMove(e) {
+    if (!currentSwipingMessage) return;
+
+    var touchX = e.touches[0].clientX;
+    var touchY = e.touches[0].clientY;
+    var deltaX = touchX - touchStartX;
+    var deltaY = touchY - touchStartY;
+
+    // 세로 스크롤이 더 크면 스와이프 취소
+    if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        cancelSwipe();
+        return;
+    }
+
+    // 보낸 메시지는 왼쪽으로, 받은 메시지는 오른쪽으로만 스와이프
+    var isSent = currentSwipingMessage.classList.contains('sent');
+    var validSwipe = (isSent && deltaX < 0) || (!isSent && deltaX > 0);
+
+    if (validSwipe && Math.abs(deltaX) > 10) {
+        e.preventDefault();
+        currentSwipingMessage.classList.add('swiping');
+
+        var maxSwipe = swipeThreshold + 20;
+        var swipeAmount = Math.min(Math.abs(deltaX), maxSwipe);
+        var direction = deltaX > 0 ? 1 : -1;
+
+        currentSwipingMessage.style.transform = 'translateX(' + (direction * swipeAmount) + 'px)';
+    }
+}
+
+function handleTouchEnd(e) {
+    if (!currentSwipingMessage) return;
+
+    var finalTransform = currentSwipingMessage.style.transform;
+    var translateMatch = finalTransform.match(/translateX\(([-\d.]+)px\)/);
+    var swipeDistance = translateMatch ? Math.abs(parseFloat(translateMatch[1])) : 0;
+
+    if (swipeDistance >= swipeThreshold) {
+        // 답장 설정
+        if (currentSwipingMessage._messageData) {
+            setReplyToFromId(currentSwipingMessage._messageData.id);
+            // 햅틱 피드백 (지원시)
+            if (navigator.vibrate) {
+                navigator.vibrate(30);
+            }
+        }
+    }
+
+    cancelSwipe();
+}
+
+function cancelSwipe() {
+    if (currentSwipingMessage) {
+        currentSwipingMessage.classList.remove('swiping');
+        currentSwipingMessage.style.transform = '';
+    }
+    currentSwipingMessage = null;
+    touchStartX = 0;
+    touchStartY = 0;
+}
+
+// ============================================================================
+// [v4.34] 모바일 사이드바 토글
+// ============================================================================
+
+/**
+ * [v4.34] 모바일 사이드바 초기화
+ */
+function initMobileSidebar() {
+    // 오버레이가 없으면 생성
+    var overlay = document.querySelector('.sidebar-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'sidebar-overlay';
+        document.body.appendChild(overlay);
+    }
+
+    // 오버레이 클릭시 사이드바 닫기
+    overlay.addEventListener('click', closeMobileSidebar);
+}
+
+/**
+ * 모바일 사이드바 열기
+ */
+function openMobileSidebar() {
+    var sidebar = document.querySelector('.sidebar');
+    var overlay = document.querySelector('.sidebar-overlay');
+
+    if (sidebar) sidebar.classList.add('open');
+    if (overlay) overlay.classList.add('active');
+
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * 모바일 사이드바 닫기
+ */
+function closeMobileSidebar() {
+    var sidebar = document.querySelector('.sidebar');
+    var overlay = document.querySelector('.sidebar-overlay');
+
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+
+    document.body.style.overflow = '';
+}
+
+/**
+ * 모바일 사이드바 토글
+ */
+function toggleMobileSidebar() {
+    var sidebar = document.querySelector('.sidebar');
+    if (sidebar && sidebar.classList.contains('open')) {
+        closeMobileSidebar();
+    } else {
+        openMobileSidebar();
+    }
+}
+
+// 전역 노출
+window.initMobileSwipeReply = initMobileSwipeReply;
+window.initMobileSidebar = initMobileSidebar;
+window.openMobileSidebar = openMobileSidebar;
+window.closeMobileSidebar = closeMobileSidebar;
+window.toggleMobileSidebar = toggleMobileSidebar;

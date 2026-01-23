@@ -91,6 +91,7 @@ def get_user_rooms(user_id):
             SELECT r.*, 
                    (SELECT COUNT(*) FROM room_members WHERE room_id = r.id) as member_count,
                    (SELECT m.content FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) as last_message,
+                   (SELECT m.type FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) as last_message_type,
                    (SELECT m.created_at FROM messages m WHERE m.room_id = r.id ORDER BY m.id DESC LIMIT 1) as last_message_time,
                    (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id AND m.id > rm.last_read_message_id AND m.sender_id != ?) as unread_count,
                    rm.pinned, rm.muted

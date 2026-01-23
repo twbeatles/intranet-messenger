@@ -85,6 +85,113 @@ function hideAuthError() {
     }
 }
 
+// ============================================================================
+// [v4.33] 패스워드 강도 검사
+// ============================================================================
+
+/**
+ * 패스워드 강도 계산
+ * @param {string} password - 비밀번호
+ * @returns {Object} { score: 0-4, level: string, label: string }
+ */
+function calculatePasswordStrength(password) {
+    let score = 0;
+
+    if (!password) {
+        return { score: 0, level: '', label: '' };
+    }
+
+    // 길이 점수
+    if (password.length >= 8) score++;
+    if (password.length >= 12) score++;
+
+    // 복잡성 점수
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++; // 대소문자 혼합
+    if (/[0-9]/.test(password)) score++; // 숫자
+    if (/[^A-Za-z0-9]/.test(password)) score++; // 특수문자
+
+    // 점수를 4단계로 정규화
+    const normalizedScore = Math.min(4, Math.floor(score * 0.8));
+
+    const levels = ['', 'weak', 'medium', 'strong', 'very-strong'];
+    const labels = ['', '약함', '보통', '강함', '매우 강함'];
+
+    return {
+        score: normalizedScore,
+        level: levels[normalizedScore] || '',
+        label: labels[normalizedScore] || ''
+    };
+}
+
+/**
+ * 패스워드 강도 UI 업데이트
+ * @param {string} password - 비밀번호
+ */
+function updatePasswordStrength(password) {
+    const container = document.getElementById('passwordStrength');
+    if (!container) return;
+
+    const strength = calculatePasswordStrength(password);
+
+    // 빈 비밀번호 처리
+    if (!password) {
+        container.className = 'password-strength';
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    container.className = 'password-strength ' + strength.level;
+
+    // 바 업데이트
+    const bars = container.querySelectorAll('.strength-bar');
+    bars.forEach((bar, index) => {
+        if (index < strength.score) {
+            bar.classList.add('active');
+        } else {
+            bar.classList.remove('active');
+        }
+    });
+
+    // 레이블 업데이트
+    const label = container.querySelector('.strength-label');
+    if (label) {
+        label.textContent = strength.label;
+    }
+}
+
+/**
+ * 입력 필드 유효성 표시 업데이트
+ * @param {HTMLElement} input - 입력 요소
+ * @param {boolean} isValid - 유효 여부
+ * @param {string} message - 피드백 메시지 (옵션)
+ */
+function updateInputValidation(input, isValid, message) {
+    if (!input) return;
+
+    input.classList.remove('input-valid', 'input-error');
+
+    if (isValid === true) {
+        input.classList.add('input-valid');
+    } else if (isValid === false) {
+        input.classList.add('input-error');
+    }
+
+    // 피드백 메시지 표시
+    let feedback = input.parentElement.querySelector('.input-feedback');
+    if (message) {
+        if (!feedback) {
+            feedback = document.createElement('div');
+            feedback.className = 'input-feedback';
+            input.parentElement.appendChild(feedback);
+        }
+        feedback.className = 'input-feedback ' + (isValid ? 'success' : 'error');
+        feedback.innerHTML = '<span class="input-feedback-icon">' + (isValid ? '✓' : '✗') + '</span>' + message;
+    } else if (feedback) {
+        feedback.remove();
+    }
+}
+
 /**
  * 회원가입 폼 표시
  */
@@ -250,6 +357,78 @@ async function checkSession() {
 }
 
 // ============================================================================
+// [v4.34] 회원가입 단계 표시기
+// ============================================================================
+
+var currentStep = 1;
+var stepValidation = { 1: false, 2: false, 3: true }; // 닉네임은 선택사항
+
+/**
+ * 단계 표시기 업데이트
+ * @param {number} step - 현재 단계 (1-3)
+ */
+function updateStepIndicator(step) {
+    currentStep = step;
+    var steps = document.querySelectorAll('.step-indicator .step');
+    var lines = document.querySelectorAll('.step-indicator .step-line');
+
+    steps.forEach(function (stepEl, index) {
+        var stepNum = index + 1;
+        stepEl.classList.remove('active');
+
+        if (stepNum < step && stepValidation[stepNum]) {
+            stepEl.classList.add('completed');
+        } else if (stepNum === step) {
+            stepEl.classList.add('active');
+            stepEl.classList.remove('completed');
+        } else {
+            stepEl.classList.remove('completed');
+        }
+    });
+
+    lines.forEach(function (line, index) {
+        if (index < step - 1 && stepValidation[index + 1]) {
+            line.classList.add('completed');
+        } else {
+            line.classList.remove('completed');
+        }
+    });
+}
+
+/**
+ * 단계별 유효성 검사
+ * @param {number} step - 검사할 단계
+ */
+function validateStep(step) {
+    var isValid = false;
+
+    switch (step) {
+        case 1:
+            var username = document.getElementById('regUsername');
+            if (username) {
+                isValid = username.value.trim().length >= 3;
+                updateInputValidation(username, isValid ? true : (username.value.length > 0 ? false : null));
+            }
+            break;
+        case 2:
+            var password = document.getElementById('regPassword');
+            if (password) {
+                var val = password.value;
+                isValid = val.length >= 8 && /[A-Za-z]/.test(val) && /[0-9]/.test(val);
+                updateInputValidation(password, isValid ? true : (val.length > 0 ? false : null));
+            }
+            break;
+        case 3:
+            // 닉네임은 선택사항이므로 항상 유효
+            isValid = true;
+            break;
+    }
+
+    stepValidation[step] = isValid;
+    updateStepIndicator(currentStep);
+}
+
+// ============================================================================
 // 전역 노출
 // ============================================================================
 window.api = api;
@@ -262,3 +441,10 @@ window.doLogin = doLogin;
 window.doRegister = doRegister;
 window.logout = logout;
 window.checkSession = checkSession;
+// [v4.33] 패스워드 강도 검사
+window.calculatePasswordStrength = calculatePasswordStrength;
+window.updatePasswordStrength = updatePasswordStrength;
+window.updateInputValidation = updateInputValidation;
+// [v4.34] 단계 표시기
+window.updateStepIndicator = updateStepIndicator;
+window.validateStep = validateStep;

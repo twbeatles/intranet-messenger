@@ -212,6 +212,121 @@ function formatDateLabel(dateStr) {
     return year + '년 ' + month + '월 ' + day + '일 ' + weekday + '요일';
 }
 
+/**
+ * [v4.34] 전체 날짜/시간 포맷팅 (툴팁용)
+ * @param {string} dateStr - 날짜 문자열
+ * @returns {string}
+ */
+function formatFullDateTime(dateStr) {
+    if (!dateStr) return '';
+
+    var d;
+    if (dateStr.includes('T')) {
+        d = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + '+09:00');
+    } else if (dateStr.includes(' ')) {
+        d = new Date(dateStr.replace(' ', 'T') + '+09:00');
+    } else {
+        d = new Date(dateStr);
+    }
+
+    if (isNaN(d.getTime())) return '';
+
+    return d.toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'short'
+    }) + ' ' + d.toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+/**
+ * [v4.34] 코드 블록 파싱 및 기본 구문 강조
+ * @param {string} text - 파싱할 텍스트
+ * @returns {string}
+ */
+function parseCodeBlocks(text) {
+    if (!text) return text;
+
+    // 코드 블록 패턴: ```language\ncode\n``` 또는 ```\ncode\n```
+    var codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
+
+    text = text.replace(codeBlockRegex, function (match, lang, code) {
+        lang = lang || 'text';
+        var highlightedCode = highlightSyntax(code.trim(), lang);
+        return '<div class="message-code-block">' +
+            '<span class="code-lang">' + escapeHtml(lang) + '</span>' +
+            '<button class="copy-code-btn" onclick="copyCodeBlock(this)">복사</button>' +
+            '<pre><code>' + highlightedCode + '</code></pre>' +
+            '</div>';
+    });
+
+    // 인라인 코드 패턴: `code`
+    var inlineCodeRegex = /`([^`]+)`/g;
+    text = text.replace(inlineCodeRegex, '<code>$1</code>');
+
+    return text;
+}
+
+/**
+ * [v4.34] 기본 구문 강조
+ * @param {string} code - 코드 문자열
+ * @param {string} lang - 언어
+ * @returns {string}
+ */
+function highlightSyntax(code, lang) {
+    // 이미 escapeHtml 처리된 코드에서 작업
+    var escaped = code;  // 이미 escape 됨
+
+    // 키워드 패턴 (주요 프로그래밍 언어)
+    var keywords = ['function', 'var', 'let', 'const', 'if', 'else', 'for', 'while',
+        'return', 'class', 'import', 'export', 'from', 'async', 'await',
+        'try', 'catch', 'finally', 'throw', 'new', 'this', 'super',
+        'def', 'elif', 'lambda', 'True', 'False', 'None', 'print',
+        'public', 'private', 'static', 'void', 'int', 'string', 'bool'];
+
+    // 키워드 강조
+    keywords.forEach(function (kw) {
+        var regex = new RegExp('\\b(' + kw + ')\\b', 'g');
+        escaped = escaped.replace(regex, '<span class="keyword">$1</span>');
+    });
+
+    // 문자열 강조 (이미 escape된 따옴표 사용)
+    escaped = escaped.replace(/(&quot;[^&]*&quot;|&#039;[^&]*&#039;)/g, '<span class="string">$1</span>');
+
+    // 숫자 강조
+    escaped = escaped.replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>');
+
+    // 주석 강조 (// 또는 #)
+    escaped = escaped.replace(/(\/\/.*$|#.*$)/gm, '<span class="comment">$1</span>');
+
+    return escaped;
+}
+
+/**
+ * [v4.34] 코드 블록 복사 함수
+ * @param {HTMLElement} btn - 복사 버튼 요소
+ */
+function copyCodeBlock(btn) {
+    var codeBlock = btn.closest('.message-code-block');
+    if (codeBlock) {
+        var code = codeBlock.querySelector('code');
+        if (code) {
+            copyToClipboard(code.textContent).then(function (success) {
+                if (success) {
+                    btn.textContent = '복사됨!';
+                    setTimeout(function () {
+                        btn.textContent = '복사';
+                    }, 2000);
+                }
+            });
+        }
+    }
+}
+
 // ============================================================================
 // 유저 프로필 색상
 // ============================================================================
@@ -255,10 +370,13 @@ function createAvatarHtml(name, imagePath, userId, cssClass) {
     var color = getUserColor(userId || 0);
 
     if (imagePath) {
-        return '<div class="' + cssClass + ' has-image"><img src="/uploads/' + imagePath + '" alt="프로필"></div>';
-    } else {
-        return '<div class="' + cssClass + '" style="background:' + color + '">' + initial + '</div>';
+        // [v4.31] XSS 방지: safeImagePath로 경로 검증
+        var safePath = safeImagePath(imagePath);
+        if (safePath) {
+            return '<div class="' + cssClass + ' has-image"><img src="/uploads/' + safePath + '" alt="프로필"></div>';
+        }
     }
+    return '<div class="' + cssClass + '" style="background:' + color + '">' + initial + '</div>';
 }
 
 // ============================================================================
@@ -576,3 +694,8 @@ window.createLazyImage = createLazyImage;
 window.initLazyLoad = initLazyLoad;
 window.runWhenIdle = runWhenIdle;
 window.processInChunks = processInChunks;
+// [v4.34] Message formatting
+window.formatFullDateTime = formatFullDateTime;
+window.parseCodeBlocks = parseCodeBlocks;
+window.copyCodeBlock = copyCodeBlock;
+

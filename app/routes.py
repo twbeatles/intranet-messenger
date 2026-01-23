@@ -175,12 +175,27 @@ def register_routes(app):
             members = get_room_members(room_id)
             encryption_key = get_room_key(room_id)
             
-            # [v4.19] 읽음 상태 배치 조회로 N+1 쿼리 제거
+            # [v4.31] 읽음 상태 계산 최적화: O(n*m) → O(n+m)
             if messages:
                 last_reads = get_room_last_reads(room_id)
+                member_count = len(members) if members else 0
+                
+                # 각 사용자별 마지막 읽은 메시지 ID를 딕셔너리로 변환 (O(m))
+                user_last_read = {}
+                for lr, uid in last_reads:
+                    user_last_read[uid] = lr
+                
+                # 메시지별 안읽음 카운트 계산 (O(n))
                 for msg in messages:
-                    # 발신자는 안읽음 카운트에서 제외
-                    msg['unread_count'] = sum(1 for lr, uid in last_reads if lr < msg['id'] and uid != msg['sender_id'])
+                    sender_id = msg['sender_id']
+                    msg_id = msg['id']
+                    
+                    # 발신자 제외한 멤버 중 이 메시지를 안 읽은 사람 수
+                    unread = 0
+                    for uid, last_read_id in user_last_read.items():
+                        if uid != sender_id and last_read_id < msg_id:
+                            unread += 1
+                    msg['unread_count'] = unread
             
             return jsonify({'messages': messages, 'members': members, 'encryption_key': encryption_key})
         except Exception as e:
