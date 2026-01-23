@@ -26,17 +26,17 @@ def app():
     
     # models 모듈 재로드하여 새 DB 경로 적용
     import importlib
-    import app.models as models_module
-    importlib.reload(models_module)
+    import app.models.base as base_module
+    importlib.reload(base_module)
     
     # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
-    models_module._db_initialized = False
-    if hasattr(models_module._db_local, 'connection'):
+    base_module._db_initialized = False
+    if hasattr(base_module._db_local, 'connection'):
         try:
-            models_module._db_local.connection.close()
+            base_module._db_local.connection.close()
         except Exception:
             pass
-        models_module._db_local.connection = None
+        base_module._db_local.connection = None
     
     from app import create_app
     flask_app, socketio = create_app()
@@ -47,7 +47,7 @@ def app():
     
     # 테스트 DB 초기화
     with flask_app.app_context():
-        models_module.init_db()
+        base_module.init_db()
     
     yield flask_app
     
