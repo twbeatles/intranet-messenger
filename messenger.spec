@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# 사내 메신저 v4.34 PyInstaller 빌드 명세서
+# 사내 메신저 v4.36 PyInstaller 빌드 명세서
 # 경량화 최적화 버전
 
 block_cipher = None
@@ -20,7 +20,10 @@ EXCLUDES = [
     'email.test', 'http.test', 'test',
     
     # XML 파서 (불필요)
-    'xml.dom', 'xml.sax',
+    'xml.dom', 'xml.sax', 'xml.sax.xmlreader', 'xml.sax.expatreader',
+    
+    # 불필요한 DB 드라이버 (SQLite만 사용)
+    'pysqlite2', 'MySQLdb',
     
     # 기타 불필요한 모듈
     'IPython', 'jupyter',
@@ -124,11 +127,11 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='사내메신저v4.34',
+    name='사내메신저v4.36',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,  # 심볼 제거 (경량화)
-    upx=True,    # UPX 압축 활성화
+    strip=False,  # 심볼 제거 (Windows에서는 False 권장)
+    upx=False,    # UPX 압축 비활성화 (UPX가 설치되지 않은 경우 오류 발생)
     upx_exclude=[
         'vcruntime140.dll',
         'python*.dll',

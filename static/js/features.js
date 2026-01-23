@@ -142,7 +142,7 @@ async function createPoll() {
             showToast('투표가 생성되었습니다.', 'success');
             $('pollModal').classList.remove('active');
             if (typeof socket !== 'undefined' && socket && socket.connected) {
-                socket.emit('poll_created', { room_id: currentRoom.id, poll: result.poll });
+                safeSocketEmit('poll_created', { room_id: currentRoom.id, poll: result.poll });
             }
             loadRoomPolls();
         }
@@ -163,7 +163,7 @@ async function votePoll(pollId, optionId) {
         if (result.success) {
             updatePollDisplay(result.poll);
             if (typeof socket !== 'undefined' && socket && socket.connected) {
-                socket.emit('poll_updated', { room_id: currentRoom.id, poll: result.poll });
+                safeSocketEmit('poll_updated', { room_id: currentRoom.id, poll: result.poll });
             }
         }
     } catch (e) {
@@ -461,7 +461,7 @@ async function pinCurrentMessage(messageId, content) {
             showToast('공지로 고정되었습니다.', 'success');
             loadPinnedMessages();
             if (typeof socket !== 'undefined' && socket && socket.connected) {
-                socket.emit('pin_updated', { room_id: currentRoom.id });
+                safeSocketEmit('pin_updated', { room_id: currentRoom.id });
             }
         }
     } catch (e) {
@@ -482,7 +482,7 @@ async function deletePin(pinId) {
             showToast('공지가 삭제되었습니다.', 'success');
             loadPinnedMessages();
             if (typeof socket !== 'undefined' && socket && socket.connected) {
-                socket.emit('pin_updated', { room_id: currentRoom.id });
+                safeSocketEmit('pin_updated', { room_id: currentRoom.id });
             }
         } else {
             showToast(result.error || '공지 삭제 실패', 'error');
@@ -573,7 +573,7 @@ async function toggleAdmin(userId, makeAdmin) {
             showToast(makeAdmin ? '관리자로 지정되었습니다.' : '관리자 권한이 해제되었습니다.', 'success');
             loadAdminMemberList();
             if (typeof socket !== 'undefined' && socket && socket.connected) {
-                socket.emit('admin_updated', { room_id: currentRoom.id });
+                safeSocketEmit('admin_updated', { room_id: currentRoom.id });
             }
         }
     } catch (e) {

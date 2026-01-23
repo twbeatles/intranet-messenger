@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-사내 메신저 v4.1 서버
+사내 메신저 v4.36 서버
 HTTPS + Socket.IO + Flask
 """
 
@@ -62,7 +62,7 @@ def run_server_cli():
     
     protocol = "https" if ssl_context else "http"
     print(f"\n{'='*50}")
-    print(f"사내 메신저 서버 v3.0")
+    print(f"사내 메신저 서버 v4.36")
     print(f"{'='*50}")
     print(f"서버 주소: {protocol}://0.0.0.0:{DEFAULT_PORT}")
     print(f"로컬 접속: {protocol}://localhost:{DEFAULT_PORT}")

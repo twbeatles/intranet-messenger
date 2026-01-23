@@ -396,7 +396,8 @@ function sendMessage() {
     }
 
     var encrypted = E2E.encrypt(content, currentRoomKey);
-    socket.emit('send_message', {
+    // [v4.36] safeSocketEmit 사용
+    safeSocketEmit('send_message', {
         room_id: currentRoom.id,
         content: encrypted,
         type: 'text',
@@ -426,15 +427,15 @@ function handleTyping() {
     messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
 
     if (currentRoom && typeof socket !== 'undefined' && socket && socket.connected) {
-        socket.emit('typing', { room_id: currentRoom.id, is_typing: true });
+        safeSocketEmit('typing', { room_id: currentRoom.id, is_typing: true });
 
         clearTimeout(typingTimeout);
         // [v4.31] 현재 방 ID 캡처 (타임아웃 후 방이 변경될 수 있음)
         var currentRoomIdForTyping = currentRoom.id;
         typingTimeout = setTimeout(function () {
-            // [v4.31] socket 연결 상태 재확인 (CLAUDE.md 가이드라인)
+            // [v4.31] socket 연결 상태 재확인 (CLAUDE.md 가이드라인) - safeSocketEmit 사용
             if (socket && socket.connected) {
-                socket.emit('typing', { room_id: currentRoomIdForTyping, is_typing: false });
+                safeSocketEmit('typing', { room_id: currentRoomIdForTyping, is_typing: false });
             }
         }, 2000);
     }
@@ -466,7 +467,8 @@ function editMessage(messageId) {
     if (newContent === null || newContent.trim() === '' || newContent === currentContent) return;
 
     var encryptedContent = currentRoomKey ? E2E.encrypt(newContent.trim(), currentRoomKey) : newContent.trim();
-    socket.emit('edit_message', {
+    // [v4.36] safeSocketEmit 사용
+    safeSocketEmit('edit_message', {
         message_id: messageId,
         room_id: currentRoom.id,
         content: encryptedContent,
@@ -497,6 +499,7 @@ function deleteMessage(messageId) {
 /**
  * 메시지 삭제 처리
  * [v4.30] 성능 최적화: loadRooms() 호출 제거, 모션 감소 모드 지원
+ * [v4.35] 삭제된 메시지를 참조하는 답장 업데이트
  */
 function handleMessageDeleted(data) {
     var msgEl = document.querySelector('[data-message-id="' + data.message_id + '"]');
@@ -514,6 +517,20 @@ function handleMessageDeleted(data) {
             }, 200);
         }
     }
+
+    // [v4.35] 삭제된 메시지를 참조하는 답장들의 표시 업데이트
+    var replyElements = document.querySelectorAll('.message-reply[onclick*="scrollToMessage(' + data.message_id + ')"]');
+    replyElements.forEach(function (replyEl) {
+        var replyText = replyEl.querySelector('.reply-text');
+        if (replyText) {
+            replyText.textContent = '[삭제된 메시지]';
+            replyText.classList.add('deleted-reply');
+        }
+        // 클릭시 스크롤 비활성화
+        replyEl.style.cursor = 'default';
+        replyEl.onclick = function (e) { e.stopPropagation(); };
+    });
+
     // [v4.30] loadRooms() 호출 제거 - 메시지 삭제 시 전체 방 목록 리로드 불필요
 }
 
@@ -811,7 +828,8 @@ async function handleFileUpload(e) {
                 }
 
                 var isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(file.name.split('.').pop().toLowerCase());
-                socket.emit('send_message', {
+                // [v4.36] safeSocketEmit 사용
+                safeSocketEmit('send_message', {
                     room_id: currentRoom.id,
                     content: file.name,
                     type: isImage ? 'image' : 'file',
@@ -881,7 +899,8 @@ function toggleReaction(messageId, emoji) {
                 updateMessageReactions(messageId, data.reactions);
                 // [v4.22] socket 연결 확인 (CLAUDE.md 가이드라인)
                 if (socket && socket.connected) {
-                    socket.emit('reaction_updated', {
+                    // [v4.36] safeSocketEmit 사용
+                    safeSocketEmit('reaction_updated', {
                         room_id: currentRoom.id,
                         message_id: messageId,
                         reactions: data.reactions
@@ -1128,7 +1147,8 @@ function uploadFile(file) {
                 var messageType = file.type.startsWith('image/') ? 'image' : 'file';
                 // [v4.21] Socket 연결 상태 확인 개선
                 if (window.socket && window.socket.connected) {
-                    window.socket.emit('send_message', {
+                    // [v4.36] safeSocketEmit 사용
+                    safeSocketEmit('send_message', {
                         room_id: currentRoom.id,
                         content: '',
                         type: messageType,
@@ -1175,6 +1195,159 @@ function uploadFile(file) {
 }
 
 // ============================================================================
+// [v4.35] 메시지 컨텍스트 메뉴 (우클릭)
+// ============================================================================
+
+var activeMessageContextMenu = null;
+
+/**
+ * 메시지 컨텍스트 메뉴 표시
+ */
+function showMessageContextMenu(e, messageEl) {
+    e.preventDefault();
+    closeMessageContextMenu();
+
+    var msgData = messageEl._messageData;
+    if (!msgData) return;
+
+    var isSent = msgData.sender_id === currentUser.id;
+    var isSystemMessage = msgData.message_type === 'system';
+
+    // 시스템 메시지는 제외
+    if (isSystemMessage) return;
+
+    var menu = document.createElement('div');
+    menu.className = 'message-context-menu';
+    menu.setAttribute('role', 'menu');
+
+    var menuHtml = '';
+
+    // 답장
+    menuHtml += '<div class="context-menu-item" data-action="reply" role="menuitem">↩ 답장</div>';
+
+    // 공지로 설정 (텍스트 메시지만)
+    if (msgData.message_type === 'text') {
+        menuHtml += '<div class="context-menu-item" data-action="pin" role="menuitem">📌 공지로 설정</div>';
+    }
+
+    // 리액션
+    menuHtml += '<div class="context-menu-item" data-action="reaction" role="menuitem">😊 리액션 추가</div>';
+
+    // 내 메시지인 경우 수정/삭제
+    if (isSent) {
+        menuHtml += '<div class="context-menu-divider"></div>';
+        if (msgData.message_type === 'text') {
+            menuHtml += '<div class="context-menu-item" data-action="edit" role="menuitem">✏ 수정</div>';
+        }
+        menuHtml += '<div class="context-menu-item danger" data-action="delete" role="menuitem">🗑 삭제</div>';
+    }
+
+    menu.innerHTML = menuHtml;
+    document.body.appendChild(menu);
+
+    // 위치 설정
+    var menuRect = menu.getBoundingClientRect();
+    var padding = 10;
+    var left = e.clientX;
+    var top = e.clientY;
+
+    // 우측 경계 처리
+    if (left + menuRect.width > window.innerWidth - padding) {
+        left = window.innerWidth - menuRect.width - padding;
+    }
+    // 하단 경계 처리
+    if (top + menuRect.height > window.innerHeight - padding) {
+        top = window.innerHeight - menuRect.height - padding;
+    }
+
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+
+    // 메뉴 항목 클릭 핸들러
+    menu.querySelectorAll('.context-menu-item').forEach(function (item) {
+        item.onclick = function () {
+            var action = item.dataset.action;
+            handleContextMenuAction(action, msgData, messageEl);
+            closeMessageContextMenu();
+        };
+    });
+
+    activeMessageContextMenu = menu;
+
+    // 외부 클릭 또는 ESC로 닫기
+    setTimeout(function () {
+        document.addEventListener('click', closeMessageContextMenu, { once: true });
+        document.addEventListener('keydown', handleContextMenuEsc);
+    }, 10);
+}
+
+function handleContextMenuEsc(e) {
+    if (e.key === 'Escape') {
+        closeMessageContextMenu();
+    }
+}
+
+function closeMessageContextMenu() {
+    if (activeMessageContextMenu && activeMessageContextMenu.parentNode) {
+        activeMessageContextMenu.parentNode.removeChild(activeMessageContextMenu);
+    }
+    activeMessageContextMenu = null;
+    document.removeEventListener('keydown', handleContextMenuEsc);
+}
+
+function handleContextMenuAction(action, msgData, messageEl) {
+    switch (action) {
+        case 'reply':
+            setReplyToFromId(msgData.id);
+            break;
+        case 'pin':
+            if (typeof pinCurrentMessage === 'function') {
+                // 메시지 내용 복호화
+                var content = msgData.content;
+                if (typeof currentRoomKey !== 'undefined' && currentRoomKey && msgData.encrypted) {
+                    content = E2E.decrypt(msgData.content, currentRoomKey) || msgData.content;
+                }
+                pinCurrentMessage(msgData.id, content);
+            }
+            break;
+        case 'reaction':
+            var reactBtn = messageEl.querySelector('.message-action-btn[title="리액션"]');
+            if (reactBtn) {
+                showReactionPicker(msgData.id, reactBtn);
+            } else {
+                showReactionPicker(msgData.id, messageEl);
+            }
+            break;
+        case 'edit':
+            editMessage(msgData.id);
+            break;
+        case 'delete':
+            deleteMessage(msgData.id);
+            break;
+    }
+}
+
+/**
+ * 메시지 컨텍스트 메뉴 초기화
+ * messagesContainer에 이벤트 위임으로 처리
+ */
+function initMessageContextMenu() {
+    var messagesContainer = document.getElementById('messagesContainer');
+    if (!messagesContainer) return;
+
+    // 이미 초기화되었는지 확인
+    if (messagesContainer._contextMenuInitialized) return;
+    messagesContainer._contextMenuInitialized = true;
+
+    messagesContainer.addEventListener('contextmenu', function (e) {
+        var messageEl = e.target.closest('.message:not(.system)');
+        if (messageEl) {
+            showMessageContextMenu(e, messageEl);
+        }
+    });
+}
+
+// ============================================================================
 // 전역 노출
 // ============================================================================
 window.renderMessages = renderMessages;
@@ -1206,8 +1379,11 @@ window.loadOlderMessages = loadOlderMessages;
 window.initEmojiPicker = initEmojiPicker;
 window.setupDragDrop = setupDragDrop;
 window.uploadFile = uploadFile;
+// [v4.35] 메시지 컨텍스트 메뉴
+window.initMessageContextMenu = initMessageContextMenu;
+window.showMessageContextMenu = showMessageContextMenu;
+window.closeMessageContextMenu = closeMessageContextMenu;
 
-// ============================================================================
 // [v4.30] UI/UX 개선 함수
 // ============================================================================
 
@@ -1248,6 +1424,8 @@ function hideSkeletonLoading(container) {
 function updateInputState() {
     var messageInput = document.getElementById('messageInput');
     var sendBtn = document.getElementById('sendBtn');
+
+    // [v4.36] Null safety checks
     if (!messageInput || !sendBtn) return;
 
     var hasContent = messageInput.value.trim().length > 0;

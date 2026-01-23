@@ -6,19 +6,30 @@
 // DOM 요소 캐싱
 const elements = {};
 
-document.addEventListener('DOMContentLoaded', function () {
-    cacheElements();
-    setupEventListeners();
+// DOMContentLoaded가 이미 발생했을 수 있으므로 readyState 체크
+(function initOnLoad() {
+    function doInit() {
+        cacheElements();
+        setupEventListeners();
 
-    // 테마 초기화
-    if (typeof initTheme === 'function') initTheme();
+        // 테마 초기화
+        if (typeof initTheme === 'function') initTheme();
 
-    // 세션 체크 (자동 로그인)
-    if (typeof checkSession === 'function') checkSession();
+        // 세션 체크 (자동 로그인)
+        if (typeof checkSession === 'function') checkSession();
 
-    // 오프라인 배너 초기화 (features.js)
-    if (typeof initOfflineBanner === 'function') initOfflineBanner();
-});
+        // 오프라인 배너 초기화 (features.js)
+        if (typeof initOfflineBanner === 'function') initOfflineBanner();
+    }
+
+    if (document.readyState === 'loading') {
+        // 아직 로딩 중이면 이벤트 대기
+        document.addEventListener('DOMContentLoaded', doInit);
+    } else {
+        // 이미 로드 완료된 경우 즉시 실행
+        doInit();
+    }
+})();
 
 /**
  * 주요 DOM 요소 캐싱
@@ -414,6 +425,9 @@ function initApp() {
 
     // 이모지 피커 초기화 (messages.js)
     if (typeof initEmojiPicker === 'function') initEmojiPicker();
+
+    // [v4.35] 메시지 컨텍스트 메뉴 초기화 (messages.js)
+    if (typeof initMessageContextMenu === 'function') initMessageContextMenu();
 
     // 스크롤 버튼 설정
     setupScrollToBottom();

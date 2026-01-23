@@ -63,16 +63,29 @@ class E2ECrypto:
 
 
 def _get_salt():
-    """솔트 가져오기 - config에서 직접 로드"""
+    """솔트 가져오기 - Flask 앱 컨텍스트 우선, config.py 폴백
+    
+    [v4.35] 수정: app/__init__.py에서 .security_salt 파일로 관리하는 솔트를
+    우선 사용하여 회원가입/로그인 시 솔트 불일치 문제 해결
+    """
+    # 우선순위 1: Flask 앱 컨텍스트의 PASSWORD_SALT (app/__init__.py에서 설정)
+    try:
+        salt = current_app.config.get('PASSWORD_SALT')
+        if salt:
+            return salt
+    except RuntimeError:
+        # Flask 앱 컨텍스트 외부에서 호출된 경우
+        pass
+    
+    # 우선순위 2: config.py의 하드코딩된 값 (폴백)
     try:
         from config import PASSWORD_SALT
         return PASSWORD_SALT
     except ImportError:
-        # config 임포트 실패 시 폴백 (PyInstaller 등 특수 환경)
-        try:
-            return current_app.config.get('PASSWORD_SALT', 'messenger_salt_2025')
-        except Exception:
-            return 'messenger_salt_2025'
+        pass
+    
+    # 우선순위 3: 기본값 (최후의 수단)
+    return 'messenger_salt_2025'
 
 def hash_password(password):
     """[v4.2] 비밀번호 해시 (bcrypt 사용)

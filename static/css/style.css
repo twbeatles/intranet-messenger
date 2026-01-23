@@ -896,7 +896,63 @@ body {
     background: var(--bg-dark);
 }
 
-/* 메시지 컨테이너 */
+/* [v4.35] 메시지 컨텍스트 메뉴 (우클릭) */
+.message-context-menu {
+    position: fixed;
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 0;
+    min-width: 160px;
+    z-index: 10000;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    animation: contextMenuFadeIn 0.15s ease;
+}
+
+@keyframes contextMenuFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.context-menu-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    transition: background 0.15s, color 0.15s;
+    color: var(--text);
+}
+
+.context-menu-item:hover {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+.context-menu-item.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+}
+
+.context-menu-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 6px 0;
+}
+
+[data-theme="light"] .message-context-menu {
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
 .messages-container {
     flex: 1;
     overflow-y: auto;
@@ -1432,17 +1488,19 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 12px;
-    display: none;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
     width: 320px;
     max-height: 250px;
     overflow-y: auto;
     z-index: 100;
+    box-shadow: var(--shadow);
+    margin-bottom: 8px;
 }
 
-.emoji-picker.active {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: 4px;
+.emoji-picker.hidden {
+    display: none !important;
 }
 
 .emoji-btn {
@@ -1482,20 +1540,21 @@ body {
 
 /* 모달 */
 .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
     background: rgba(0, 0, 0, 0.8);
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 1000 !important;
 }
 
 .modal-overlay.active {
-    display: flex;
+    display: flex !important;
+    opacity: 1 !important;
 }
 
 .modal {
@@ -4151,6 +4210,7 @@ body {
 
 .modal-overlay.active .modal {
     opacity: 1;
+    transform: scale(1);
 }
 
 /* 시스템 메시지 */
@@ -6730,4 +6790,118 @@ a:focus-visible {
     .jump-to-unread-btn:hover {
         transform: none;
     }
+}
+
+/* ============================================
+   [v4.35] 메시지 답장 스타일
+   ============================================ */
+.message-reply {
+    background: rgba(0, 0, 0, 0.15);
+    border-left: 3px solid var(--primary);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.message-reply:hover {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+.message.sent .message-reply {
+    background: rgba(255, 255, 255, 0.15);
+    border-left-color: rgba(255, 255, 255, 0.5);
+}
+
+.message.sent .message-reply:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.reply-indicator {
+    color: var(--primary);
+    font-weight: 500;
+    margin-bottom: 4px;
+    font-size: 12px;
+}
+
+.message.sent .reply-indicator {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.reply-text {
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.message.sent .reply-text {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.reply-text.deleted-reply {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* 라이트 모드 */
+[data-theme="light"] .message-reply {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .message-reply:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+/* 답장 미리보기 (입력창 위) */
+#replyPreview {
+    background: var(--bg-light);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-left: 3px solid var(--primary);
+}
+
+#replyPreview.hidden {
+    display: none;
+}
+
+.reply-preview {
+    flex: 1;
+}
+
+.reply-preview-sender {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--primary);
+    margin-bottom: 2px;
+}
+
+.reply-preview-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+.reply-preview-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 16px;
+    transition: color 0.2s ease;
+}
+
+.reply-preview-close:hover {
+    color: var(--danger);
 }

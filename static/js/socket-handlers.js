@@ -363,19 +363,36 @@ function handleReadUpdated(data) {
 /**
  * 읽지 않은 메시지 수 업데이트
  * [v4.32] 성능 최적화: 전체 메시지 재조회 대신 UI만 업데이트
+ * [v4.35] 정확한 읽음 처리: message_id 기준으로 업데이트, user_id 중복 방지
  */
-function updateUnreadCounts() {
+function updateUnreadCounts(data) {
     if (!currentRoom) return;
+    if (!data || !data.message_id || !data.user_id) return;
+
+    // 자신이 읽은 이벤트는 무시 (자신의 메시지 읽음 표시에 영향 없음)
+    if (data.user_id === currentUser.id) return;
 
     var messagesContainer = document.getElementById('messagesContainer');
     if (!messagesContainer) return;
 
-    // 내가 보낸 메시지들의 읽음 표시 업데이트
+    // 내가 보낸 메시지들 중 읽음 처리된 메시지까지만 업데이트
     var myMessages = messagesContainer.querySelectorAll('.message.sent');
     myMessages.forEach(function (msgEl) {
+        var msgId = parseInt(msgEl.dataset.messageId);
+        // data.message_id 이하의 메시지만 업데이트 (이 사용자가 여기까지 읽음)
+        if (msgId > data.message_id) return;
+
         var readIndicator = msgEl.querySelector('.message-read-indicator');
         if (readIndicator && !readIndicator.classList.contains('all-read')) {
-            // 읽음 이벤트가 발생하면 카운트 감소
+            // 이 메시지를 이미 이 사용자가 읽었는지 확인 (중복 방지)
+            var readByUsers = msgEl._readByUsers || [];
+            if (readByUsers.includes(data.user_id)) return;
+
+            // 이 사용자가 읽은 것으로 기록
+            readByUsers.push(data.user_id);
+            msgEl._readByUsers = readByUsers;
+
+            // 카운트 감소
             var match = readIndicator.textContent.match(/(\d+)명/);
             if (match) {
                 var count = parseInt(match[1]) - 1;

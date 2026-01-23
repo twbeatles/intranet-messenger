@@ -60,10 +60,14 @@ def create_message(room_id, sender_id, content, message_type='text',
         message_id = cursor.lastrowid
         conn.commit()
         
+        # [v4.35] 답장 정보 포함하여 조회
         cursor.execute('''
-            SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image
+            SELECT m.*, u.nickname as sender_name, u.profile_image as sender_image,
+                   rm.content as reply_content, ru.nickname as reply_sender
             FROM messages m
             JOIN users u ON m.sender_id = u.id
+            LEFT JOIN messages rm ON m.reply_to = rm.id
+            LEFT JOIN users ru ON rm.sender_id = ru.id
             WHERE m.id = ?
         ''', (message_id,))
         message = cursor.fetchone()
