@@ -173,6 +173,9 @@ async function loadOlderMessages() {
             // 스크롤 위치 유지
             messagesContainer.scrollTop = scrollTop + (messagesContainer.scrollHeight - scrollHeight);
             observePendingDecrypts();
+            if (typeof rebuildReadReceiptIndex === 'function') {
+                rebuildReadReceiptIndex();
+            }
 
             // 가장 오래된 메시지 ID 업데이트
             oldestMessageId = result.messages[0].id;
@@ -298,6 +301,9 @@ function renderMessages(messages, lastReadId) {
     messagesContainer.appendChild(fragment);
     cleanupLazyDecryptObserver();
     observePendingDecrypts();
+    if (typeof rebuildReadReceiptIndex === 'function') {
+        rebuildReadReceiptIndex();
+    }
 
     // [v4.21] 지연 로딩 Observer 초기화
     setTimeout(initLazyLoadMessages, 100);
@@ -382,7 +388,6 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
                 var parsedContent = parseCodeBlocks(parseMentions(escapeHtml(decrypted)));
                 content = '<div class="message-bubble">' + parsedContent + '</div>';
             }
-            content = '<div class="message-bubble">' + parsedContent + '</div>';
         }
 
         var senderName = msg.sender_name || '사용자';
@@ -478,6 +483,9 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
             actionsHtml;
 
         div._messageData = msg;
+        if (isSent && typeof msg.unread_count === 'number') {
+            div._unreadCount = msg.unread_count;
+        }
         return div;
 
     } catch (err) {
@@ -498,6 +506,9 @@ function appendMessage(msg) {
     var messagesContainer = document.getElementById('messagesContainer');
     if (div && messagesContainer) {
         messagesContainer.appendChild(div);
+    }
+    if (div && typeof indexSentMessageEl === 'function') {
+        indexSentMessageEl(div);
     }
 }
 

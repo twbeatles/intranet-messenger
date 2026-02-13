@@ -339,6 +339,10 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
     conn = get_db()
     cursor = conn.cursor()
     try:
+        def _like_escape(text: str) -> str:
+            # Escape for SQLite LIKE with ESCAPE '\'
+            return (text or '').replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
         def _fts5_available():
             try:
                 cursor.execute("SELECT 1 FROM messages_fts LIMIT 1")
@@ -374,8 +378,70 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
         if file_only:
             conditions.append("m.message_type IN ('file', 'image')")
             if query:
-                conditions.append('m.file_name LIKE ?')
-                params.append(f'%{query}%')
+                # Optimize file name search:
+                # 1) Prefer prefix match (uses idx_messages_file_name)
+                # 2) Fallback to contains match (still supported)
+                q = _like_escape(query.strip())
+                if q:
+                    where_base = ' AND '.join(conditions)
+
+                    prefix = f'{q}%'
+                    contains = f'%{q}%'
+
+                    # Count
+                    count_params = params.copy()
+                    cursor.execute(f'''
+                        SELECT COUNT(DISTINCT id) FROM (
+                            SELECT m.id AS id
+                            FROM messages m
+                            JOIN rooms r ON m.room_id = r.id
+                            JOIN room_members rm ON r.id = rm.room_id
+                            WHERE {where_base}
+                              AND m.file_name LIKE ? ESCAPE '\\'
+                            UNION ALL
+                            SELECT m.id AS id
+                            FROM messages m
+                            JOIN rooms r ON m.room_id = r.id
+                            JOIN room_members rm ON r.id = rm.room_id
+                            WHERE {where_base}
+                              AND m.file_name LIKE ? ESCAPE '\\'
+                              AND m.file_name NOT LIKE ? ESCAPE '\\'
+                        ) t
+                    ''', count_params + [prefix, contains, prefix])
+                    total_count = cursor.fetchone()[0]
+
+                    list_params = params.copy() + [prefix, contains, prefix, limit, offset]
+                    cursor.execute(f'''
+                        SELECT * FROM (
+                            SELECT m.*, r.name as room_name, u.nickname as sender_name
+                            FROM messages m
+                            JOIN rooms r ON m.room_id = r.id
+                            JOIN room_members rm ON r.id = rm.room_id
+                            JOIN users u ON m.sender_id = u.id
+                            WHERE {where_base}
+                              AND m.file_name LIKE ? ESCAPE '\\'
+                            UNION ALL
+                            SELECT m.*, r.name as room_name, u.nickname as sender_name
+                            FROM messages m
+                            JOIN rooms r ON m.room_id = r.id
+                            JOIN room_members rm ON r.id = rm.room_id
+                            JOIN users u ON m.sender_id = u.id
+                            WHERE {where_base}
+                              AND m.file_name LIKE ? ESCAPE '\\'
+                              AND m.file_name NOT LIKE ? ESCAPE '\\'
+                        )
+                        ORDER BY created_at DESC
+                        LIMIT ? OFFSET ?
+                    ''', list_params)
+
+                    messages = [dict(r) for r in cursor.fetchall()]
+                    return {
+                        'messages': messages,
+                        'total': total_count,
+                        'offset': offset,
+                        'limit': limit,
+                        'has_more': offset + len(messages) < total_count,
+                    }
         else:
             if query:
                 conditions.append('m.encrypted = 0')

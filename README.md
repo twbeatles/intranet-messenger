@@ -765,4 +765,11 @@ SOFTWARE.
 
 ---
 
+## Performance Optimizations (v4.36.2)
+
+- Room list rendering: switched to DOM reconcile updates to avoid full `innerHTML` rebuild on refresh.
+- Read receipt UI: `read_updated` now updates only the affected message id range (binary search), avoiding scanning all sent messages.
+- File-only search: added `idx_messages_file_name` index and optimized filename search to prefer prefix matches (contains match still supported).
+- Fixed incremental room DOM update selector in `updateRoomListFromMessage` (previously could fail to find the room element).
+
 **Made with ❤️ for secure internal communication**

@@ -335,6 +335,7 @@ def init_db():
         try:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_room_id ON messages(room_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_file_name ON messages(file_name)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_members_user_id ON room_members(user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_members_room_id ON room_members(room_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id)')

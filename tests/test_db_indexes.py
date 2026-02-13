@@ -16,3 +16,4 @@ def test_expected_indexes_exist(app):
 
     assert "idx_room_files_file_path" in names
     assert "idx_users_status" in names
+    assert "idx_messages_file_name" in names

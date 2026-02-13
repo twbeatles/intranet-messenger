@@ -32,6 +32,92 @@ async function loadRooms() {
 var throttledLoadRooms = throttle(loadRooms, 2000);
 var throttledLoadOnlineUsers = null;
 
+// --------------------------------------------------------------------------
+// Room List Render Perf: reconcile DOM instead of full innerHTML replace
+// --------------------------------------------------------------------------
+function reconcileRoomList(roomListEl) {
+    if (!roomListEl) return;
+    if (!Array.isArray(rooms)) rooms = [];
+
+    var existing = {};
+    Array.from(roomListEl.querySelectorAll('.room-item[data-room-id]')).forEach(function (el) {
+        existing[String(el.dataset.roomId)] = el;
+    });
+
+    rooms.forEach(function (room) {
+        if (!room || !room.id) return;
+
+        var isActive = currentRoom && currentRoom.id === room.id;
+        var name = room.name || (room.type === 'direct' && room.partner ? room.partner.nickname : '대화방');
+        var time = room.last_message_time ? formatTime(room.last_message_time) : '';
+
+        var preview = '새 대화';
+        if (room.last_message_preview) {
+            preview = escapeHtml(room.last_message_preview);
+        } else if (room.last_message) {
+            var lastMsgType = room.last_message_type || 'text';
+            if (lastMsgType === 'image') preview = '📷 이미지';
+            else if (lastMsgType === 'file') preview = '📎 파일';
+            else if (lastMsgType === 'system') preview = '🔔 시스템메시지';
+            else {
+                var s = String(room.last_message || '');
+                var isEncrypted = /^[A-Za-z0-9+/=]{20,}$/.test(s);
+                if (isEncrypted) preview = '🔒 암호화된 메시지';
+                else {
+                    var t = s.length > 25 ? (s.substring(0, 25) + '...') : s;
+                    preview = escapeHtml(t);
+                }
+            }
+        }
+        if (typeof preview !== 'string') preview = String(preview);
+
+        var pinnedClass = room.pinned ? 'pinned' : '';
+        var pinnedIcon = room.pinned ? '<span class="pin-icon">📌</span>' : '';
+
+        var avatarUserId = room.type === 'direct' && room.partner ? room.partner.id : room.id;
+        var avatarName = room.type === 'direct' && room.partner ? room.partner.nickname : (room.name || '그룹');
+        var avatarImage = room.type === 'direct' && room.partner ? room.partner.profile_image : null;
+        var avatarHtml = createAvatarHtml(avatarName, avatarImage, avatarUserId, 'room-avatar');
+
+        var unreadBadge = room.unread_count > 0 ? '<span class="unread-badge">' + room.unread_count + '</span>' : '';
+
+        var className = 'room-item ' + (isActive ? 'active' : '') + ' ' + pinnedClass;
+        var innerHtml =
+            avatarHtml +
+            '<div class="room-info">' +
+            '<div class="room-name">' + escapeHtml(name) + ' 🏠 ' + pinnedIcon + '</div>' +
+            '<div class="room-preview">' + preview + '</div>' +
+            '</div>' +
+            '<div class="room-meta">' +
+            '<div class="room-time">' + time + '</div>' +
+            unreadBadge +
+            '</div>';
+
+        var idKey = String(room.id);
+        var el = existing[idKey];
+        if (!el) {
+            el = document.createElement('div');
+            el.dataset.roomId = room.id;
+            el.setAttribute('draggable', 'true');
+        } else {
+            delete existing[idKey];
+        }
+
+        var renderKey = className + '|' + innerHtml;
+        if (el._renderKey !== renderKey) {
+            el.className = className;
+            el.innerHTML = innerHtml;
+            el._renderKey = renderKey;
+        }
+
+        roomListEl.appendChild(el); // moves existing nodes to correct order
+    });
+
+    Object.keys(existing).forEach(function (k) {
+        try { existing[k].remove(); } catch (e) { }
+    });
+}
+
 
 /**
  * 대화방 목록 렌더링
@@ -44,6 +130,12 @@ function renderRoomList() {
         roomListEl.innerHTML = '<div class="empty-state-small">대화방이 없습니다,<br>새 대화를 시작해보세요!</div>';
         return;
     }
+
+    // Prefer reconcile-based render for perf; keep legacy code below for safety
+    try {
+        reconcileRoomList(roomListEl);
+        return;
+    } catch (e) { }
 
     roomListEl.innerHTML = rooms.map(function (room) {
         var isActive = currentRoom && currentRoom.id === room.id;
@@ -204,6 +296,9 @@ async function openRoom(room) {
             cleanupLazyDecryptObserver();
         }
 
+        if (typeof resetReadReceiptCache === 'function') {
+            resetReadReceiptCache();
+        }
         currentRoom = room;
         cachedRoomMembers = null;
         cachedRoomId = null;
@@ -256,6 +351,9 @@ async function openRoom(room) {
             currentRoomKey = result.encryption_key;
 
             currentRoom.members = result.members || [];
+            if (typeof seedReadReceiptProgress === 'function') {
+                seedReadReceiptProgress(currentRoom.members);
+            }
             // 마지막 읽은 메시지 ID 찾기
             var lastReadId = 0;
             if (result.members) {

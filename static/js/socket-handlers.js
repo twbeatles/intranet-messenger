@@ -356,7 +356,7 @@ function updateRoomListFromMessage(msg) {
         }
     }
 
-    var roomEl = document.querySelector('.room-item[data-room-id= + msg.room_id + ]');
+    var roomEl = document.querySelector('.room-item[data-room-id="' + msg.room_id + '"]');
     if (!roomEl) return true;
 
     var previewEl = roomEl.querySelector('.room-preview');
@@ -477,6 +477,112 @@ function handleReadUpdated(data) {
     }
 }
 
+// ========================================================================
+// Read Receipt UI Perf: range updates (avoid scanning all sent messages)
+// ========================================================================
+
+var _rr = {
+    room_id: null,
+    sent_ids: [],            // sorted asc
+    sent_el_by_id: {},       // id -> msgEl
+    unread_by_id: {},        // id -> unread_count (int)
+    user_last_read: {}       // user_id -> last_read_message_id
+};
+
+function resetReadReceiptCache() {
+    _rr.room_id = null;
+    _rr.sent_ids = [];
+    _rr.sent_el_by_id = {};
+    _rr.unread_by_id = {};
+    _rr.user_last_read = {};
+}
+
+function seedReadReceiptProgress(members) {
+    try {
+        if (!Array.isArray(members)) return;
+        members.forEach(function (m) {
+            if (!m || !m.id) return;
+            _rr.user_last_read[m.id] = m.last_read_message_id || 0;
+        });
+    } catch (e) { }
+}
+
+function _upperBound(arr, x) {
+    var lo = 0, hi = arr.length;
+    while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        if (arr[mid] <= x) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+}
+
+function rebuildReadReceiptIndex() {
+    try {
+        if (!currentRoom) {
+            resetReadReceiptCache();
+            return;
+        }
+        var messagesContainer = document.getElementById('messagesContainer');
+        if (!messagesContainer) {
+            resetReadReceiptCache();
+            return;
+        }
+
+        _rr.room_id = currentRoom.id;
+        _rr.sent_ids = [];
+        _rr.sent_el_by_id = {};
+        _rr.unread_by_id = {};
+
+        var sent = messagesContainer.querySelectorAll('.message.sent[data-message-id]');
+        sent.forEach(function (msgEl) {
+            var id = parseInt(msgEl.dataset.messageId);
+            if (!id) return;
+            _rr.sent_ids.push(id);
+            _rr.sent_el_by_id[id] = msgEl;
+
+            var c = null;
+            if (typeof msgEl._unreadCount === 'number') c = msgEl._unreadCount;
+            else if (msgEl._messageData && typeof msgEl._messageData.unread_count === 'number') c = msgEl._messageData.unread_count;
+            if (typeof c === 'number') _rr.unread_by_id[id] = c;
+        });
+        _rr.sent_ids.sort(function (a, b) { return a - b; });
+    } catch (e) {
+        resetReadReceiptCache();
+    }
+}
+
+function indexSentMessageEl(msgEl) {
+    try {
+        if (!msgEl || !msgEl.classList || !msgEl.classList.contains('sent')) return;
+        if (!msgEl.dataset || !msgEl.dataset.messageId) return;
+        if (!currentRoom) return;
+
+        var id = parseInt(msgEl.dataset.messageId);
+        if (!id) return;
+
+        if (_rr.room_id !== currentRoom.id) {
+            rebuildReadReceiptIndex();
+            return;
+        }
+
+        _rr.sent_el_by_id[id] = msgEl;
+        var c = null;
+        if (typeof msgEl._unreadCount === 'number') c = msgEl._unreadCount;
+        else if (msgEl._messageData && typeof msgEl._messageData.unread_count === 'number') c = msgEl._messageData.unread_count;
+        if (typeof c === 'number') _rr.unread_by_id[id] = c;
+
+        // Usually append in increasing id order
+        if (_rr.sent_ids.length === 0 || _rr.sent_ids[_rr.sent_ids.length - 1] < id) {
+            _rr.sent_ids.push(id);
+            return;
+        }
+        // Fallback: insert maintaining sort
+        var idx = _upperBound(_rr.sent_ids, id);
+        if (_rr.sent_ids[idx - 1] === id) return;
+        _rr.sent_ids.splice(idx, 0, id);
+    } catch (e) { }
+}
+
 /**
  * 읽지 않은 메시지 수 업데이트
  * [v4.32] 성능 최적화: 전체 메시지 재조회 대신 UI만 업데이트
@@ -489,39 +595,45 @@ function updateUnreadCounts(data) {
     // 자신이 읽은 이벤트는 무시 (자신의 메시지 읽음 표시에 영향 없음)
     if (data.user_id === currentUser.id) return;
 
-    var messagesContainer = document.getElementById('messagesContainer');
-    if (!messagesContainer) return;
+    if (_rr.room_id !== currentRoom.id) {
+        rebuildReadReceiptIndex();
+    }
 
-    // 내가 보낸 메시지들 중 읽음 처리된 메시지까지만 업데이트
-    var myMessages = messagesContainer.querySelectorAll('.message.sent');
-    myMessages.forEach(function (msgEl) {
-        var msgId = parseInt(msgEl.dataset.messageId);
-        // data.message_id 이하의 메시지만 업데이트 (이 사용자가 여기까지 읽음)
-        if (msgId > data.message_id) return;
+    var prev = _rr.user_last_read[data.user_id] || 0;
+    var next = data.message_id || 0;
+    if (next <= prev) return;
+    _rr.user_last_read[data.user_id] = next;
+
+    var ids = _rr.sent_ids || [];
+    if (!ids.length) return;
+
+    var start = _upperBound(ids, prev);
+    var end = _upperBound(ids, next);
+    if (start >= end) return;
+
+    for (var i = start; i < end; i++) {
+        var id = ids[i];
+        var msgEl = _rr.sent_el_by_id[id];
+        if (!msgEl) continue;
 
         var readIndicator = msgEl.querySelector('.message-read-indicator');
-        if (readIndicator && !readIndicator.classList.contains('all-read')) {
-            // 이 메시지를 이미 이 사용자가 읽었는지 확인 (중복 방지)
-            var readByUsers = msgEl._readByUsers || [];
-            if (readByUsers.includes(data.user_id)) return;
+        if (!readIndicator || readIndicator.classList.contains('all-read')) continue;
 
-            // 이 사용자가 읽은 것으로 기록
-            readByUsers.push(data.user_id);
-            msgEl._readByUsers = readByUsers;
+        var count = _rr.unread_by_id[id];
+        if (typeof count !== 'number') continue;
+        if (count <= 0) continue;
+        count -= 1;
+        _rr.unread_by_id[id] = count;
+        msgEl._unreadCount = count;
 
-            // 카운트 감소
-            var match = readIndicator.textContent.match(/(\d+)명/);
-            if (match) {
-                var count = parseInt(match[1]) - 1;
-                if (count <= 0) {
-                    readIndicator.classList.add('all-read');
-                    readIndicator.innerHTML = '<span class="read-icon">✓✓</span>모두 읽음';
-                } else {
-                    readIndicator.innerHTML = '<span class="read-icon">✓</span>' + count + '명 안읽음';
-                }
-            }
+        if (count <= 0) {
+            readIndicator.classList.add('all-read');
+            readIndicator.innerHTML = '<span class="read-icon">✓✓</span>모두 읽음';
+        } else {
+            readIndicator.classList.remove('all-read');
+            readIndicator.innerHTML = '<span class="read-icon">✓</span>' + count + '명 안읽음';
         }
-    });
+    }
 }
 
 /**
@@ -684,3 +796,9 @@ window.clearTypingUsers = clearTypingUsers;
 window.updateTypingIndicator = updateTypingIndicator;
 // [v4.31] 멘션 알림 함수
 window.showMentionNotification = showMentionNotification;
+
+// Read receipt perf helpers (used by messages.js / rooms.js)
+window.resetReadReceiptCache = resetReadReceiptCache;
+window.rebuildReadReceiptIndex = rebuildReadReceiptIndex;
+window.indexSentMessageEl = indexSentMessageEl;
+window.seedReadReceiptProgress = seedReadReceiptProgress;
