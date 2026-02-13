@@ -11,7 +11,9 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 ## 📋 목차
 
 - [주요 기능](#-주요-기능)
-- [최신 업데이트](#-v434-업데이트-2026-01-23)
+- [🆕 v4.36.1 업데이트 (2026-02-13)](#-v4361-업데이트-2026-02-13)
+- [🆕 v4.36 업데이트 (2026-01-23)](#-v436-업데이트-2026-01-23)
+- [📝 v4.34 업데이트 (2026-01-23)](#-v434-업데이트-2026-01-23)
 - [시스템 요구사항](#-시스템-요구사항)
 - [설치 방법](#-설치-방법)
 - [실행 방법](#-실행-방법)
@@ -70,6 +72,23 @@ Flask + Socket.IO + PyQt6 기반 **종단간 암호화(E2E)** 사내 메신저
 - **고아 데이터 방지**: 참조 무결성 보장
 
 ---
+
+## 🆕 v4.36.1 업데이트 (2026-02-13)
+
+### 🛡️ 보안/운영 (1차)
+- **Control API 격리**: GUI용 `/control/*` 제어 API를 메인 포트에서 분리하여 `127.0.0.1:{CONTROL_PORT}` 에서만 서비스합니다. 모든 요청은 `X-Control-Token` 헤더가 필요하며, 토큰은 `.control_token` 파일로 관리됩니다.
+- **Socket.IO CORS 강화**: `cors_allowed_origins="*"` 설정을 제거하고 기본 정책(동일 출처)을 사용합니다. 필요 시 `SOCKETIO_CORS_ALLOWED_ORIGINS`로 화이트리스트를 지정할 수 있습니다.
+- **/uploads 접근 제어**: 로그인 없는 `/uploads/...` 접근을 차단하고, 방 파일은 해당 방 멤버만 다운로드 가능하도록 제한합니다(프로필 이미지는 로그인 사용자에게 허용).
+
+### 🔐 암호화 (E2E)
+- **v2 포맷 + 무결성(HMAC)**: 신규 메시지는 `v2:` prefix 포맷으로 전송/저장되며, 변조 감지 실패 시 클라이언트는 안전한 placeholder로 표시합니다.
+- **v1 호환 유지**: 기존 DB의 v1 암호문은 그대로 복호화되어 표시됩니다.
+
+### ⚡ 성능 최적화 (1차)
+- **`GET /api/rooms` 최적화**: 쿼리/페이로드를 줄이고 `last_message_preview` 등을 제공해 방 목록 갱신 비용을 낮췄습니다. (그룹방 `members`는 기본 미포함, 필요 시 `?include_members=1`)
+- **불필요한 재조회 감소**: 소켓 이벤트로 인한 `loadRooms()` 호출 폭발을 줄이고 throttle 기반 갱신을 사용합니다.
+- **Lazy 복호화**: 방 입장 시 대량 메시지 복호화로 인한 UI 멈춤을 줄이기 위해, 화면에 보이는 메시지부터 점진적으로 복호화합니다.
+- **서버 검색 개선**: 서버 메시지 검색에서 `encrypted=1` 메시지는 제외됩니다(서버에서 의미 있는 검색 불가).
 
 ## 🆕 v4.36 업데이트 (2026-01-23)
 
@@ -227,6 +246,8 @@ pip install -r requirements.txt
 `config.py` 파일에서 다음 설정을 조정할 수 있습니다:
 
 - **포트 번호**: `DEFAULT_PORT = 5000`
+- **Control API 포트**: `CONTROL_PORT = 5001` (제어 API는 `127.0.0.1` 바인딩)
+- **Socket.IO CORS 허용 목록**: `SOCKETIO_CORS_ALLOWED_ORIGINS = None` (기본 동일 출처) 또는 `[...]`로 화이트리스트 지정
 - **HTTPS 사용**: `USE_HTTPS = False`
 - **세션 타임아웃**: `SESSION_TIMEOUT_HOURS = 72`
 - **비동기 모드**: `ASYNC_MODE = 'threading'` (또는 'gevent')
@@ -472,6 +493,18 @@ intranet-messenger-main/
 - **크기 제한**: 16MB
 - **경로 검증**: 디렉토리 트래버설 방지
 
+### 8. 업로드 파일 접근 제어
+- 로그인 없는 `/uploads/...` 접근은 `401`로 차단됩니다.
+- `profiles/`는 로그인 사용자에게만 허용됩니다.
+- 방 파일은 DB 역조회 후 **해당 방 멤버만** 다운로드 가능하도록 제한됩니다.
+
+### 9. Control API 격리 (localhost + token)
+- 제어 API는 메인 서버 포트가 아니라 `127.0.0.1:{CONTROL_PORT}`에서만 서비스됩니다.
+- 모든 `/control/*` 요청은 `X-Control-Token` 헤더가 필요합니다(토큰 파일: `.control_token`).
+
+### 10. Socket.IO CORS 정책 강화
+- 기본값은 동일 출처만 허용하며, 필요 시 `SOCKETIO_CORS_ALLOWED_ORIGINS`로 화이트리스트를 지정합니다.
+
 ---
 
 ## 🚀 성능 최적화
@@ -500,6 +533,12 @@ intranet-messenger-main/
 - **소켓 세션**: 연결 해제 시 즉시 정리
 - **로그 로테이션**: 10MB, 5개 백업
 
+### 5. v4.36.1 성능 패치
+- `/api/rooms` 응답 페이로드 축소(그룹방 `members` 기본 미포함) + `last_message_preview` 제공
+- 소켓 이벤트로 인한 `loadRooms()` 재호출 감소(throttle 적용)
+- 암호화 메시지 Lazy 복호화로 렌더링 jank 완화
+- 서버 메시지 검색에서 `encrypted=1` 제외
+
 ---
 
 ## 🔍 문제 해결
@@ -513,11 +552,15 @@ intranet-messenger-main/
 # 포트 사용 중인 프로세스 확인
 netstat -ano | findstr :5000
 
+# Control API 포트 확인 (기본 5001)
+netstat -ano | findstr :5001
+
 # 프로세스 종료
 taskkill /PID <PID> /F
 
 # 또는 config.py에서 포트 변경
 DEFAULT_PORT = 5001
+# 주의: CONTROL_PORT 기본값이 5001이므로, DEFAULT_PORT를 5001로 바꾸면 Control API 포트와 충돌합니다.
 ```
 
 ### 2. Gevent 관련 오류
@@ -639,6 +682,11 @@ pytest tests --cov=app --cov-report=html
 ```powershell
 python migrate_db.py
 ```
+
+### v4.36.1 추가 안내
+- 첫 실행 시 `.control_token` 파일이 자동 생성될 수 있습니다(제어 API 인증 토큰).
+- 일부 쿼리 최적화를 위해 DB 인덱스가 추가되었습니다. 기존 DB라도 실행 시 `init_db()`에서 `IF NOT EXISTS`로 생성됩니다.
+- 서버 검색에서 암호화 메시지(`encrypted=1`)는 제외됩니다.
 
 ### 백업 및 복원
 
