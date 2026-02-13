@@ -343,6 +343,63 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_user ON poll_votes(poll_id, user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_files_file_path ON room_files(file_path)')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
+
+            # Full-text search (FTS5) for plaintext (encrypted=0) text/system messages.
+            # If this SQLite build doesn't support FTS5, skip silently.
+            try:
+                cursor.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
+                    USING fts5(
+                        content,
+                        room_id UNINDEXED,
+                        sender_id UNINDEXED,
+                        created_at UNINDEXED,
+                        tokenize='unicode61'
+                    )
+                """)
+
+                cursor.execute("""
+                    CREATE TRIGGER IF NOT EXISTS messages_fts_ai
+                    AFTER INSERT ON messages BEGIN
+                        INSERT INTO messages_fts(rowid, content, room_id, sender_id, created_at)
+                        SELECT new.id, new.content, new.room_id, new.sender_id, new.created_at
+                        WHERE new.encrypted = 0
+                          AND new.message_type IN ('text', 'system')
+                          AND new.content IS NOT NULL;
+                    END;
+                """)
+                cursor.execute("""
+                    CREATE TRIGGER IF NOT EXISTS messages_fts_ad
+                    AFTER DELETE ON messages BEGIN
+                        DELETE FROM messages_fts WHERE rowid = old.id;
+                    END;
+                """)
+                cursor.execute("""
+                    CREATE TRIGGER IF NOT EXISTS messages_fts_au
+                    AFTER UPDATE ON messages BEGIN
+                        DELETE FROM messages_fts WHERE rowid = old.id;
+                        INSERT INTO messages_fts(rowid, content, room_id, sender_id, created_at)
+                        SELECT new.id, new.content, new.room_id, new.sender_id, new.created_at
+                        WHERE new.encrypted = 0
+                          AND new.message_type IN ('text', 'system')
+                          AND new.content IS NOT NULL;
+                    END;
+                """)
+
+                # Backfill once for existing DBs where the FTS table is newly created.
+                cursor.execute("SELECT COUNT(*) FROM messages_fts")
+                fts_count = cursor.fetchone()[0]
+                if not fts_count:
+                    cursor.execute("""
+                        INSERT INTO messages_fts(rowid, content, room_id, sender_id, created_at)
+                        SELECT id, content, room_id, sender_id, created_at
+                        FROM messages
+                        WHERE encrypted = 0
+                          AND message_type IN ('text', 'system')
+                          AND content IS NOT NULL
+                    """)
+            except Exception as e:
+                logger.debug(f"FTS5 init skipped: {e}")
             logger.debug("Database indexes created/verified")
         except Exception as e:
             logger.debug(f"Index creation: {e}")

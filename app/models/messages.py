@@ -6,6 +6,7 @@
 import logging
 import threading
 import os
+import re
 from datetime import datetime, timezone, timedelta
 
 from app.models.base import get_db, safe_file_delete
@@ -239,6 +240,64 @@ def search_messages(user_id, query, offset=0, limit=50):
     conn = get_db()
     cursor = conn.cursor()
     try:
+        q = (query or '').strip()
+        if not q:
+            return {'messages': [], 'total': 0, 'offset': offset, 'limit': limit, 'has_more': False}
+
+        def _fts5_available():
+            try:
+                cursor.execute("SELECT 1 FROM messages_fts LIMIT 1")
+                cursor.fetchone()
+                return True
+            except Exception:
+                return False
+
+        def _fts5_build_query(text: str):
+            text = (text or '').strip()
+            if not text:
+                return None
+            parts = [p for p in re.split(r'\s+', text) if p]
+            parts = [p.replace('"', '""') for p in parts]
+            return ' AND '.join([f'"{p}"' for p in parts]) if parts else None
+
+        fts_query = _fts5_build_query(q)
+
+        if fts_query and _fts5_available():
+            cursor.execute('''
+                SELECT COUNT(*)
+                FROM messages_fts f
+                JOIN room_members rm ON rm.room_id = f.room_id
+                WHERE rm.user_id = ? AND f.content MATCH ?
+            ''', (user_id, fts_query))
+            total_count = cursor.fetchone()[0]
+
+            cursor.execute('''
+                WITH hits AS (
+                    SELECT rowid AS id, bm25(messages_fts) AS rank
+                    FROM messages_fts
+                    WHERE content MATCH ?
+                )
+                SELECT m.*, r.name as room_name, u.nickname as sender_name
+                FROM hits h
+                JOIN messages m ON m.id = h.id
+                JOIN rooms r ON m.room_id = r.id
+                JOIN room_members rm ON r.id = rm.room_id AND rm.user_id = ?
+                JOIN users u ON m.sender_id = u.id
+                WHERE m.encrypted = 0
+                ORDER BY h.rank ASC, m.created_at DESC
+                LIMIT ? OFFSET ?
+            ''', (fts_query, user_id, limit, offset))
+            messages = [dict(m) for m in cursor.fetchall()]
+
+            return {
+                'messages': messages,
+                'total': total_count,
+                'offset': offset,
+                'limit': limit,
+                'has_more': offset + len(messages) < total_count,
+                'note': '\uc554\ud638\ud654\ub41c \uba54\uc2dc\uc9c0\ub294 \uc11c\ubc84 \uac80\uc0c9\uc5d0\uc11c \uc81c\uc678\ub429\ub2c8\ub2e4.',
+            }
+
         cursor.execute('''
             SELECT COUNT(DISTINCT m.id)
             FROM messages m
@@ -280,6 +339,22 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
     conn = get_db()
     cursor = conn.cursor()
     try:
+        def _fts5_available():
+            try:
+                cursor.execute("SELECT 1 FROM messages_fts LIMIT 1")
+                cursor.fetchone()
+                return True
+            except Exception:
+                return False
+
+        def _fts5_build_query(text: str):
+            text = (text or '').strip()
+            if not text:
+                return None
+            parts = [p for p in re.split(r'\s+', text) if p]
+            parts = [p.replace('"', '""') for p in parts]
+            return ' AND '.join([f'"{p}"' for p in parts]) if parts else None
+
         conditions = ['rm.user_id = ?']
         params = [user_id]
 
@@ -303,8 +378,58 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
                 params.append(f'%{query}%')
         else:
             if query:
-                # content ??? ??? ???? ??
                 conditions.append('m.encrypted = 0')
+
+                fts_query = _fts5_build_query(query)
+                if fts_query and _fts5_available():
+                    where_clause = ' AND '.join(conditions)
+
+                    count_params = [fts_query] + params.copy()
+                    cursor.execute(f'''
+                        WITH hits AS (
+                            SELECT rowid AS id, bm25(messages_fts) AS rank
+                            FROM messages_fts
+                            WHERE content MATCH ?
+                        )
+                        SELECT COUNT(DISTINCT m.id)
+                        FROM hits h
+                        JOIN messages m ON m.id = h.id
+                        JOIN rooms r ON m.room_id = r.id
+                        JOIN room_members rm ON r.id = rm.room_id
+                        WHERE {where_clause}
+                    ''', count_params)
+                    total_count = cursor.fetchone()[0]
+
+                    list_params = [fts_query] + params + [limit, offset]
+                    cursor.execute(f'''
+                        WITH hits AS (
+                            SELECT rowid AS id, bm25(messages_fts) AS rank
+                            FROM messages_fts
+                            WHERE content MATCH ?
+                        )
+                        SELECT m.*, r.name as room_name, u.nickname as sender_name
+                        FROM hits h
+                        JOIN messages m ON m.id = h.id
+                        JOIN rooms r ON m.room_id = r.id
+                        JOIN room_members rm ON r.id = rm.room_id
+                        JOIN users u ON m.sender_id = u.id
+                        WHERE {where_clause}
+                        ORDER BY h.rank ASC, m.created_at DESC
+                        LIMIT ? OFFSET ?
+                    ''', list_params)
+
+                    messages = [dict(r) for r in cursor.fetchall()]
+                    out = {
+                        'messages': messages,
+                        'total': total_count,
+                        'offset': offset,
+                        'limit': limit,
+                        'has_more': offset + len(messages) < total_count,
+                        'note': '\uc554\ud638\ud654\ub41c \uba54\uc2dc\uc9c0\ub294 \uc11c\ubc84 \uac80\uc0c9\uc5d0\uc11c \uc81c\uc678\ub429\ub2c8\ub2e4.',
+                    }
+                    return out
+
+                # FTS5 unavailable -> fallback to LIKE
                 conditions.append('m.content LIKE ?')
                 params.append(f'%{query}%')
 
