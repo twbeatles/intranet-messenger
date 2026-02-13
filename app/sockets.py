@@ -113,11 +113,19 @@ def register_socket_events(socketio):
                 user_sids[user_id].append(request.sid)
                 was_offline = len(user_sids[user_id]) == 1
             
+            # Join all my rooms so this client receives room events without polling.
+            room_ids = get_user_room_ids(user_id)
+            for room_id in room_ids:
+                try:
+                    join_room(f'room_{room_id}')
+                except Exception:
+                    pass
+
             # 첫 연결일 때만 상태 업데이트
             if was_offline:
                 update_user_status(user_id, 'online')
                 # 해당 사용자의 방에만 상태 전송 (broadcast 대신)
-                for room_id in get_user_room_ids(user_id):
+                for room_id in room_ids:
                     emit('user_status', {'user_id': user_id, 'status': 'online'}, 
                          room=f'room_{room_id}')
             
@@ -170,6 +178,34 @@ def register_socket_events(socketio):
         with stats_lock:
             server_stats['active_connections'] = max(0, server_stats['active_connections'] - 1)
     
+    @socketio.on('subscribe_rooms')
+    def handle_subscribe_rooms(data):
+        try:
+            if 'user_id' not in session:
+                return
+
+            room_ids = data.get('room_ids') if isinstance(data, dict) else None
+            if not isinstance(room_ids, list):
+                return
+
+            room_ids = [rid for rid in room_ids if isinstance(rid, int) and rid > 0]
+            if not room_ids:
+                return
+
+            user_id = session['user_id']
+            allowed = set(get_user_room_ids(user_id))
+            for rid in room_ids:
+                if rid in allowed:
+                    join_room(f'room_{rid}')
+                    continue
+
+                # Cache can be stale right after room creation/invite; fallback to DB check.
+                if is_room_member(rid, user_id):
+                    invalidate_user_cache(user_id)
+                    join_room(f'room_{rid}')
+        except Exception as e:
+            logger.error(f"Subscribe rooms error: {e}")
+
     @socketio.on('join_room')
     def handle_join_room(data):
         try:
@@ -263,7 +299,6 @@ def register_socket_events(socketio):
 
                 emit('new_message', message, room=f'room_{room_id}')
                 # broadcast 대신 해당 방 멤버들의 모든 세션에 전송
-                emit('room_updated', {'room_id': room_id}, room=f'room_{room_id}')
                 logger.debug(f"Message sent: room={room_id}, user={session['user_id']}, type={message_type}")
             else:
                 logger.warning(f"Message creation failed: room={room_id}, user={session['user_id']}")

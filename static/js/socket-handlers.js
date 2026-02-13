@@ -32,6 +32,11 @@ function initSocket() {
         if (window.DEBUG) console.log('Socket connected:', socket.id);
         reconnectAttempts = 0;
         updateConnectionStatus('connected');
+        try {
+            if (typeof safeSocketEmit === 'function' && Array.isArray(rooms)) {
+                safeSocketEmit('subscribe_rooms', { room_ids: rooms.map(function (r) { return r.id; }) });
+            }
+        } catch (e) { }
 
         // 현재 방이 있으면 다시 참여
         if (currentRoom) {
@@ -68,7 +73,7 @@ function initSocket() {
                 var lastMessage = messagesContainer ? messagesContainer.querySelector('.message:last-child') : null;
                 var lastMessageId = lastMessage ? parseInt(lastMessage.dataset.messageId) || 0 : 0;
 
-                var result = await api('/api/rooms/' + currentRoom.id + '/messages');
+                var result = await api('/api/rooms/' + currentRoom.id + '/messages?include_meta=0&limit=50');
                 if (result.messages && result.messages.length > 0) {
                     // 마지막 메시지 ID 이후의 새 메시지만 추가
                     var newMessages = result.messages.filter(function (msg) {
@@ -271,6 +276,112 @@ function updateConnectionStatus(status) {
  * 새 메시지 수신 처리
  * [v4.31] 멘션 알림 기능 추가
  */
+// ============================================================================
+// Room List Incremental Updates (avoid /api/rooms reload on every message)
+// ============================================================================
+
+var _userEventDedup = {}; // { key: timestampMs }
+
+function _dedupEvent(key, ttlMs) {
+    try {
+        var now = Date.now();
+        var prev = _userEventDedup[key] || 0;
+        if (now - prev < ttlMs) return true;
+        _userEventDedup[key] = now;
+    } catch (e) { }
+    return false;
+}
+
+function computeRoomPreviewFromMessage(msg) {
+    try {
+        var t = (msg && (msg.message_type || msg.type)) || 'text';
+        if (t === 'image') return '[\uC0AC\uC9C4]';
+        if (t === 'file') return (msg && msg.file_name) ? String(msg.file_name) : '[\uD30C\uC77C]';
+        if (t === 'system') {
+            var s = (msg && msg.content) ? String(msg.content) : '';
+            if (!s) return '[\uC2DC\uC2A4\uD15C]';
+            return s.length > 25 ? (s.substring(0, 25) + '...') : s;
+        }
+        if (msg && msg.encrypted) return '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
+        var s2 = (msg && msg.content) ? String(msg.content) : '';
+        if (!s2) return '\uBA54\uC2DC\uC9C0';
+        return s2.length > 25 ? (s2.substring(0, 25) + '...') : s2;
+    } catch (e) {
+        return '\uBA54\uC2DC\uC9C0';
+    }
+}
+
+function moveRoomDomItemToTop(roomEl, pinned) {
+    var list = document.getElementById('roomList');
+    if (!list || !roomEl) return;
+
+    var pinnedEls = list.querySelectorAll('.room-item.pinned');
+    if (pinned) {
+        var firstPinned = pinnedEls.length ? pinnedEls[0] : null;
+        if (firstPinned && firstPinned !== roomEl) {
+            list.insertBefore(roomEl, firstPinned);
+        } else if (!firstPinned && list.firstChild !== roomEl) {
+            list.insertBefore(roomEl, list.firstChild);
+        }
+        return;
+    }
+
+    var lastPinned = pinnedEls.length ? pinnedEls[pinnedEls.length - 1] : null;
+    var anchor = lastPinned ? lastPinned.nextSibling : list.firstChild;
+    if (anchor === roomEl) return;
+    list.insertBefore(roomEl, anchor);
+}
+
+function updateRoomListFromMessage(msg) {
+    if (!msg || !msg.room_id) return false;
+    if (!Array.isArray(rooms)) return false;
+    var room = rooms.find(function (r) { return r && r.id === msg.room_id; });
+    if (!room) return false;
+
+    room.last_message_time = msg.created_at || room.last_message_time;
+    room.last_message_type = msg.message_type || msg.type || room.last_message_type;
+    room.last_message_encrypted = msg.encrypted ? 1 : 0;
+    room.last_message_file_name = msg.file_name || room.last_message_file_name;
+    room.last_message_preview = computeRoomPreviewFromMessage(msg);
+
+    if (typeof currentUser !== 'undefined' && currentUser) {
+        if (msg.sender_id !== currentUser.id) {
+            if (!currentRoom || msg.room_id !== currentRoom.id) {
+                room.unread_count = (room.unread_count || 0) + 1;
+            } else {
+                room.unread_count = 0;
+            }
+        } else if (currentRoom && msg.room_id === currentRoom.id) {
+            room.unread_count = 0;
+        }
+    }
+
+    var roomEl = document.querySelector('.room-item[data-room-id= + msg.room_id + ]');
+    if (!roomEl) return true;
+
+    var previewEl = roomEl.querySelector('.room-preview');
+    if (previewEl) previewEl.textContent = room.last_message_preview || '';
+
+    var timeEl = roomEl.querySelector('.room-time');
+    if (timeEl) timeEl.textContent = room.last_message_time ? formatTime(room.last_message_time) : '';
+
+    var badge = roomEl.querySelector('.unread-badge');
+    if ((room.unread_count || 0) > 0) {
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'unread-badge';
+            var meta = roomEl.querySelector('.room-meta');
+            if (meta) meta.appendChild(badge);
+        }
+        badge.textContent = String(room.unread_count);
+    } else if (badge) {
+        badge.remove();
+    }
+
+    moveRoomDomItemToTop(roomEl, !!room.pinned);
+    return true;
+}
+
 function handleNewMessage(msg) {
     var messagesContainer = document.getElementById('messagesContainer');
 
@@ -315,12 +426,15 @@ function handleNewMessage(msg) {
         if (window.MessengerNotification && msg.sender_id !== currentUser.id) {
             var room = rooms.find(function (r) { return r.id === msg.room_id; });
             var roomKey = room ? room.encryption_key : null;
-            var decrypted = roomKey && msg.encrypted ? (E2E.decrypt(msg.content, roomKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : msg.content;
+            var previewText = computeRoomPreviewFromMessage(msg);
+            var decrypted = previewText;
             MessengerNotification.show(msg.sender_name, decrypted, msg.room_id);
         }
     }
 
-    if (typeof throttledLoadRooms === 'function') throttledLoadRooms();
+    if (!updateRoomListFromMessage(msg)) {
+        if (typeof throttledLoadRooms === 'function') throttledLoadRooms();
+    }
 }
 
 /**
@@ -477,8 +591,10 @@ function clearTypingUsers() {
  * 사용자 상태 처리
  */
 function handleUserStatus(data) {
-    if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
-    if (typeof loadOnlineUsers === 'function') loadOnlineUsers();
+    if (!data || !data.user_id) return;
+    if (typeof currentUser !== 'undefined' && currentUser && data.user_id === currentUser.id) return;
+    if (_dedupEvent('user_status:' + data.user_id + ':' + data.status, 1200)) return;
+    if (typeof throttledLoadOnlineUsers === 'function') throttledLoadOnlineUsers(); else if (typeof loadOnlineUsers === 'function') loadOnlineUsers();
 }
 
 /**
@@ -508,8 +624,11 @@ function handleRoomMembersUpdated(data) {
  * 사용자 프로필 업데이트 처리
  */
 function handleUserProfileUpdated(data) {
-    if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
-    if (typeof loadOnlineUsers === 'function') loadOnlineUsers();
+    if (!data || !data.user_id) return;
+    if (typeof currentUser !== 'undefined' && currentUser && data.user_id === currentUser.id) return;
+    if (_dedupEvent('user_profile:' + data.user_id, 1200)) return;
+    if (typeof throttledLoadRooms === 'function') throttledLoadRooms();
+    if (typeof throttledLoadOnlineUsers === 'function') throttledLoadOnlineUsers(); else if (typeof loadOnlineUsers === 'function') loadOnlineUsers();
 
     if (currentRoom) {
         var userMessages = document.querySelectorAll('[data-sender-id="' + data.user_id + '"]');

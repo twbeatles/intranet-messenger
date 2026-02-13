@@ -172,22 +172,42 @@ def register_routes(app):
         
         try:
             before_id = request.args.get('before_id', type=int)
-            messages = get_room_messages(room_id, before_id=before_id)
-            members = get_room_members(room_id)
-            encryption_key = get_room_key(room_id)
+            limit = request.args.get('limit', type=int) or 50
+            if limit < 1:
+                limit = 1
+            if limit > 200:
+                limit = 200
+
+            include_meta = str(request.args.get('include_meta', '1')).lower() in ('1', 'true', 'yes')
+
+            messages = get_room_messages(room_id, before_id=before_id, limit=limit)
+            members = get_room_members(room_id) if include_meta else None
+            encryption_key = get_room_key(room_id) if include_meta else None
             
             # [v4.31] 읽음 상태 계산 최적화: O(n*m) → O(n+m)
             if messages:
-                last_reads = get_room_last_reads(room_id)
-                member_count = len(members) if members else 0
-                
-                # ? ???? ??? ?? ??? ID? ????/???? ?? (O(m))
-                user_last_read = {}
-                last_read_ids = []
-                for lr, uid in last_reads:
-                    v = lr or 0
-                    user_last_read[uid] = v
-                    last_read_ids.append(v)
+                if include_meta and members:
+                    # members already includes last_read_message_id; reuse it
+                    user_last_read = {}
+                    last_read_ids = []
+                    for m in members:
+                        try:
+                            uid = m.get('id')
+                            v = m.get('last_read_message_id') or 0
+                        except Exception:
+                            continue
+                        if uid is None:
+                            continue
+                        user_last_read[uid] = v
+                        last_read_ids.append(v)
+                else:
+                    last_reads = get_room_last_reads(room_id)
+                    user_last_read = {}
+                    last_read_ids = []
+                    for lr, uid in last_reads:
+                        v = lr or 0
+                        user_last_read[uid] = v
+                        last_read_ids.append(v)
                 last_read_ids.sort()
                 from bisect import bisect_left
                 
@@ -204,7 +224,11 @@ def register_routes(app):
                         unread = 0
                     msg['unread_count'] = unread
             
-            return jsonify({'messages': messages, 'members': members, 'encryption_key': encryption_key})
+            resp = {'messages': messages}
+            if include_meta:
+                resp['members'] = members
+                resp['encryption_key'] = encryption_key
+            return jsonify(resp)
         except Exception as e:
             logger.error(f"메시지 로드 오류: {e}")
             return jsonify({'error': '메시지 로드 실패'}), 500

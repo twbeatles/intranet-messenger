@@ -147,7 +147,7 @@ async function loadOlderMessages() {
     if (loader) loader.classList.add('loading');
 
     try {
-        var result = await api('/api/rooms/' + currentRoom.id + '/messages?before_id=' + oldestMessageId + '&limit=30');
+        var result = await api('/api/rooms/' + currentRoom.id + '/messages?before_id=' + oldestMessageId + '&limit=30&include_meta=0');
 
         if (result.messages && result.messages.length > 0) {
             var messagesContainer = document.getElementById('messagesContainer');

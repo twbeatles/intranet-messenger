@@ -110,7 +110,9 @@ async function saveProfile() {
             closeProfileModal();
 
             // 대화방 목록 새로고침
-            if (typeof loadRooms === 'function') {
+            if (typeof throttledLoadRooms === 'function') {
+                throttledLoadRooms();
+            } else if (typeof loadRooms === 'function') {
                 loadRooms();
             }
         } else {

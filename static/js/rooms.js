@@ -17,6 +17,11 @@ async function loadRooms() {
         rooms = result;
         window.rooms = rooms;  // 전역 노출 (notification.js에서 사용)
         renderRoomList();
+        try {
+            if (typeof safeSocketEmit === 'function' && window.socket && window.socket.connected && Array.isArray(rooms)) {
+                safeSocketEmit('subscribe_rooms', { room_ids: rooms.map(function (r) { return r.id; }) });
+            }
+        } catch (e) { }
     } catch (err) {
         console.error('대화방 로드 실패:', err);
         showToast('대화방 목록 로드 실패: ' + (err.message || err), 'error');
@@ -25,6 +30,8 @@ async function loadRooms() {
 
 // Throttled version
 var throttledLoadRooms = throttle(loadRooms, 2000);
+var throttledLoadOnlineUsers = null;
+
 
 /**
  * 대화방 목록 렌더링
@@ -164,7 +171,6 @@ async function openRoom(room) {
             // 타이핑 상태 초기화
             if (typeof safeSocketEmit === 'function') {
                 safeSocketEmit('typing', { room_id: currentRoom.id, is_typing: false });
-                safeSocketEmit('leave_room', { room_id: currentRoom.id });
             }
         }
 
@@ -463,7 +469,7 @@ async function confirmInvite() {
 
         $('inviteModal').classList.remove('active');
         showToast('멤버를 초대했습니다.', 'success');
-        loadRooms();
+        if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else loadRooms();
     } catch (err) {
         console.error('초대 실패:', err);
         showToast('초대에 실패했습니다: ' + (err.message || err), 'error');
@@ -492,7 +498,7 @@ async function editRoomName() {
                 currentRoom.name = newName.trim();
                 var chatName = document.getElementById('chatName');
                 if (chatName) chatName.innerHTML = escapeHtml(newName.trim()) + ' 🔒';
-                loadRooms();
+                if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else loadRooms();
             }
         } catch (err) {
             console.error('이름 변경 실패:', err);
@@ -519,7 +525,7 @@ async function togglePinRoom() {
         if (result.success) {
             currentRoom.pinned = !isPinned;
             $('pinRoomText').textContent = currentRoom.pinned ? '고정 해제' : '상단 고정';
-            loadRooms();
+            if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else loadRooms();
         }
     } catch (err) {
         console.error('고정 설정 실패:', err);
@@ -647,7 +653,7 @@ async function leaveRoom() {
         if (chatContent) chatContent.classList.add('hidden');
         if (emptyState) emptyState.classList.remove('hidden');
 
-        loadRooms();
+        if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else loadRooms();
         showToast('대화방을 나갔습니다.', 'success');
     } catch (err) {
         console.error('대화방 나가기 실패:', err);
@@ -737,6 +743,16 @@ async function loadOnlineUsers() {
     }
 }
 
+
+// Throttled online users refresh (used by socket events)
+try {
+    if (typeof throttle === 'function') {
+        throttledLoadOnlineUsers = throttle(loadOnlineUsers, 3000);
+    }
+} catch (e) { }
+
+// expose
+window.throttledLoadOnlineUsers = throttledLoadOnlineUsers;
 // [v4.7] Start polling explicitly called by initApp
 // [v4.21] Tab visibility-aware polling
 // [v4.30] 리스너 중복 등록 방지 플래그
