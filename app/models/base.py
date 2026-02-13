@@ -341,6 +341,8 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_room_id_desc ON messages(room_id, id DESC)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_members_room_user ON room_members(room_id, user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_user ON poll_votes(poll_id, user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_files_file_path ON room_files(file_path)')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
             logger.debug("Database indexes created/verified")
         except Exception as e:
             logger.debug(f"Index creation: {e}")

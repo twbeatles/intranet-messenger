@@ -137,7 +137,8 @@ def register_routes(app):
     def get_rooms():
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
-        rooms = get_user_rooms(session['user_id'])
+        include_members = str(request.args.get('include_members', '')).lower() in ('1', 'true', 'yes')
+        rooms = get_user_rooms(session['user_id'], include_members=include_members)
         return jsonify(rooms)
     
     @app.route('/api/rooms', methods=['POST'])
@@ -180,21 +181,27 @@ def register_routes(app):
                 last_reads = get_room_last_reads(room_id)
                 member_count = len(members) if members else 0
                 
-                # 각 사용자별 마지막 읽은 메시지 ID를 딕셔너리로 변환 (O(m))
+                # ? ???? ??? ?? ??? ID? ????/???? ?? (O(m))
                 user_last_read = {}
+                last_read_ids = []
                 for lr, uid in last_reads:
-                    user_last_read[uid] = lr
+                    v = lr or 0
+                    user_last_read[uid] = v
+                    last_read_ids.append(v)
+                last_read_ids.sort()
+                from bisect import bisect_left
                 
-                # 메시지별 안읽음 카운트 계산 (O(n))
+                # ???? ??? ??? ??: O(n log m) (m=?? ?)
                 for msg in messages:
                     sender_id = msg['sender_id']
                     msg_id = msg['id']
-                    
-                    # 발신자 제외한 멤버 중 이 메시지를 안 읽은 사람 수
-                    unread = 0
-                    for uid, last_read_id in user_last_read.items():
-                        if uid != sender_id and last_read_id < msg_id:
-                            unread += 1
+                
+                    unread = bisect_left(last_read_ids, msg_id)
+                    sender_lr = user_last_read.get(sender_id, 0)
+                    if sender_lr < msg_id:
+                        unread -= 1
+                    if unread < 0:
+                        unread = 0
                     msg['unread_count'] = unread
             
             return jsonify({'messages': messages, 'members': members, 'encryption_key': encryption_key})
@@ -282,6 +289,8 @@ def register_routes(app):
         update_room_name(room_id, new_name)
         return jsonify({'success': True})
     
+    # NOTE: /pin-room is the explicit alias; /pin is kept for backwards compatibility.
+    @app.route('/api/rooms/<int:room_id>/pin-room', methods=['POST'])
     @app.route('/api/rooms/<int:room_id>/pin', methods=['POST'])
     def pin_room_route(room_id):
         if 'user_id' not in session:
@@ -368,14 +377,35 @@ def register_routes(app):
     @limiter.limit("30 per minute")
     def search():
         if 'user_id' not in session:
-            return jsonify({'error': '로그인이 필요합니다.'}), 401
-        
-        query = request.args.get('q', '')
-        if len(query) < 2:
+            return jsonify({'error': '\ub85c\uadf8\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.'}), 401
+    
+        query = request.args.get('q')
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        file_only = str(request.args.get('file_only', '')).lower() in ('1', 'true', 'yes')
+        room_id = request.args.get('room_id', type=int)
+        offset = request.args.get('offset', type=int) or 0
+        limit = request.args.get('limit', type=int) or 50
+    
+        # If no filters, return empty list (frontend expects list)
+        if (not query or not query.strip()) and not date_from and not date_to and not file_only:
             return jsonify([])
-        
-        results = search_messages(session['user_id'], query)
-        return jsonify(results)
+    
+        q = (query or '').strip()
+        if q and len(q) < 2:
+            return jsonify([])
+    
+        results = advanced_search(
+            user_id=session['user_id'],
+            query=(q or None),
+            room_id=room_id,
+            date_from=(date_from or None),
+            date_to=(date_to or None),
+            file_only=file_only,
+            limit=limit,
+            offset=offset,
+        )
+        return jsonify(results.get('messages', []))
     
     @app.route('/api/upload', methods=['POST'])
     def upload_file():
@@ -415,37 +445,77 @@ def register_routes(app):
     
     @app.route('/uploads/<path:filename>')
     def uploaded_file(filename):
-        # 경로 트래버설 공격 방지
-        # 1. 파일명 정제
+        # ??: ??? ??
+        if 'user_id' not in session:
+            return jsonify({'error': '???? ?????.'}), 401
+
+        # ?? ???? ?? ??
         safe_filename = secure_filename(os.path.basename(filename))
-        
-        # 2. 하위 디렉토리 경로 처리 (profiles/ 등)
+
+        # ?? ???? ?? (profiles? ??)
+        is_profile = False
         if '/' in filename:
             subdir = os.path.dirname(filename)
-            # 허용된 하위 디렉토리만 접근 가능
             allowed_subdirs = ['profiles']
             if subdir not in allowed_subdirs:
-                return jsonify({'error': '접근이 거부되었습니다.'}), 403
+                return jsonify({'error': '??? ???????.'}), 403
             safe_path = os.path.join(subdir, safe_filename)
+            is_profile = (subdir == 'profiles')
         else:
             safe_path = safe_filename
-        
-        # 3. 최종 경로 검증
+
+        # ?? ?? ??
         full_path = os.path.realpath(os.path.join(UPLOAD_FOLDER, safe_path))
         if not full_path.startswith(os.path.realpath(UPLOAD_FOLDER)):
             logger.warning(f"Path traversal attempt: {filename}")
-            return jsonify({'error': '잘못된 경로입니다.'}), 400
-        
-        # 4. 파일 존재 확인
+            return jsonify({'error': '??? ?????.'}), 400
+
         if not os.path.isfile(full_path):
-            return jsonify({'error': '파일을 찾을 수 없습니다.'}), 404
-        
-        # [v4.4] 캐시 헤더 추가 (성능 최적화)
-        response = send_from_directory(os.path.dirname(full_path), os.path.basename(full_path))
-        response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1년 캐시 (파일명에 타임스탬프 포함)
+            return jsonify({'error': '??? ?? ? ????.'}), 404
+
+        download_name = safe_filename
+        if not is_profile:
+            # room_files?? ????? ? ??? ???? ??
+            try:
+                conn = get_db()
+                cursor = conn.cursor()
+                lookup_path = safe_path.replace('\\', '/')
+                cursor.execute(
+                    'SELECT room_id, file_name FROM room_files WHERE file_path = ? ORDER BY id DESC LIMIT 1',
+                    (lookup_path,),
+                )
+                row = cursor.fetchone()
+            except Exception as e:
+                logger.warning(f"Upload auth lookup failed: {e}")
+                row = None
+
+            if not row:
+                return jsonify({'error': '??? ?? ? ????.'}), 404
+
+            room_id = row['room_id']
+            download_name = row['file_name'] or download_name
+            if not is_room_member(room_id, session['user_id']):
+                return jsonify({'error': '??? ???????.'}), 403
+
+        # Content-Disposition ??: ???? inline, ? ?? attachment
+        ext = os.path.splitext(safe_filename)[1].lower().lstrip('.')
+        inline_exts = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'}
+        as_attachment = (not is_profile) and (ext not in inline_exts)
+
+        response = send_from_directory(
+            os.path.dirname(full_path),
+            os.path.basename(full_path),
+            as_attachment=as_attachment,
+            download_name=download_name if as_attachment else None,
+        )
+
+        # ?? ?? (???? ????? ??)
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
         response.headers['Vary'] = 'Accept-Encoding'
+        if not as_attachment and ext in inline_exts:
+            response.headers['Content-Disposition'] = 'inline'
         return response
-    
+
     # Service Worker
     @app.route('/sw.js')
     def service_worker():

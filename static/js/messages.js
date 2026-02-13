@@ -15,6 +15,104 @@ var hasMoreOlderMessages = true;
 var oldestMessageId = null;
 var lazyLoadObserver = null;
 
+// [v4.36] Lazy decrypt for E2E messages (reduce PBKDF2 jank on initial render)
+var lazyDecryptObserver = null;
+var lazyDecryptQueue = [];
+var lazyDecryptScheduled = false;
+var lazyDecryptQueuedIds = new Set();
+
+function cleanupLazyDecryptObserver() {
+    try {
+        if (lazyDecryptObserver) lazyDecryptObserver.disconnect();
+    } catch (e) { }
+    lazyDecryptObserver = null;
+    lazyDecryptQueue = [];
+    lazyDecryptScheduled = false;
+    lazyDecryptQueuedIds = new Set();
+}
+
+function decryptPendingInMessageEl(msgEl) {
+    if (!msgEl || !msgEl._messageData || !currentRoomKey || !window.E2E) return;
+    var msg = msgEl._messageData;
+
+    var bubble = msgEl.querySelector('.message-bubble[data-decrypt-pending="1"]');
+    if (bubble && msg.encrypted) {
+        var decrypted = E2E.decrypt(msg.content, currentRoomKey);
+        if (!decrypted) decrypted = '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
+        var parsed = parseCodeBlocks(parseMentions(escapeHtml(decrypted)));
+        bubble.innerHTML = parsed;
+        bubble.removeAttribute('data-decrypt-pending');
+    }
+
+    var replyText = msgEl.querySelector('.reply-text[data-reply-decrypt-pending="1"]');
+    if (replyText && msg.reply_content) {
+        var decryptedReply = E2E.decrypt(msg.reply_content, currentRoomKey);
+        if (!decryptedReply) decryptedReply = '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
+        replyText.textContent = decryptedReply;
+        replyText.removeAttribute('data-reply-decrypt-pending');
+    }
+}
+
+function scheduleLazyDecrypt() {
+    if (lazyDecryptScheduled) return;
+    lazyDecryptScheduled = true;
+
+    var run = function () {
+        lazyDecryptScheduled = false;
+        var budget = 6;  // max items per tick
+        while (lazyDecryptQueue.length > 0 && budget > 0) {
+            var msgEl = lazyDecryptQueue.shift();
+            var id = msgEl && msgEl.dataset ? msgEl.dataset.messageId : null;
+            try { if (id) lazyDecryptQueuedIds.delete(id); } catch (e) { }
+            decryptPendingInMessageEl(msgEl);
+            budget--;
+        }
+        if (lazyDecryptQueue.length > 0) scheduleLazyDecrypt();
+    };
+
+    if (window.requestIdleCallback) {
+        window.requestIdleCallback(run, { timeout: 200 });
+    } else {
+        setTimeout(run, 0);
+    }
+}
+
+function enqueueLazyDecryptFromNode(node) {
+    if (!node) return;
+    var msgEl = node.closest ? node.closest('.message') : null;
+    if (!msgEl || !msgEl.dataset || !msgEl.dataset.messageId) return;
+    var id = msgEl.dataset.messageId;
+    if (lazyDecryptQueuedIds.has(id)) return;
+    lazyDecryptQueuedIds.add(id);
+    lazyDecryptQueue.push(msgEl);
+    scheduleLazyDecrypt();
+}
+
+function observePendingDecrypts() {
+    var container = document.getElementById('messagesContainer');
+    if (!container) return;
+
+    var selector = '.message-bubble[data-decrypt-pending="1"], .reply-text[data-reply-decrypt-pending="1"]';
+    if (!('IntersectionObserver' in window)) {
+        container.querySelectorAll(selector).forEach(function (el) { enqueueLazyDecryptFromNode(el); });
+        return;
+    }
+
+    try { if (lazyDecryptObserver) lazyDecryptObserver.disconnect(); } catch (e) { }
+    lazyDecryptObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            try { lazyDecryptObserver.unobserve(entry.target); } catch (e) { }
+            enqueueLazyDecryptFromNode(entry.target);
+        });
+    }, { root: container, threshold: 0.1 });
+
+    container.querySelectorAll(selector).forEach(function (el) {
+        lazyDecryptObserver.observe(el);
+    });
+}
+
+
 /**
  * [v4.21] 오래된 메시지 지연 로딩 초기화
  */
@@ -74,6 +172,7 @@ async function loadOlderMessages() {
 
             // 스크롤 위치 유지
             messagesContainer.scrollTop = scrollTop + (messagesContainer.scrollHeight - scrollHeight);
+            observePendingDecrypts();
 
             // 가장 오래된 메시지 ID 업데이트
             oldestMessageId = result.messages[0].id;
@@ -197,6 +296,8 @@ function renderMessages(messages, lastReadId) {
     });
 
     messagesContainer.appendChild(fragment);
+    cleanupLazyDecryptObserver();
+    observePendingDecrypts();
 
     // [v4.21] 지연 로딩 Observer 초기화
     setTimeout(initLazyLoadMessages, 100);
@@ -253,19 +354,34 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
 
         var content = '';
         if (msg.message_type === 'image') {
-            content = '<img src="/uploads/' + msg.file_path + '" class="message-image" loading="lazy" decoding="async" onclick="openLightbox(this.src)">';
+            var safeFilePathImg = (typeof safeImagePath === 'function') ? safeImagePath(msg.file_path) : msg.file_path;
+            if (safeFilePathImg) {
+                content = '<img src="/uploads/' + safeFilePathImg + '" class="message-image" loading="lazy" decoding="async" onclick="openLightbox(this.src)">';
+            } else {
+                content = '<div class="message-bubble">[잘못된 이미지 경로]</div>';
+            }
         } else if (msg.message_type === 'file') {
+            var safeFilePath = (typeof safeImagePath === 'function') ? safeImagePath(msg.file_path) : msg.file_path;
+            var safeFileName = escapeHtml(msg.file_name || '파일');
+            var safeDownloadName = escapeHtml(msg.file_name || 'file');
             content = '<div class="message-file">' +
                 '<span>📄</span>' +
                 '<div class="message-file-info">' +
-                '<div class="message-file-name">' + escapeHtml(msg.file_name) + '</div>' +
+                '<div class="message-file-name">' + safeFileName + '</div>' +
                 '</div>' +
-                '<a href="/uploads/' + msg.file_path + '" download="' + msg.file_name + '" class="icon-btn">⬇</a>' +
+                (safeFilePath
+                    ? '<a href="/uploads/' + safeFilePath + '" download="' + safeDownloadName + '" class="icon-btn">⬇</a>'
+                    : '') +
                 '</div>';
         } else {
-            var decrypted = currentRoomKey && msg.encrypted ? E2E.decrypt(msg.content, currentRoomKey) : msg.content;
-            // [v4.34] 코드 블록 파싱 추가
-            var parsedContent = parseCodeBlocks(parseMentions(escapeHtml(decrypted)));
+            if (msg.encrypted && currentRoomKey) {
+                content = '<div class="message-bubble" data-decrypt-pending="1">[\uBCF5\uD638\uD654 \uC911...]</div>';
+            } else {
+                var decrypted = msg.encrypted ? '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]' : msg.content;
+                // [v4.34] ?? ?? ???
+                var parsedContent = parseCodeBlocks(parseMentions(escapeHtml(decrypted)));
+                content = '<div class="message-bubble">' + parsedContent + '</div>';
+            }
             content = '<div class="message-bubble">' + parsedContent + '</div>';
         }
 
@@ -288,16 +404,26 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
         // 답장 표시
         var replyHtml = '';
         if (msg.reply_to && msg.reply_content) {
-            var decryptedReply = currentRoomKey ? E2E.decrypt(msg.reply_content, currentRoomKey) : msg.reply_content;
-            if (!decryptedReply) decryptedReply = msg.reply_content;
-
+            var replyText = msg.reply_content;
+            var replyPending = false;
+            
+            if (currentRoomKey && typeof msg.reply_content === 'string' && msg.reply_content.indexOf('v2:') === 0) {
+                replyText = '[\uBCF5\uD638\uD654 \uC911...]';
+                replyPending = true;
+            } else if (currentRoomKey) {
+                replyText = E2E.decrypt(msg.reply_content, currentRoomKey) || '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
+            }
+            
+            var replyTextHtml = replyPending
+                ? '<div class="reply-text" data-reply-decrypt-pending="1">' + escapeHtml(replyText) + '</div>'
+                : '<div class="reply-text">' + escapeHtml(replyText) + '</div>';
+            
             replyHtml = '<div class="message-reply" onclick="scrollToMessage(' + msg.reply_to + ')" style="cursor:pointer;">' +
-                '<div class="reply-indicator">↩ ' + escapeHtml(msg.reply_sender || '사용자') + '에게 답장</div>' +
-                '<div class="reply-text">' + escapeHtml(decryptedReply) + '</div>' +
+                '<div class="reply-indicator">\u21A9 ' + escapeHtml(msg.reply_sender || '\uC54C \uC218 \uC5C6\uC74C') + '\uB2D8\uC758 \uBA54\uC2DC\uC9C0</div>' +
+                replyTextHtml +
                 '</div>';
         }
 
-        // 읽음 표시
         var readIndicatorHtml = '';
         if (isSent) {
             if (msg.unread_count === 0) {
@@ -326,14 +452,15 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
             for (var emoji in grouped) {
                 var data = grouped[emoji];
                 var activeClass = data.myReaction ? ' active' : '';
-                reactionsHtml += '<span class="reaction-badge' + activeClass + '" onclick="toggleReaction(' + msg.id + ', \'' + emoji + '\')" title="' + data.users.join(', ') + '">' +
+                var titleText = escapeHtml(data.users.join(', '));
+                reactionsHtml += '<span class="reaction-badge' + activeClass + '" onclick="toggleReaction(' + msg.id + ', ' + JSON.stringify(emoji) + ')" title="' + titleText + '">' +
                     emoji + ' <span class="reaction-count">' + data.count + '</span></span>';
             }
             reactionsHtml += '<button class="add-reaction-btn" onclick="showReactionPicker(' + msg.id + ', this)">+</button></div>';
         }
 
         // [v4.34] 시간 툴팁 (상세 날짜/시간 표시)
-        var fullDateTime = formatFullDateTime(msg.created_at);
+        var fullDateTime = escapeHtml(formatFullDateTime(msg.created_at));
         var timeHtml = '<span style="position:relative;cursor:help;">' + formatTime(msg.created_at) +
             '<span class="message-time-tooltip">' + fullDateTime + '</span></span>';
 
@@ -367,6 +494,7 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
  */
 function appendMessage(msg) {
     var div = createMessageElement(msg);
+    decryptPendingInMessageEl(div);
     var messagesContainer = document.getElementById('messagesContainer');
     if (div && messagesContainer) {
         messagesContainer.appendChild(div);
@@ -461,7 +589,7 @@ function editMessage(messageId) {
     }
 
     var msg = msgEl._messageData;
-    var currentContent = currentRoomKey && msg.encrypted ? E2E.decrypt(msg.content, currentRoomKey) : msg.content;
+    var currentContent = currentRoomKey && msg.encrypted ? (E2E.decrypt(msg.content, currentRoomKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : msg.content;
 
     var newContent = prompt('메시지 수정:', currentContent);
     if (newContent === null || newContent.trim() === '' || newContent === currentContent) return;
@@ -543,7 +671,7 @@ function handleMessageEdited(data) {
         msgEl._messageData.content = data.content;
         msgEl._messageData.encrypted = data.encrypted;
 
-        var decrypted = currentRoomKey && data.encrypted ? E2E.decrypt(data.content, currentRoomKey) : data.content;
+        var decrypted = currentRoomKey && data.encrypted ? (E2E.decrypt(data.content, currentRoomKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : data.content;
 
         var bubble = msgEl.querySelector('.message-bubble');
         if (bubble) {
@@ -1376,6 +1504,7 @@ window.closeAllReactionPickers = closeAllReactionPickers;
 // [v4.21] 지연 로딩 함수
 window.initLazyLoadMessages = initLazyLoadMessages;
 window.loadOlderMessages = loadOlderMessages;
+window.cleanupLazyDecryptObserver = cleanupLazyDecryptObserver;
 window.initEmojiPicker = initEmojiPicker;
 window.setupDragDrop = setupDragDrop;
 window.uploadFile = uploadFile;

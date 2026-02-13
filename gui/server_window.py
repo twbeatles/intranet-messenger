@@ -32,7 +32,7 @@ from PyQt6.QtGui import QIcon, QAction, QFont, QColor, QPixmap, QPainter
 
 # 부모 디렉토리에서 import
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import APP_NAME, VERSION, DEFAULT_PORT, USE_HTTPS, SSL_CERT_PATH, SSL_KEY_PATH, SSL_DIR
+from config import APP_NAME, VERSION, DEFAULT_PORT, CONTROL_PORT, BASE_DIR, USE_HTTPS, SSL_CERT_PATH, SSL_KEY_PATH, SSL_DIR
 
 
 def kill_process_on_port(port: int) -> bool:
@@ -95,13 +95,81 @@ class ServerThread(QThread):
         self.running = True
         self.process = None
         self.last_log_id = 0
+        self.control_port = CONTROL_PORT
+        self._control_token = None
+
+    def _load_control_token(self):
+        """서버가 생성한 .control_token 로딩 (없으면 빈 문자열)."""
+        if self._control_token is not None:
+            return self._control_token
+
+        candidates = []
+        try:
+            candidates.append(os.path.join(BASE_DIR, '.control_token'))
+        except Exception:
+            pass
+
+        try:
+            candidates.append(os.path.join(os.path.dirname(sys.executable), '.control_token'))
+        except Exception:
+            pass
+
+        try:
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            candidates.append(os.path.join(repo_root, '.control_token'))
+        except Exception:
+            pass
+
+        for p in candidates:
+            try:
+                if p and os.path.exists(p):
+                    with open(p, 'r', encoding='utf-8', errors='replace') as f:
+                        tok = (f.read() or '').strip()
+                        if tok:
+                            self._control_token = tok
+                            return tok
+            except Exception:
+                continue
+
+        self._control_token = ''
+        return self._control_token
+
+    def _control_base_urls(self):
+        # New: dedicated localhost-only control port + token
+        # Fallback: legacy main port /control (migration)
+        return [
+            f"http://127.0.0.1:{self.control_port}/control",
+            f"http://127.0.0.1:{self.port}/control",
+        ]
+
+    def _request_control(self, path: str, method: str = 'GET', data: bytes = None, timeout: int = 3):
+        token = self._load_control_token()
+        last_err = None
+
+        for base in self._control_base_urls():
+            try:
+                url = f"{base}{path}"
+                req = urllib.request.Request(url, method=method, data=data)
+                if token:
+                    req.add_header('X-Control-Token', token)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.read()
+            except Exception as e:
+                last_err = e
+                continue
+
+        raise last_err if last_err else RuntimeError("Control request failed")
         
     def run(self):
         try:
-            # [v4.3] 서버 시작 전 포트 사용 중인 프로세스 정리 (WinError 10048 방지)
+            # [v4.3] ?? ?? ? ?? ?? ?? ???? ?? (WinError 10048 ??)
             if kill_process_on_port(self.port):
-                self.log_signal.emit(f"포트 {self.port} 점유 프로세스 종료됨")
-            
+                self.log_signal.emit(f"Port {self.port} process terminated")
+
+            # Control API ?? ?? (WinError 10048 ??)
+            if kill_process_on_port(self.control_port):
+                self.log_signal.emit(f"Port {self.control_port} process terminated")
+
             # [v4.5] 실행 환경 확인 (PyInstaller vs Source)
             if getattr(sys, 'frozen', False):
                 # PyInstaller Frozen 환경: 자신의 EXE를 워커 모드로 실행
@@ -147,17 +215,16 @@ class ServerThread(QThread):
             time.sleep(2)
             
             # HTTP 폴링으로 통계 모니터링 (로그는 stdout 스레드에서 처리)
-            base_url = f"http://127.0.0.1:{self.port}/control"
+            # Control API is served on 127.0.0.1:CONTROL_PORT with token (fallback supported)
             consecutive_errors = 0
             
             while self.running and self.process.poll() is None:
                 try:
                     # 통계 조회
                     try:
-                        req = urllib.request.Request(f"{base_url}/stats")
-                        with urllib.request.urlopen(req, timeout=3) as resp:
-                            stats = json.loads(resp.read().decode())
-                            self.stats_signal.emit(stats)
+                        raw = self._request_control('/stats', method='GET', timeout=3)
+                        stats = json.loads(raw.decode('utf-8', errors='replace'))
+                        self.stats_signal.emit(stats)
                         consecutive_errors = 0
                     except (urllib.error.URLError, socket.timeout):
                         pass # 아직 준비 안됨 or 타임아웃
@@ -200,12 +267,7 @@ class ServerThread(QThread):
         
         # HTTP로 graceful shutdown 요청
         try:
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{self.port}/control/shutdown",
-                method='POST',
-                data=b''
-            )
-            urllib.request.urlopen(req, timeout=2)
+            self._request_control('/shutdown', method='POST', data=b'', timeout=2)
         except Exception:
             pass  # 이미 종료되었거나 응답 없음
         

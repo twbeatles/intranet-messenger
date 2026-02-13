@@ -47,7 +47,8 @@ try:
         SESSION_TIMEOUT_HOURS, APP_NAME, VERSION, USE_HTTPS,
         STATIC_FOLDER, TEMPLATE_FOLDER,
         ASYNC_MODE, PING_TIMEOUT, PING_INTERVAL, MAX_HTTP_BUFFER_SIZE,
-        MAX_CONNECTIONS, MESSAGE_QUEUE
+        MAX_CONNECTIONS, MESSAGE_QUEUE,
+        SOCKETIO_CORS_ALLOWED_ORIGINS
     )
 except ImportError:
     # 패키징된 환경에서 상대 경로 시도
@@ -58,7 +59,8 @@ except ImportError:
         SESSION_TIMEOUT_HOURS, APP_NAME, VERSION, USE_HTTPS,
         STATIC_FOLDER, TEMPLATE_FOLDER,
         ASYNC_MODE, PING_TIMEOUT, PING_INTERVAL, MAX_HTTP_BUFFER_SIZE,
-        MAX_CONNECTIONS, MESSAGE_QUEUE
+        MAX_CONNECTIONS, MESSAGE_QUEUE,
+        SOCKETIO_CORS_ALLOWED_ORIGINS
     )
 
 # 로깅 설정
@@ -192,7 +194,6 @@ def create_app():
     
     # Socket.IO 인스턴스 생성
     socketio_kwargs = {
-        'cors_allowed_origins': "*",
         'ping_timeout': PING_TIMEOUT,
         'ping_interval': PING_INTERVAL,
         'max_http_buffer_size': MAX_HTTP_BUFFER_SIZE,
@@ -200,6 +201,10 @@ def create_app():
         'logger': False,
         'engineio_logger': False
     }
+
+    # CORS: 기본은 동일 출처. 필요 시 config에서 화이트리스트 지정.
+    if SOCKETIO_CORS_ALLOWED_ORIGINS is not None:
+        socketio_kwargs['cors_allowed_origins'] = SOCKETIO_CORS_ALLOWED_ORIGINS
     
     # Redis 메시지 큐 설정 (대규모 배포용)
     if MESSAGE_QUEUE:
@@ -211,7 +216,8 @@ def create_app():
         logger.info(f"Socket.IO 초기화 완료 (모드: {_async_mode or 'default'})")
     except ValueError as e:
         logger.warning(f"Socket.IO 초기화 경고: {e}, 기본 모드로 재시도")
-        socketio = SocketIO(app, cors_allowed_origins="*")
+        # 재시도 시에도 CORS는 기본(동일 출처)을 유지
+        socketio = SocketIO(app, logger=False, engineio_logger=False)
     
     # 라우트 등록
     from app.routes import register_routes

@@ -6,18 +6,87 @@
 // ============================================================================
 // E2E 암호화 폴백 (crypto-js 기반)
 // ============================================================================
-var E2E = window.E2E || {
-    encrypt: function (text, key) {
-        if (typeof CryptoJS !== 'undefined' && key) {
-            try {
-                return CryptoJS.AES.encrypt(text, key).toString();
-            } catch (e) {
-                console.error('Encrypt error:', e);
-            }
+var E2E = window.E2E || (function () {
+    function constantTimeEqual(a, b) {
+        if (typeof a !== 'string' || typeof b !== 'string') return false;
+        if (a.length !== b.length) return false;
+        var diff = 0;
+        for (var i = 0; i < a.length; i++) {
+            diff |= (a.charCodeAt(i) ^ b.charCodeAt(i));
         }
-        return text;
-    },
-    decrypt: function (encrypted, key) {
+        return diff === 0;
+    }
+
+    function deriveKeys(passphrase, salt) {
+        // 64 bytes derived, split into encKey/macKey (32 bytes each)
+        var dk = CryptoJS.PBKDF2(passphrase, salt, {
+            keySize: 16,
+            iterations: 10000,
+            hasher: CryptoJS.algo.SHA256
+        });
+        var encKey = CryptoJS.lib.WordArray.create(dk.words.slice(0, 8), 32);
+        var macKey = CryptoJS.lib.WordArray.create(dk.words.slice(8, 16), 32);
+        return { encKey: encKey, macKey: macKey };
+    }
+
+    function encryptV2(text, key) {
+        if (typeof CryptoJS === 'undefined' || !key) return text;
+        try {
+            var salt = CryptoJS.lib.WordArray.random(16);
+            var iv = CryptoJS.lib.WordArray.random(16);
+            var keys = deriveKeys(key, salt);
+
+            var encrypted = CryptoJS.AES.encrypt(text, keys.encKey, {
+                iv: iv,
+                mode: CryptoJS.mode.CBC,
+                padding: CryptoJS.pad.Pkcs7
+            });
+            var ct = encrypted.ciphertext;
+
+            var macData = salt.clone().concat(iv).concat(ct);
+            var hmac = CryptoJS.HmacSHA256(macData, keys.macKey);
+
+            var saltB64 = CryptoJS.enc.Base64.stringify(salt);
+            var ivB64 = CryptoJS.enc.Base64.stringify(iv);
+            var ctB64 = CryptoJS.enc.Base64.stringify(ct);
+            var hmacB64 = CryptoJS.enc.Base64.stringify(hmac);
+            return 'v2:' + saltB64 + ':' + ivB64 + ':' + ctB64 + ':' + hmacB64;
+        } catch (e) {
+            console.error('Encrypt v2 error:', e);
+            return text;
+        }
+    }
+
+    function decryptV2(payload, key) {
+        if (typeof CryptoJS === 'undefined' || !key) return payload;
+        try {
+            var parts = payload.split(':');
+            if (parts.length !== 5) return null;
+            var salt = CryptoJS.enc.Base64.parse(parts[1]);
+            var iv = CryptoJS.enc.Base64.parse(parts[2]);
+            var ct = CryptoJS.enc.Base64.parse(parts[3]);
+            var hmacB64 = parts[4];
+
+            var keys = deriveKeys(key, salt);
+            var macData = salt.clone().concat(iv).concat(ct);
+            var expectedHmac = CryptoJS.HmacSHA256(macData, keys.macKey);
+            var expectedB64 = CryptoJS.enc.Base64.stringify(expectedHmac);
+            if (!constantTimeEqual(expectedB64, hmacB64)) {
+                return null;
+            }
+
+            var decrypted = CryptoJS.AES.decrypt({ ciphertext: ct }, keys.encKey, {
+                iv: iv,
+                mode: CryptoJS.mode.CBC,
+                padding: CryptoJS.pad.Pkcs7
+            });
+            return decrypted.toString(CryptoJS.enc.Utf8) || '';
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function decryptV1(encrypted, key) {
         if (typeof CryptoJS !== 'undefined' && key) {
             try {
                 var bytes = CryptoJS.AES.decrypt(encrypted, key);
@@ -27,20 +96,31 @@ var E2E = window.E2E || {
             }
         }
         return encrypted;
-    },
-    generateKey: function () {
-        if (typeof CryptoJS !== 'undefined') {
-            return CryptoJS.lib.WordArray.random(32).toString();
-        }
-        // 폴백: 랜덤 문자열 생성
-        var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        var result = '';
-        for (var i = 0; i < 64; i++) {
-            result += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return result;
     }
-};
+
+    return {
+        encrypt: function (text, key) {
+            return encryptV2(text, key);
+        },
+        decrypt: function (encrypted, key) {
+            if (typeof encrypted === 'string' && encrypted.startsWith('v2:')) {
+                return decryptV2(encrypted, key);
+            }
+            return decryptV1(encrypted, key);
+        },
+        generateKey: function () {
+            if (typeof CryptoJS !== 'undefined') {
+                return CryptoJS.lib.WordArray.random(32).toString();
+            }
+            var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            var result = '';
+            for (var i = 0; i < 64; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        }
+    };
+})();
 window.E2E = E2E;
 
 const MessengerStorage = {

@@ -1,0 +1,78 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Flask / runtime state
+flask_session/
+instance/
+
+# Secrets / local config
+.env
+.env.*
+.secret_key
+.master_key
+.security_salt
+.control_token
+
+# Text files (keep dependency lists)
+*.txt
+!requirements.txt
+
+# Certificates / private keys (keep the generator scripts, ignore artifacts)
+certs/*.pem
+certs/*.key
+certs/*.crt
+certs/*.p12
+certs/*.pfx
+
+# Databases (SQLite)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+build/
+dist/
+
+# Backups
+backup/
+
+# User uploads (generated content)
+uploads/*
+!uploads/.gitkeep
+
+# Node (in case GUI tooling uses it)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

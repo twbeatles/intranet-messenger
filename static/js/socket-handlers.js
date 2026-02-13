@@ -29,7 +29,7 @@ function initSocket() {
 
     // 연결 이벤트
     socket.on('connect', function () {
-        console.log('Socket connected:', socket.id);
+        if (window.DEBUG) console.log('Socket connected:', socket.id);
         reconnectAttempts = 0;
         updateConnectionStatus('connected');
 
@@ -40,7 +40,7 @@ function initSocket() {
     });
 
     socket.on('disconnect', function (reason) {
-        console.log('Socket disconnected:', reason);
+        if (window.DEBUG) console.log('Socket disconnected:', reason);
         updateConnectionStatus('disconnected');
     });
 
@@ -56,10 +56,10 @@ function initSocket() {
     });
 
     socket.on('reconnect', async function () {
-        console.log('Socket reconnected');
+        if (window.DEBUG) console.log('Socket reconnected');
         reconnectAttempts = 0;
         updateConnectionStatus('connected');
-        if (typeof loadRooms === 'function') loadRooms();
+        if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
 
         // [v4.21] 재연결 시 현재 방의 누락된 메시지 동기화
         if (currentRoom && typeof api === 'function') {
@@ -80,7 +80,7 @@ function initSocket() {
                             if (typeof appendMessage === 'function') appendMessage(msg);
                         });
                         if (typeof scrollToBottom === 'function') scrollToBottom();
-                        console.log('Synced ' + newMessages.length + ' missed messages');
+                        if (window.DEBUG) console.log('Synced ' + newMessages.length + ' missed messages');
                     }
                 }
 
@@ -181,7 +181,7 @@ function initSocket() {
     });
 
     socket.on('room_updated', function (data) {
-        if (typeof loadRooms === 'function') loadRooms();
+        if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
     });
 
     // ========================================================================
@@ -302,7 +302,10 @@ function handleNewMessage(msg) {
 
         // [v4.31] 멘션 알림: 현재 방에서 내가 멘션된 경우 알림 표시
         if (msg.sender_id !== currentUser.id && currentUser.nickname) {
-            var mentionPattern = new RegExp('@' + currentUser.nickname + '(?:\\s|$)', 'i');
+            var safeNickname = (typeof escapeRegExp === 'function')
+                ? escapeRegExp(currentUser.nickname)
+                : currentUser.nickname;
+            var mentionPattern = new RegExp('@' + safeNickname + '(?:\\s|$)', 'i');
             if (mentionPattern.test(msg.content)) {
                 showMentionNotification(msg);
             }
@@ -312,7 +315,7 @@ function handleNewMessage(msg) {
         if (window.MessengerNotification && msg.sender_id !== currentUser.id) {
             var room = rooms.find(function (r) { return r.id === msg.room_id; });
             var roomKey = room ? room.encryption_key : null;
-            var decrypted = roomKey && msg.encrypted ? E2E.decrypt(msg.content, roomKey) : msg.content;
+            var decrypted = roomKey && msg.encrypted ? (E2E.decrypt(msg.content, roomKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : msg.content;
             MessengerNotification.show(msg.sender_name, decrypted, msg.room_id);
         }
     }
@@ -474,7 +477,7 @@ function clearTypingUsers() {
  * 사용자 상태 처리
  */
 function handleUserStatus(data) {
-    if (typeof loadRooms === 'function') loadRooms();
+    if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
     if (typeof loadOnlineUsers === 'function') loadOnlineUsers();
 }
 
@@ -482,7 +485,7 @@ function handleUserStatus(data) {
  * 대화방 이름 업데이트 처리
  */
 function handleRoomNameUpdated(data) {
-    if (typeof loadRooms === 'function') loadRooms();
+    if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
     if (currentRoom && currentRoom.id === data.room_id) {
         currentRoom.name = data.name;
         var chatName = document.getElementById('chatName');
@@ -494,7 +497,7 @@ function handleRoomNameUpdated(data) {
  * 대화방 멤버 업데이트 처리
  */
 function handleRoomMembersUpdated(data) {
-    if (typeof loadRooms === 'function') loadRooms();
+    if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
     // [v4.21] 멘션 캐시 무효화
     if (typeof invalidateMentionCache === 'function') {
         invalidateMentionCache();
@@ -505,7 +508,7 @@ function handleRoomMembersUpdated(data) {
  * 사용자 프로필 업데이트 처리
  */
 function handleUserProfileUpdated(data) {
-    if (typeof loadRooms === 'function') loadRooms();
+    if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
     if (typeof loadOnlineUsers === 'function') loadOnlineUsers();
 
     if (currentRoom) {

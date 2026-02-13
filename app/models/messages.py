@@ -235,58 +235,54 @@ def edit_message(message_id, user_id, new_content):
 
 
 def search_messages(user_id, query, offset=0, limit=50):
-    """메시지 검색 - [v4.21] 페이지네이션 지원"""
+    """??? ?? - ???? ???? ???? ???? ??"""
     conn = get_db()
     cursor = conn.cursor()
     try:
-        # 총 건수 조회
         cursor.execute('''
             SELECT COUNT(DISTINCT m.id)
             FROM messages m
             JOIN rooms r ON m.room_id = r.id
             JOIN room_members rm ON r.id = rm.room_id
-            WHERE rm.user_id = ? AND m.content LIKE ?
+            WHERE rm.user_id = ? AND m.encrypted = 0 AND m.content LIKE ?
         ''', (user_id, f'%{query}%'))
         total_count = cursor.fetchone()[0]
-        
-        # 결과 조회
+
         cursor.execute('''
             SELECT m.*, r.name as room_name, u.nickname as sender_name
             FROM messages m
             JOIN rooms r ON m.room_id = r.id
             JOIN room_members rm ON r.id = rm.room_id
             JOIN users u ON m.sender_id = u.id
-            WHERE rm.user_id = ? AND m.content LIKE ?
+            WHERE rm.user_id = ? AND m.encrypted = 0 AND m.content LIKE ?
             ORDER BY m.created_at DESC
             LIMIT ? OFFSET ?
         ''', (user_id, f'%{query}%', limit, offset))
         messages = [dict(m) for m in cursor.fetchall()]
-        
+
         return {
             'messages': messages,
             'total': total_count,
             'offset': offset,
             'limit': limit,
-            'has_more': offset + len(messages) < total_count
+            'has_more': offset + len(messages) < total_count,
+            'note': '\uc554\ud638\ud654\ub41c \uba54\uc2dc\uc9c0\ub294 \uc11c\ubc84 \uac80\uc0c9\uc5d0\uc11c \uc81c\uc678\ub429\ub2c8\ub2e4.',
         }
     except Exception as e:
         logger.error(f"Search messages error: {e}")
         return {'messages': [], 'total': 0, 'offset': 0, 'limit': limit, 'has_more': False}
 
 
-def advanced_search(user_id: int, query: str = None, room_id: int = None, 
+def advanced_search(user_id: int, query: str = None, room_id: int = None,
                     sender_id: int = None, date_from: str = None, date_to: str = None,
                     file_only: bool = False, limit: int = 50, offset: int = 0):
-    """고급 메시지 검색 - [v4.21] 페이지네이션 지원"""
+    """?? ??? ?? - ???(content) LIKE ??? ??"""
     conn = get_db()
     cursor = conn.cursor()
     try:
         conditions = ['rm.user_id = ?']
         params = [user_id]
-        
-        if query:
-            conditions.append('m.content LIKE ?')
-            params.append(f'%{query}%')
+
         if room_id:
             conditions.append('m.room_id = ?')
             params.append(room_id)
@@ -299,12 +295,21 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
         if date_to:
             conditions.append('m.created_at <= ?')
             params.append(date_to)
+
         if file_only:
             conditions.append("m.message_type IN ('file', 'image')")
-        
+            if query:
+                conditions.append('m.file_name LIKE ?')
+                params.append(f'%{query}%')
+        else:
+            if query:
+                # content ??? ??? ???? ??
+                conditions.append('m.encrypted = 0')
+                conditions.append('m.content LIKE ?')
+                params.append(f'%{query}%')
+
         where_clause = ' AND '.join(conditions)
-        
-        # 총 건수 조회
+
         count_params = params.copy()
         cursor.execute(f'''
             SELECT COUNT(DISTINCT m.id)
@@ -314,8 +319,7 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
             WHERE {where_clause}
         ''', count_params)
         total_count = cursor.fetchone()[0]
-        
-        # 결과 조회
+
         params.extend([limit, offset])
         cursor.execute(f'''
             SELECT m.*, r.name as room_name, u.nickname as sender_name
@@ -327,21 +331,21 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
             ORDER BY m.created_at DESC
             LIMIT ? OFFSET ?
         ''', params)
-        
+
         messages = [dict(r) for r in cursor.fetchall()]
-        return {
+        out = {
             'messages': messages,
             'total': total_count,
             'offset': offset,
             'limit': limit,
             'has_more': offset + len(messages) < total_count
         }
+        if query and not file_only:
+            out['note'] = '\uc554\ud638\ud654\ub41c \uba54\uc2dc\uc9c0\ub294 \uc11c\ubc84 \uac80\uc0c9\uc5d0\uc11c \uc81c\uc678\ub429\ub2c8\ub2e4.'
+        return out
     except Exception as e:
         logger.error(f"Advanced search error: {e}")
         return {'messages': [], 'total': 0, 'offset': 0, 'limit': limit, 'has_more': False}
-
-
-# 공지사항 고정 메시지
 def pin_message(room_id: int, pinned_by: int, message_id: int = None, content: str = None):
     """메시지 고정"""
     conn = get_db()

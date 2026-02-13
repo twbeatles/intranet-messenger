@@ -47,6 +47,11 @@ CONTROL_PORT = 5001  # GUI-서버 제어 API 포트
 SESSION_TIMEOUT_HOURS = 72  # 3일
 PASSWORD_SALT = "messenger_secure_salt_2024"
 
+# Socket.IO CORS
+# None이면 Flask-SocketIO 기본 정책(동일 출처)을 따릅니다.
+# 필요 시 예: ['http://127.0.0.1:5000', 'http://localhost:5000']
+SOCKETIO_CORS_ALLOWED_ORIGINS = None
+
 # ============================================================================
 # 동시 접속 및 성능 설정
 # ============================================================================

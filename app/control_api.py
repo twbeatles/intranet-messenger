@@ -5,6 +5,8 @@ GUI에서 서버 상태 조회 및 제어를 위한 내부 API
 """
 
 import logging
+import os
+import secrets
 from collections import deque
 from flask import Blueprint, jsonify, request
 
@@ -14,6 +16,68 @@ _shutdown_requested = False
 
 control_bp = Blueprint('control', __name__, url_prefix='/control')
 logger = logging.getLogger(__name__)
+
+
+def _get_base_dir():
+    try:
+        from config import BASE_DIR
+        return BASE_DIR
+    except Exception:
+        # Fallback: 프로젝트 루트(소스 실행 가정)
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def get_or_create_control_token(base_dir: str = None) -> str:
+    """Control API 인증 토큰 생성/로딩.
+
+    토큰은 {BASE_DIR}/.control_token에 저장됩니다.
+    """
+    base_dir = base_dir or _get_base_dir()
+    token_path = os.path.join(base_dir, '.control_token')
+
+    try:
+        if os.path.exists(token_path):
+            with open(token_path, 'r', encoding='utf-8', errors='replace') as f:
+                token = (f.read() or '').strip()
+                if token:
+                    return token
+    except Exception:
+        pass
+
+    token = secrets.token_hex(32)
+    try:
+        with open(token_path, 'w', encoding='utf-8') as f:
+            f.write(token)
+        try:
+            os.chmod(token_path, 0o600)
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"Failed to write control token: {e}")
+    return token
+
+
+def _is_localhost(addr: str) -> bool:
+    if not addr:
+        return False
+    return addr in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+
+
+def require_control_auth():
+    """localhost + token header 인증."""
+    if not _is_localhost(request.remote_addr):
+        return jsonify({'error': 'forbidden'}), 403
+
+    expected = get_or_create_control_token()
+    provided = request.headers.get('X-Control-Token', '')
+    if not provided or provided != expected:
+        return jsonify({'error': 'unauthorized'}), 401
+    return None
+
+
+@control_bp.before_request
+def _auth_before_request():
+    return require_control_auth()
 
 
 class BufferLogHandler(logging.Handler):
@@ -72,18 +136,16 @@ def get_logs():
 
 @control_bp.route('/shutdown', methods=['POST'])
 def shutdown():
-    """서버 종료 요청"""
+    """?? ?? ??"""
     global _shutdown_requested
     _shutdown_requested = True
-    
-    # Werkzeug 개발 서버 종료
-    func = request.environ.get('werkzeug.server.shutdown')
-    if func is None:
-        # gevent 등 다른 서버 사용 시
-        import os
-        import signal
+
+    # Control API? ?? ??? ?? ?? ???????, ???? ??? ???? ?.
+    import os
+    import signal
+    try:
         os.kill(os.getpid(), signal.SIGTERM)
-    else:
-        func()
-    
+    except Exception:
+        os._exit(0)
+
     return jsonify({'message': 'Shutdown initiated'})

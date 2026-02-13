@@ -140,7 +140,9 @@ def migrate_db():
         'CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)',
         'CREATE INDEX IF NOT EXISTS idx_room_members_user_id ON room_members(user_id)',
         'CREATE INDEX IF NOT EXISTS idx_room_members_room_id ON room_members(room_id)',
-        'CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id)'
+        'CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id)',
+        'CREATE INDEX IF NOT EXISTS idx_room_files_file_path ON room_files(file_path)',
+        'CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)',
     ]
 
     for idx_sql in indexes:

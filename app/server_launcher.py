@@ -27,6 +27,7 @@ except ImportError:
 import argparse
 import logging
 import signal
+import threading
 
 from config import DEFAULT_PORT, CONTROL_PORT, USE_HTTPS, SSL_CERT_PATH, SSL_KEY_PATH
 
@@ -50,6 +51,46 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
+def start_control_server(logger):
+    """GUI용 Control API를 별도 포트(127.0.0.1:CONTROL_PORT)에서 실행."""
+    try:
+        from flask import Flask
+        from app.control_api import control_bp, init_control_logging, get_or_create_control_token
+        from config import BASE_DIR
+
+        # 토큰 파일을 미리 생성해 GUI가 읽을 수 있게 함
+        get_or_create_control_token(BASE_DIR)
+
+        control_app = Flask('control')
+        control_app.register_blueprint(control_bp)
+        init_control_logging()
+
+        def _serve_gevent():
+            from gevent import pywsgi
+            server = pywsgi.WSGIServer(('127.0.0.1', CONTROL_PORT), control_app, log=None)
+            server.serve_forever()
+
+        def _serve_werkzeug():
+            from werkzeug.serving import make_server
+            http_server = make_server('127.0.0.1', CONTROL_PORT, control_app, threaded=True)
+            http_server.serve_forever()
+
+        def _serve():
+            try:
+                _serve_gevent()
+            except Exception as e:
+                logger.warning(f"Control API gevent server failed, falling back to werkzeug: {e}")
+                _serve_werkzeug()
+
+        t = threading.Thread(target=_serve, daemon=True)
+        t.start()
+        logger.info(f"Control API listening on http://127.0.0.1:{CONTROL_PORT}/control")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to start Control API: {e}")
+        return False
+
+
 def run_server(port=DEFAULT_PORT, use_https=USE_HTTPS, enable_control=True):
     """서버 실행"""
     logger = setup_logging()
@@ -67,12 +108,9 @@ def run_server(port=DEFAULT_PORT, use_https=USE_HTTPS, enable_control=True):
     app, socketio = create_app()
     server_stats['start_time'] = datetime.now()
     
-    # 제어 API 등록 (GUI 모드에서만)
+    # 제어 API는 별도 포트에서 localhost로만 노출
     if enable_control:
-        from app.control_api import control_bp, init_control_logging
-        app.register_blueprint(control_bp)
-        init_control_logging()
-        logger.info(f"제어 API 활성화 (포트: {CONTROL_PORT})")
+        start_control_server(logger)
     
     # SSL 설정
     ssl_context = None

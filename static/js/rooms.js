@@ -13,7 +13,7 @@
 async function loadRooms() {
     try {
         var result = await api('/api/rooms');
-        console.log('loadRooms fetched:', result);
+        if (window.DEBUG) console.log('loadRooms fetched:', result);
         rooms = result;
         window.rooms = rooms;  // 전역 노출 (notification.js에서 사용)
         renderRoomList();
@@ -45,7 +45,9 @@ function renderRoomList() {
 
         // [v4.32] 메시지 타입에 따른 미리보기 개선
         var preview = '새 대화';
-        if (room.last_message) {
+        if (room.last_message_preview) {
+            preview = escapeHtml(room.last_message_preview);
+        } else if (room.last_message) {
             var lastMsgType = room.last_message_type || 'text';
             switch (lastMsgType) {
                 case 'image':
@@ -61,22 +63,27 @@ function renderRoomList() {
                     // [v4.32] 텍스트 메시지 미리보기 개선
                     // 서버에서 제공하는 미리보기 또는 마지막 메시지 사용
                     if (room.last_message_preview) {
-                        preview = room.last_message_preview;
+                        preview = escapeHtml(room.last_message_preview);
                     } else if (room.last_message && room.last_message.length > 0) {
                         // 암호화된 메시지인 경우 (Base64 인코딩 패턴 확인)
                         var isEncrypted = /^[A-Za-z0-9+/=]{20,}$/.test(room.last_message);
                         if (isEncrypted) {
                             preview = '🔒 암호화된 메시지';
                         } else {
-                            preview = room.last_message.length > 25
+                            var lastMessageText = room.last_message.length > 25
                                 ? room.last_message.substring(0, 25) + '...'
                                 : room.last_message;
+                            preview = escapeHtml(lastMessageText);
                         }
                     } else {
                         preview = '메시지';
                     }
             }
         }
+
+        // XSS 방지: preview는 room-preview에 HTML로 삽입되므로 항상 escape된 문자열이어야 함
+        // (이미 escape된 경우에도 안전하게 동작하도록 string으로 강제)
+        if (typeof preview !== 'string') preview = String(preview);
 
         var pinnedClass = room.pinned ? 'pinned' : '';
         var pinnedIcon = room.pinned ? '<span class="pin-icon">📌</span>' : '';
@@ -147,7 +154,7 @@ async function openRoom(room) {
     }
 
     isOpeningRoom = true;
-    console.log('Entering openRoom for room:', room.id);
+    if (window.DEBUG) console.log('Entering openRoom for room:', room.id);
 
     try {
         var requestId = ++currentOpenRequestId;
@@ -185,6 +192,10 @@ async function openRoom(room) {
         // [v4.31] LazyLoadObserver 정리 (메모리 누수 방지)
         if (typeof cleanupLazyLoadObserver === 'function') {
             cleanupLazyLoadObserver();
+        }
+
+        if (typeof cleanupLazyDecryptObserver === 'function') {
+            cleanupLazyDecryptObserver();
         }
 
         currentRoom = room;
@@ -232,12 +243,13 @@ async function openRoom(room) {
 
             // Stale Request Check
             if (requestId !== currentOpenRequestId) {
-                console.log('Ignoring stale openRoom response');
+                if (window.DEBUG) console.log('Ignoring stale openRoom response');
                 return;
             }
 
             currentRoomKey = result.encryption_key;
 
+            currentRoom.members = result.members || [];
             // 마지막 읽은 메시지 ID 찾기
             var lastReadId = 0;
             if (result.members) {
@@ -735,7 +747,7 @@ function startOnlineUsersPolling() {
     loadOnlineUsers(); // Initial load
 
     // Start polling
-    onlinePollingInterval = setInterval(loadOnlineUsers, 30000);
+    onlinePollingInterval = setInterval(loadOnlineUsers, 300000); // fallback (5min)
     registerInterval(onlinePollingInterval);
 
     // [v4.21] Pause polling when tab is hidden
@@ -753,7 +765,7 @@ function startOnlineUsersPolling() {
                 // Tab is visible again - refresh and resume polling
                 loadOnlineUsers();
                 if (!onlinePollingInterval) {
-                    onlinePollingInterval = setInterval(loadOnlineUsers, 30000);
+                    onlinePollingInterval = setInterval(loadOnlineUsers, 300000);
                     registerInterval(onlinePollingInterval);
                 }
             }
