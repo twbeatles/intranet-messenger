@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# 사내 메신저 v4.36 PyInstaller 빌드 명세서
+# 사내 메신저 v4.36.3 PyInstaller 빌드 명세서
 # 경량화 최적화 버전
 
 block_cipher = None
@@ -77,6 +77,7 @@ a = Analysis(
         'app.utils',
         'app.extensions',
         'app.crypto_manager',
+        'app.upload_tokens',
         'app.control_api',
         'app.server_launcher',
         
@@ -127,7 +128,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='사내메신저v4.36',
+    name='사내메신저v4.36.3',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,  # 심볼 제거 (Windows에서는 False 권장)
