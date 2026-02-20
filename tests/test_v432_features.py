@@ -4,9 +4,6 @@ v4.32 기능 테스트
 검색 페이지네이션, 파일 업로드, 리액션 관련 테스트
 """
 
-import pytest
-
-
 def test_search_api_with_pagination(client):
     """Test search API supports pagination parameters."""
     # Register and login first
@@ -66,8 +63,8 @@ def test_reaction_api(client):
     
     # Try getting reactions for non-existent message
     response = client.get('/api/messages/999999/reactions')
-    # Should return either empty list or 404
-    assert response.status_code in [200, 404]
+    # 메시지가 없거나 접근 권한이 없으면 403/404가 가능
+    assert response.status_code in [200, 403, 404]
 
 
 def test_poll_api(client):
@@ -87,13 +84,13 @@ def test_poll_api(client):
         'name': 'Poll Test Room',
         'member_ids': []
     })
-    
-    if room_response.status_code == 200 and room_response.json.get('room'):
-        room_id = room_response.json['room']['id']
-        
-        # Get polls for the room
-        response = client.get(f'/api/rooms/{room_id}/polls')
-        assert response.status_code == 200
+    assert room_response.status_code == 200
+    assert room_response.json.get('success') is True
+    room_id = room_response.json['room_id']
+
+    # Get polls for the room
+    response = client.get(f'/api/rooms/{room_id}/polls')
+    assert response.status_code == 200
 
 
 def test_pins_api(client):
@@ -113,13 +110,13 @@ def test_pins_api(client):
         'name': 'Pin Test Room',
         'member_ids': []
     })
-    
-    if room_response.status_code == 200 and room_response.json.get('room'):
-        room_id = room_response.json['room']['id']
-        
-        # Get pins for the room
-        response = client.get(f'/api/rooms/{room_id}/pins')
-        assert response.status_code == 200
+    assert room_response.status_code == 200
+    assert room_response.json.get('success') is True
+    room_id = room_response.json['room_id']
+
+    # Get pins for the room
+    response = client.get(f'/api/rooms/{room_id}/pins')
+    assert response.status_code == 200
 
 
 def test_room_files_api(client):
@@ -139,13 +136,13 @@ def test_room_files_api(client):
         'name': 'File Test Room',
         'member_ids': []
     })
-    
-    if room_response.status_code == 200 and room_response.json.get('room'):
-        room_id = room_response.json['room']['id']
-        
-        # Get files for the room
-        response = client.get(f'/api/rooms/{room_id}/files')
-        assert response.status_code == 200
+    assert room_response.status_code == 200
+    assert room_response.json.get('success') is True
+    room_id = room_response.json['room_id']
+
+    # Get files for the room
+    response = client.get(f'/api/rooms/{room_id}/files')
+    assert response.status_code == 200
 
 
 def test_profile_api(client):

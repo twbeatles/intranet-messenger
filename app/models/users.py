@@ -283,14 +283,29 @@ def delete_user(user_id, password):
         if user['profile_image']:
             try:
                 profile_path = os.path.join(UPLOAD_FOLDER, user['profile_image'])
-                if os.path.exists(profile_path):
-                    os.remove(profile_path)
+                safe_file_delete(profile_path)
             except Exception as e:
                 logger.warning(f"Profile image deletion failed: {e}")
         
         # 외래키 참조 정리
         cursor.execute("UPDATE rooms SET created_by = NULL WHERE created_by = ?", (user_id,))
-        cursor.execute("UPDATE polls SET closed = 1, created_by = NULL WHERE created_by = ?", (user_id,))
+
+        # polls.created_by는 NOT NULL이므로 재할당하거나 삭제
+        cursor.execute("SELECT id, room_id FROM polls WHERE created_by = ?", (user_id,))
+        owned_polls = cursor.fetchall()
+        for poll in owned_polls:
+            cursor.execute("""
+                SELECT rm.user_id
+                FROM room_members rm
+                WHERE rm.room_id = ? AND rm.user_id != ?
+                ORDER BY CASE WHEN COALESCE(rm.role, 'member') = 'admin' THEN 0 ELSE 1 END, rm.user_id ASC
+                LIMIT 1
+            """, (poll['room_id'], user_id))
+            replacement = cursor.fetchone()
+            if replacement:
+                cursor.execute("UPDATE polls SET created_by = ? WHERE id = ?", (replacement['user_id'], poll['id']))
+            else:
+                cursor.execute("DELETE FROM polls WHERE id = ?", (poll['id'],))
         
         # 업로드 파일 삭제
         cursor.execute("SELECT file_path FROM room_files WHERE uploaded_by = ?", (user_id,))
@@ -298,8 +313,7 @@ def delete_user(user_id, password):
         for f in files_to_delete:
             try:
                 full_path = os.path.join(UPLOAD_FOLDER, f['file_path'])
-                if os.path.exists(full_path):
-                    os.remove(full_path)
+                safe_file_delete(full_path)
             except Exception as e:
                 logger.warning(f"File deletion failed during user delete: {e}")
         cursor.execute("DELETE FROM room_files WHERE uploaded_by = ?", (user_id,))

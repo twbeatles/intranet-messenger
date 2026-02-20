@@ -236,7 +236,7 @@ def edit_message(message_id, user_id, new_content):
 
 
 def search_messages(user_id, query, offset=0, limit=50):
-    """??? ?? - ???? ???? ???? ???? ??"""
+    """메시지 검색 - 암호화되지 않은 메시지 기준"""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -335,7 +335,7 @@ def search_messages(user_id, query, offset=0, limit=50):
 def advanced_search(user_id: int, query: str = None, room_id: int = None,
                     sender_id: int = None, date_from: str = None, date_to: str = None,
                     file_only: bool = False, limit: int = 50, offset: int = 0):
-    """?? ??? ?? - ???(content) LIKE ??? ??"""
+    """고급 메시지 검색 - FTS 또는 LIKE 기반"""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -389,7 +389,7 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
                     contains = f'%{q}%'
 
                     # Count
-                    count_params = params.copy()
+                    count_params = params.copy() + [prefix] + params.copy() + [contains, prefix]
                     cursor.execute(f'''
                         SELECT COUNT(DISTINCT id) FROM (
                             SELECT m.id AS id
@@ -407,10 +407,10 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
                               AND m.file_name LIKE ? ESCAPE '\\'
                               AND m.file_name NOT LIKE ? ESCAPE '\\'
                         ) t
-                    ''', count_params + [prefix, contains, prefix])
+                    ''', count_params)
                     total_count = cursor.fetchone()[0]
 
-                    list_params = params.copy() + [prefix, contains, prefix, limit, offset]
+                    list_params = params.copy() + [prefix] + params.copy() + [contains, prefix, limit, offset]
                     cursor.execute(f'''
                         SELECT * FROM (
                             SELECT m.*, r.name as room_name, u.nickname as sender_name
@@ -562,8 +562,14 @@ def unpin_message(pin_id: int, user_id: int, room_id: int = None):
         pin = cursor.fetchone()
         if not pin:
             return False, "공지를 찾을 수 없습니다."
+
+        if room_id is not None and pin['room_id'] != room_id:
+            return False, "요청한 대화방과 공지의 대화방이 일치하지 않습니다."
         
         cursor.execute('DELETE FROM pinned_messages WHERE id = ?', (pin_id,))
+        if cursor.rowcount < 1:
+            conn.rollback()
+            return False, "공지를 해제하지 못했습니다."
         conn.commit()
         return True, None
     except Exception as e:

@@ -91,11 +91,16 @@ function setupEventListeners() {
         try {
             const result = await API.MessageAPI.uploadFile(file, state.currentRoom.id);
             if (result.success) {
-                const isImage = ['png', 'jpg', 'jpeg', 'gif'].includes(file.name.split('.').pop().toLowerCase());
+                if (!result.upload_token) {
+                    console.error('업로드 토큰이 없습니다.');
+                    return;
+                }
+                const isImage = file.type && file.type.startsWith('image/');
                 state.socket.emit('send_message', {
                     room_id: state.currentRoom.id,
                     content: file.name,
                     type: isImage ? 'image' : 'file',
+                    upload_token: result.upload_token,
                     file_path: result.file_path,
                     file_name: result.file_name,
                     encrypted: false

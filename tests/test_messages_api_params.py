@@ -13,14 +13,14 @@ def _login(client, username, password="Password123!"):
 
 
 def test_get_messages_limit_and_include_meta(client):
-    _register(client, "u1", nickname="U1")
-    _register(client, "u2", nickname="U2")
+    _register(client, "usr1", nickname="U1")
+    _register(client, "usr2", nickname="U2")
 
-    r = _login(client, "u1")
+    r = _login(client, "usr1")
     assert r.status_code == 200
 
     users = client.get("/api/users").json
-    u2 = next(u for u in users if u["username"] == "u2")
+    u2 = next(u for u in users if u["username"] == "usr2")
 
     resp = client.post("/api/rooms", json={"members": [u2["id"]]})
     assert resp.status_code == 200
@@ -54,4 +54,3 @@ def test_get_messages_limit_and_include_meta(client):
     assert len(data2["messages"]) <= 10
     assert "members" in data2
     assert "encryption_key" in data2
-

@@ -967,11 +967,19 @@ async function handleFileUpload(e) {
                 }
 
                 var isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(file.name.split('.').pop().toLowerCase());
+                if (!result.upload_token) {
+                    if (typeof showToast === 'function') {
+                        showToast('업로드 토큰 발급에 실패했습니다. 다시 업로드해주세요.', 'error');
+                    }
+                    e.target.value = '';
+                    return;
+                }
                 // [v4.36] safeSocketEmit 사용
                 safeSocketEmit('send_message', {
                     room_id: currentRoom.id,
                     content: file.name,
                     type: isImage ? 'image' : 'file',
+                    upload_token: result.upload_token,
                     file_path: result.file_path,
                     file_name: result.file_name,
                     encrypted: false
@@ -1260,8 +1268,8 @@ function handleDroppedFiles(files) {
     }
     for (var i = 0; i < files.length; i++) {
         var file = files[i];
-        if (file.size > 10 * 1024 * 1024) {
-            if (typeof showToast === 'function') showToast('파일 크기는 10MB 이하여야 합니다.', 'warning');
+        if (file.size > 16 * 1024 * 1024) {
+            if (typeof showToast === 'function') showToast('파일 크기는 16MB 이하여야 합니다.', 'warning');
             continue;
         }
         uploadFile(file);
@@ -1284,6 +1292,10 @@ function uploadFile(file) {
             var result = JSON.parse(xhr.responseText);
             if (result.success) {
                 var messageType = file.type.startsWith('image/') ? 'image' : 'file';
+                if (!result.upload_token) {
+                    if (typeof showToast === 'function') showToast('업로드 토큰 발급에 실패했습니다. 다시 업로드해주세요.', 'error');
+                    return;
+                }
                 // [v4.21] Socket 연결 상태 확인 개선
                 if (window.socket && window.socket.connected) {
                     // [v4.36] safeSocketEmit 사용
@@ -1291,6 +1303,7 @@ function uploadFile(file) {
                         room_id: currentRoom.id,
                         content: '',
                         type: messageType,
+                        upload_token: result.upload_token,
                         file_path: result.file_path,
                         file_name: result.file_name,
                         encrypted: false,
@@ -1304,7 +1317,14 @@ function uploadFile(file) {
                     }
                 }
             } else {
-                if (typeof showToast === 'function') showToast(result.error || '파일 업로드 실패', 'error');
+                if (typeof showToast === 'function') {
+                    var errMsg = result.error || '파일 업로드 실패';
+                    if (errMsg.indexOf('토큰') !== -1 || errMsg.indexOf('대화방') !== -1 || errMsg.indexOf('만료') !== -1) {
+                        showToast(errMsg, 'warning');
+                    } else {
+                        showToast(errMsg, 'error');
+                    }
+                }
             }
         } catch (err) {
             console.error('파일 업로드 응답 파싱 실패:', err);

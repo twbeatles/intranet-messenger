@@ -43,6 +43,8 @@ def test_create_poll(client):
     assert response.status_code == 200
     assert response.json['success'] is True
     assert 'poll' in response.json
+    assert response.json['poll'] is not None
+    assert isinstance(response.json['poll'].get('id'), int)
 
 
 def test_vote_poll(client):

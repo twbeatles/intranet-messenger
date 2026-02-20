@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.utils import sanitize_input, allowed_file, validate_file_header
 from app.extensions import limiter, csrf
+from app.upload_tokens import issue_upload_token
 
 # config 임포트 (PyInstaller 호환)
 try:
@@ -146,8 +147,40 @@ def register_routes(app):
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
         
-        data = request.json
-        member_ids = data.get('members', [])
+        data = request.json or {}
+        if not isinstance(data, dict):
+            return jsonify({'error': '잘못된 요청 형식입니다.'}), 400
+        has_members = 'members' in data
+        has_member_ids = 'member_ids' in data
+        if has_members:
+            raw_members = data.get('members')
+            if has_member_ids:
+                logger.warning("Both members and member_ids were provided; members will be used.")
+        else:
+            raw_members = data.get('member_ids', [])
+
+        if raw_members is None:
+            raw_members = []
+        if not isinstance(raw_members, list):
+            return jsonify({'error': 'members 또는 member_ids는 배열이어야 합니다.'}), 400
+
+        normalized_members = []
+        seen = set()
+        for value in raw_members:
+            try:
+                member_id = int(value)
+            except (TypeError, ValueError):
+                return jsonify({'error': '멤버 ID는 정수여야 합니다.'}), 400
+            if member_id <= 0 or member_id in seen:
+                continue
+            seen.add(member_id)
+            normalized_members.append(member_id)
+
+        if session['user_id'] not in seen:
+            normalized_members.append(session['user_id'])
+            seen.add(session['user_id'])
+
+        member_ids = [uid for uid in normalized_members if get_user_by_id(uid)]
         if session['user_id'] not in member_ids:
             member_ids.append(session['user_id'])
         
@@ -211,7 +244,7 @@ def register_routes(app):
                 last_read_ids.sort()
                 from bisect import bisect_left
                 
-                # ???? ??? ??? ??: O(n log m) (m=?? ?)
+                # 읽지 않은 사용자 수 계산: O(n log m) (m=멤버 수)
                 for msg in messages:
                     sender_id = msg['sender_id']
                     msg_id = msg['id']
@@ -401,15 +434,17 @@ def register_routes(app):
     @limiter.limit("30 per minute")
     def search():
         if 'user_id' not in session:
-            return jsonify({'error': '\ub85c\uadf8\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
     
         query = request.args.get('q')
         date_from = request.args.get('date_from')
         date_to = request.args.get('date_to')
         file_only = str(request.args.get('file_only', '')).lower() in ('1', 'true', 'yes')
         room_id = request.args.get('room_id', type=int)
-        offset = request.args.get('offset', type=int) or 0
-        limit = request.args.get('limit', type=int) or 50
+        offset = request.args.get('offset', type=int)
+        limit = request.args.get('limit', type=int)
+        offset = max(offset if offset is not None else 0, 0)
+        limit = min(max(limit if limit is not None else 50, 1), 200)
     
         # If no filters, return empty list (frontend expects list)
         if (not query or not query.strip()) and not date_from and not date_to and not file_only:
@@ -435,6 +470,13 @@ def register_routes(app):
     def upload_file():
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        upload_folder = app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
+
+        room_id = request.form.get('room_id', type=int)
+        if not room_id:
+            return jsonify({'error': 'room_id가 필요합니다.'}), 400
+        if not is_room_member(room_id, session['user_id']):
+            return jsonify({'error': '대화방 접근 권한이 없습니다.'}), 403
         
         # [v4.2] 선제적 파일 크기 검사 (메모리 로드 전)
         max_size = 16 * 1024 * 1024  # 16MB
@@ -457,49 +499,62 @@ def register_routes(app):
             filename = secure_filename(file.filename)
             # [v4.14] UUID 추가로 동시 업로드 시 파일명 충돌 방지
             unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}_{filename}"
-            file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+            file_path = os.path.join(upload_folder, unique_filename)
             file.save(file_path)
+            file_size = os.path.getsize(file_path)
+            ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+            file_type = 'image' if ext in {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'} else 'file'
+            upload_token = issue_upload_token(
+                user_id=session['user_id'],
+                room_id=room_id,
+                file_path=unique_filename,
+                file_name=filename,
+                file_type=file_type,
+                file_size=file_size,
+            )
             return jsonify({
                 'success': True,
                 'file_path': unique_filename,
-                'file_name': filename
+                'file_name': filename,
+                'upload_token': upload_token,
             })
         
         return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
     
     @app.route('/uploads/<path:filename>')
     def uploaded_file(filename):
-        # ??: ??? ??
+        # 인증 확인
         if 'user_id' not in session:
-            return jsonify({'error': '???? ?????.'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
+        upload_folder = app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
 
-        # ?? ???? ?? ??
+        # 파일명 정규화
         safe_filename = secure_filename(os.path.basename(filename))
 
-        # ?? ???? ?? (profiles? ??)
+        # 하위 경로 검증 (profiles만 허용)
         is_profile = False
         if '/' in filename:
             subdir = os.path.dirname(filename)
             allowed_subdirs = ['profiles']
             if subdir not in allowed_subdirs:
-                return jsonify({'error': '??? ???????.'}), 403
+                return jsonify({'error': '접근 권한이 없습니다.'}), 403
             safe_path = os.path.join(subdir, safe_filename)
             is_profile = (subdir == 'profiles')
         else:
             safe_path = safe_filename
 
-        # ?? ?? ??
-        full_path = os.path.realpath(os.path.join(UPLOAD_FOLDER, safe_path))
-        if not full_path.startswith(os.path.realpath(UPLOAD_FOLDER)):
+        # 경로 검증
+        full_path = os.path.realpath(os.path.join(upload_folder, safe_path))
+        if not full_path.startswith(os.path.realpath(upload_folder)):
             logger.warning(f"Path traversal attempt: {filename}")
-            return jsonify({'error': '??? ?????.'}), 400
+            return jsonify({'error': '잘못된 요청입니다.'}), 400
 
         if not os.path.isfile(full_path):
-            return jsonify({'error': '??? ?? ? ????.'}), 404
+            return jsonify({'error': '파일을 찾을 수 없습니다.'}), 404
 
         download_name = safe_filename
         if not is_profile:
-            # room_files?? ????? ? ??? ???? ??
+            # room_files에서 소유 방 확인 후 접근 제어
             try:
                 conn = get_db()
                 cursor = conn.cursor()
@@ -514,14 +569,14 @@ def register_routes(app):
                 row = None
 
             if not row:
-                return jsonify({'error': '??? ?? ? ????.'}), 404
+                return jsonify({'error': '파일을 찾을 수 없습니다.'}), 404
 
             room_id = row['room_id']
             download_name = row['file_name'] or download_name
             if not is_room_member(room_id, session['user_id']):
-                return jsonify({'error': '??? ???????.'}), 403
+                return jsonify({'error': '접근 권한이 없습니다.'}), 403
 
-        # Content-Disposition ??: ???? inline, ? ?? attachment
+        # Content-Disposition: 이미지는 inline, 그 외 파일은 attachment
         ext = os.path.splitext(safe_filename)[1].lower().lstrip('.')
         inline_exts = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'}
         as_attachment = (not is_profile) and (ext not in inline_exts)
@@ -533,8 +588,11 @@ def register_routes(app):
             download_name=download_name if as_attachment else None,
         )
 
-        # ?? ?? (???? ????? ??)
-        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        # 인증 리소스 캐시 정책
+        if is_profile:
+            response.headers['Cache-Control'] = 'private, max-age=3600'
+        else:
+            response.headers['Cache-Control'] = 'private, no-store'
         response.headers['Vary'] = 'Accept-Encoding'
         if not as_attachment and ext in inline_exts:
             response.headers['Content-Disposition'] = 'inline'
@@ -587,6 +645,7 @@ def register_routes(app):
     def upload_profile_image():
         if 'user_id' not in session:
             return jsonify({'error': '로그인이 필요합니다.'}), 401
+        upload_folder = app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
         
         if 'file' not in request.files:
             return jsonify({'error': '파일이 없습니다.'}), 400
@@ -613,14 +672,14 @@ def register_routes(app):
             return jsonify({'error': '파일 크기는 5MB 이하여야 합니다.'}), 400
         
         # 프로필 이미지 폴더 생성
-        profile_folder = os.path.join(UPLOAD_FOLDER, 'profiles')
+        profile_folder = os.path.join(upload_folder, 'profiles')
         os.makedirs(profile_folder, exist_ok=True)
         
         # [v4.12] 기존 프로필 이미지 삭제 (디스크 공간 절약)
         user = get_user_by_id(session['user_id'])
         if user and user.get('profile_image'):
             try:
-                old_image_path = os.path.join(UPLOAD_FOLDER, user['profile_image'])
+                old_image_path = os.path.join(upload_folder, user['profile_image'])
                 # [v4.14] safe_file_delete 사용
                 if safe_file_delete(old_image_path):
                     logger.debug(f"Old profile image deleted: {user['profile_image']}")
@@ -651,9 +710,10 @@ def register_routes(app):
         
         # [v4.4] 기존 프로필 이미지 조회 후 삭제
         user = get_user_by_id(session['user_id'])
+        upload_folder = app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
         if user and user.get('profile_image'):
             try:
-                old_image_path = os.path.join(UPLOAD_FOLDER, user['profile_image'])
+                old_image_path = os.path.join(upload_folder, user['profile_image'])
                 # [v4.14] safe_file_delete 사용
                 safe_file_delete(old_image_path)
             except Exception as e:
@@ -708,9 +768,14 @@ def register_routes(app):
         
         # [v4.20] 모든 멤버가 공지 삭제 가능 (관리자 제한 제거)
         
-        if unpin_message(pin_id, session['user_id'], room_id):
+        success, error = unpin_message(pin_id, session['user_id'], room_id)
+        if success:
             return jsonify({'success': True})
-        return jsonify({'error': '공지 해제에 실패했습니다.'}), 500
+        if error == '공지를 찾을 수 없습니다.':
+            return jsonify({'error': error}), 404
+        if error == '요청한 대화방과 공지의 대화방이 일치하지 않습니다.':
+            return jsonify({'error': error}), 403
+        return jsonify({'error': error or '공지 해제에 실패했습니다.'}), 400
     
     # ============================================================================
     # 투표 (Polls) API
@@ -764,7 +829,10 @@ def register_routes(app):
         poll_id = create_poll(room_id, session['user_id'], question, options, multiple_choice, anonymous, ends_at)
         if poll_id:
             poll = get_poll(poll_id)
-            return jsonify({'success': True, 'poll': poll})
+            if poll:
+                return jsonify({'success': True, 'poll': poll})
+            logger.error(f"Poll created but lookup failed: poll_id={poll_id}")
+            return jsonify({'error': '투표 생성 후 조회에 실패했습니다.'}), 500
         return jsonify({'error': '투표 생성에 실패했습니다.'}), 500
     
     @app.route('/api/polls/<int:poll_id>/vote', methods=['POST'])

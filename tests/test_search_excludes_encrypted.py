@@ -11,28 +11,28 @@ def _login(client, username, password="Password123!"):
 
 
 def test_search_excludes_encrypted_text_messages(client):
-    _register(client, "s1", nickname="S1")
-    _register(client, "s2", nickname="S2")
+    _register(client, "src1", nickname="S1")
+    _register(client, "src2", nickname="S2")
 
-    r = _login(client, "s1")
+    r = _login(client, "src1")
     assert r.status_code == 200
 
     users = client.get("/api/users").json
-    s2 = next(u for u in users if u["username"] == "s2")
+    s2 = next(u for u in users if u["username"] == "src2")
 
     resp = client.post("/api/rooms", json={"members": [s2["id"]]})
     assert resp.status_code == 200
     room_id = resp.json["room_id"]
 
     from app.models.messages import create_message
-    from app.models.users import get_user_by_id
+    me = client.get("/api/me").json["user"]
+    sender_id = me["id"]
 
     with client.application.app_context():
-        s1_id = get_user_by_id(1)["id"]  # first registered user in this test DB
         # Plaintext message (searchable)
         create_message(
             room_id=room_id,
-            sender_id=s1_id,
+            sender_id=sender_id,
             content="hello world",
             message_type="text",
             encrypted=False,
@@ -40,7 +40,7 @@ def test_search_excludes_encrypted_text_messages(client):
         # Encrypted message (not searchable by content)
         create_message(
             room_id=room_id,
-            sender_id=s1_id,
+            sender_id=sender_id,
             content="v2:Zm9v:YmFy:YmF6:cXV4",
             message_type="text",
             encrypted=True,
@@ -54,24 +54,24 @@ def test_search_excludes_encrypted_text_messages(client):
 
 
 def test_file_only_search_uses_file_name(client):
-    _register(client, "f1", nickname="F1")
-    _register(client, "f2", nickname="F2")
-    _login(client, "f1")
+    _register(client, "fil1", nickname="F1")
+    _register(client, "fil2", nickname="F2")
+    _login(client, "fil1")
 
     users = client.get("/api/users").json
-    f2 = next(u for u in users if u["username"] == "f2")
+    f2 = next(u for u in users if u["username"] == "fil2")
 
     resp = client.post("/api/rooms", json={"members": [f2["id"]]})
     room_id = resp.json["room_id"]
 
     from app.models.messages import create_message
-    from app.models.users import get_user_by_id
+    me = client.get("/api/me").json["user"]
+    sender_id = me["id"]
 
     with client.application.app_context():
-        f1_id = get_user_by_id(1)["id"]
         create_message(
             room_id=room_id,
-            sender_id=f1_id,
+            sender_id=sender_id,
             content="[file]",
             message_type="file",
             file_path="x",

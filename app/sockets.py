@@ -15,6 +15,7 @@ from app.models import (
     create_message, update_last_read, get_unread_count, server_stats,
     get_user_rooms, edit_message, delete_message
 )
+from app.upload_tokens import consume_upload_token, get_upload_token_failure_reason
 
 logger = logging.getLogger(__name__)
 
@@ -263,22 +264,51 @@ def register_socket_events(socketio):
             if message_type not in allowed_types:
                 message_type = 'text'
             
-            file_path = data.get('file_path')
-            file_name = data.get('file_name')
+            file_path = None
+            file_name = None
+            file_size = None
             reply_to = data.get('reply_to')
             if reply_to is not None and not isinstance(reply_to, int):
                 reply_to = None
             encrypted = bool(data.get('encrypted', True))
-            
-            if not content and not file_path:
-                return
-            
+
             # 캐시된 방 목록으로 빠른 확인
             user_rooms = get_user_room_ids(session['user_id'])
             if room_id not in user_rooms:
                 if not is_room_member(room_id, session['user_id']):
                     emit('error', {'message': '대화방 접근 권한이 없습니다.'})
                     return
+
+            if message_type in ('file', 'image'):
+                token = data.get('upload_token')
+                reason = get_upload_token_failure_reason(
+                    token=token,
+                    user_id=session['user_id'],
+                    room_id=room_id,
+                    expected_type=message_type,
+                )
+                if reason:
+                    emit('error', {'message': reason})
+                    return
+
+                token_data = consume_upload_token(
+                    token=token,
+                    user_id=session['user_id'],
+                    room_id=room_id,
+                    expected_type=message_type,
+                )
+                if not token_data:
+                    emit('error', {'message': '업로드 토큰이 이미 사용되었거나 만료되었습니다.'})
+                    return
+
+                file_path = token_data.get('file_path')
+                file_name = token_data.get('file_name')
+                file_size = token_data.get('file_size')
+                encrypted = False
+                content = file_name or content
+
+            if not content and not file_path:
+                return
             
             message = create_message(
                 room_id, session['user_id'], content, message_type, file_path, file_name, reply_to, encrypted
@@ -287,21 +317,24 @@ def register_socket_events(socketio):
                 message['unread_count'] = get_unread_count(room_id, message['id'], session['user_id'])
                 if message_type in ('file', 'image') and file_path:
                     from app.models import add_room_file
-                    import os
-                    from config import UPLOAD_FOLDER
-                    
+
                     try:
-                        full_path = os.path.join(UPLOAD_FOLDER, file_path)
-                        file_size = os.path.getsize(full_path) if os.path.exists(full_path) else None
                         add_room_file(room_id, session['user_id'], file_path, file_name, file_size, message_type, message['id'])
                     except Exception as e:
                         logger.error(f"Failed to add room file record: {e}")
+                        logger.warning(
+                            f"Potential orphan upload file detected: room={room_id}, user={session['user_id']}, path={file_path}"
+                        )
 
                 emit('new_message', message, room=f'room_{room_id}')
                 # broadcast 대신 해당 방 멤버들의 모든 세션에 전송
                 logger.debug(f"Message sent: room={room_id}, user={session['user_id']}, type={message_type}")
             else:
                 logger.warning(f"Message creation failed: room={room_id}, user={session['user_id']}")
+                if message_type in ('file', 'image') and file_path:
+                    logger.warning(
+                        f"Potential orphan upload file after message failure: room={room_id}, user={session['user_id']}, path={file_path}"
+                    )
                 emit('error', {'message': '메시지 저장에 실패했습니다.'})
         except Exception as e:
             logger.error(f"Send message error: {e}\n{traceback.format_exc()}")

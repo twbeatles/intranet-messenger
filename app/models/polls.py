@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 def create_poll(room_id: int, created_by: int, question: str, options: list,
-                multiple_choice: bool = False, anonymous: bool = False, ends_at: str = None):
-    """투표 생성"""
+                multiple_choice: bool = False, anonymous: bool = False, ends_at: str = None) -> int | None:
+    """투표 생성 후 poll_id 반환"""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -25,7 +25,7 @@ def create_poll(room_id: int, created_by: int, question: str, options: list,
             cursor.execute('INSERT INTO poll_options (poll_id, option_text) VALUES (?, ?)', (poll_id, option_text))
         
         conn.commit()
-        return get_poll(poll_id)
+        return poll_id
     except Exception as e:
         conn.rollback()
         logger.error(f"Create poll error: {e}")
