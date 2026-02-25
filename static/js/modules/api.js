@@ -33,6 +33,11 @@ export const AuthAPI = {
     checkSession: () => api('/api/me')
 };
 
+export const ConfigAPI = {
+    getConfig: () => api('/api/config'),
+    getAuthProviders: () => api('/api/auth/providers')
+};
+
 export const UserAPI = {
     getUsers: () => api('/api/users'),
     getOnlineUsers: () => api('/api/users/online'),

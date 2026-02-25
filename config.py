@@ -79,3 +79,55 @@ MESSAGE_QUEUE = None  # 단일 서버 모드
 # ============================================================================
 APP_NAME = "사내 메신저 서버"
 VERSION = "4.36"
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+# ============================================================================
+# Optional Feature Flags / Integrations
+# ============================================================================
+# Shared redis endpoint (optional)
+REDIS_URL = os.getenv("REDIS_URL")
+
+# Flask-Limiter storage backend
+RATE_LIMIT_STORAGE_URI = os.getenv("RATE_LIMIT_STORAGE_URI", REDIS_URL or "memory://")
+
+# State store backend for upload token / socket guard / presence
+STATE_STORE_REDIS_URL = os.getenv("STATE_STORE_REDIS_URL", REDIS_URL or "")
+
+# Socket message rate limit (per-user)
+SOCKET_SEND_MESSAGE_PER_MINUTE = int(os.getenv("SOCKET_SEND_MESSAGE_PER_MINUTE", "100"))
+
+# Feature toggles
+FEATURE_OIDC_ENABLED = _env_bool("FEATURE_OIDC_ENABLED", False)
+FEATURE_AV_SCAN_ENABLED = _env_bool("FEATURE_AV_SCAN_ENABLED", False)
+FEATURE_REDIS_ENABLED = _env_bool("FEATURE_REDIS_ENABLED", bool(REDIS_URL))
+
+# OIDC settings (optional)
+OIDC_PROVIDER_NAME = os.getenv("OIDC_PROVIDER_NAME", "oidc")
+OIDC_ISSUER_URL = os.getenv("OIDC_ISSUER_URL", "")
+OIDC_AUTHORIZE_URL = os.getenv("OIDC_AUTHORIZE_URL", "")
+OIDC_TOKEN_URL = os.getenv("OIDC_TOKEN_URL", "")
+OIDC_USERINFO_URL = os.getenv("OIDC_USERINFO_URL", "")
+OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "")
+OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
+OIDC_SCOPE = os.getenv("OIDC_SCOPE", "openid profile email")
+OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "")
+
+# AV scan settings (optional, clamd TCP)
+AV_SCANNER = os.getenv("AV_SCANNER", "clamav")
+AV_CLAMD_HOST = os.getenv("AV_CLAMD_HOST", "127.0.0.1")
+AV_CLAMD_PORT = int(os.getenv("AV_CLAMD_PORT", "3310"))
+AV_SCAN_TIMEOUT_SECONDS = int(os.getenv("AV_SCAN_TIMEOUT_SECONDS", "15"))
+UPLOAD_QUARANTINE_FOLDER = os.path.join(UPLOAD_FOLDER, "quarantine")
+
+# Data retention (disabled by default)
+RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "0"))
+
+# Maintenance worker interval
+MAINTENANCE_INTERVAL_SECONDS = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "300"))

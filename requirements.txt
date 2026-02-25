@@ -14,6 +14,8 @@ bcrypt>=4.0.0  # [v4.2] 비밀번호 해시 강화
 Flask-Limiter>=3.3.0  # [v4.3] Rate Limiting
 Flask-WTF>=1.1.0      # [v4.3] CSRF Protection
 Flask-Compress>=1.13  # [v4.4] Response Gzip Compression
+Flask-Session>=0.8.0  # Server-side session storage
+redis>=5.0.0          # Optional shared backend (rate-limit/state store)
 pytest>=7.4.0         # [v4.3] Unit Testing
 pytest-flask>=1.2.0   # [v4.3] Flask Testing Comparison
 

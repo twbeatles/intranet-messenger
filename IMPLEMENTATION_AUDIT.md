@@ -361,3 +361,53 @@
 - 비고
 - 8장은 "점검 당시 기준선(Baseline)"을 보존한 기록입니다.
 - 9장은 실제 코드 반영 이후의 최신 회귀 검증 결과입니다.
+
+## 10. 2026-02-25 Full Remediation Update
+
+- 대상 저장소: `C:\twbeatles-repos\intranet-messenger`
+- 기준 문서: `INTRANET_MESSENGER_RISK_GAP_REVIEW_2026-02-25.md`
+- 범위: R-01 ~ R-11 + 추가 기능 7개
+
+### 10.1 완료 요약
+- 업로드 계약 통일: `room_id` 필수 + 프론트 업로드 경로 단일화
+- 세션 무효화 실효화: 비밀번호 변경 시 토큰 갱신 + HTTP/Socket 검증
+- 투표 무결성: poll-option 소속 검증 및 표준 오류 필드(`error`, `code`) 반영
+- 레이트리밋 정합: 로그인/가입/업로드/고급검색/소켓 전송 정책 반영
+- 분산 상태 저장: `state_store` 추상화 + Redis 장애 시 메모리 강등
+- AV 스캔 파이프라인: 격리 저장 + 비동기 작업 + 상태 조회 API
+- OIDC 연동: provider 메타/로그인/콜백 + 첫 로그인 자동 프로비저닝
+- 관리자 감사로그: 구조화 적재 + JSON/CSV 조회
+- 보존정책: `RETENTION_DAYS` 설정 시 자동 정리
+- 모델 경로 정리: `app/models/*` 단일화, 모놀리식은 `app/legacy`로 분리
+
+### 10.2 신규/변경 인터페이스
+- `GET /api/config`
+- `POST /api/upload` (`scan_status=clean|pending|infected|error`)
+- `GET /api/upload/jobs/<job_id>`
+- `GET /api/auth/providers`
+- `GET /auth/oidc/login`
+- `GET /auth/oidc/callback`
+- `GET /api/rooms/<room_id>/admin-audit-logs?format=json|csv`
+
+### 10.3 운영/복구
+- 수동 백업/복구/검증 스크립트 추가
+  - `scripts/backup_local.py`
+  - `scripts/restore_local.py`
+  - `scripts/verify_restore.py`
+- 런북 추가
+  - `docs/BACKUP_RUNBOOK.md`
+
+### 10.4 검증 결과
+- `pytest -q` 실행 결과: **71 passed**
+
+## 11. 2026-02-25 문서/배포 정합성 추가 반영
+
+- `README.md`를 최신 계약 기준으로 재정리(모지바케 제거)
+- API JSON 응답 메시지에 대해 모지바케 자동 정규화 후처리 반영
+  - 대상: `/api/*` JSON 응답의 `error`/`message`/`detail`
+  - 동작: 모지바케 감지 시 상태코드 기반 표준 메시지로 교체
+- `messenger.spec` 보강:
+  - 신규 모듈 hidden import 추가
+  - Redis 동적 import 반영
+  - `docs/BACKUP_RUNBOOK.md` 포함
+- 회귀 검증: `pytest -q` -> **71 passed**

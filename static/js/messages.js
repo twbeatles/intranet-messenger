@@ -917,6 +917,117 @@ function parseMentions(text) {
 // 파일 업로드
 // ============================================================================
 
+function getUploadMaxSizeBytes() {
+    return (window.serverConfig &&
+        window.serverConfig.upload &&
+        Number(window.serverConfig.upload.max_size_bytes)) || (16 * 1024 * 1024);
+}
+
+function _inferMessageType(file) {
+    var ext = (file.name.split('.').pop() || '').toLowerCase();
+    var imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'];
+    return imageExts.includes(ext) || (file.type || '').startsWith('image/') ? 'image' : 'file';
+}
+
+function _emitUploadedFileMessage(file, result, replyToId) {
+    if (!socket || !socket.connected) {
+        if (typeof showToast === 'function') {
+            showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
+        }
+        return false;
+    }
+
+    if (!result.upload_token) {
+        if (typeof showToast === 'function') {
+            showToast('업로드 토큰 발급에 실패했습니다. 다시 업로드해주세요.', 'error');
+        }
+        return false;
+    }
+
+    safeSocketEmit('send_message', {
+        room_id: currentRoom.id,
+        content: file.name || '',
+        type: _inferMessageType(file),
+        upload_token: result.upload_token,
+        file_path: result.file_path,
+        file_name: result.file_name || file.name,
+        encrypted: false,
+        reply_to: replyToId || null
+    });
+    if (typeof clearReply === 'function') clearReply();
+    if (typeof showToast === 'function') showToast('파일이 전송되었습니다.', 'success');
+    return true;
+}
+
+function _pollUploadScanJob(jobId, file, replyToId, onDone) {
+    var maxAttempts = 40;
+    var intervalMs = 1500;
+    var attempts = 0;
+
+    function finish() {
+        if (typeof onDone === 'function') onDone();
+    }
+
+    function tick() {
+        attempts += 1;
+        fetch('/api/upload/jobs/' + encodeURIComponent(jobId), { credentials: 'same-origin' })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                var status = (data && data.scan_status) || 'pending';
+                if (status === 'pending') {
+                    if (attempts >= maxAttempts) {
+                        if (typeof showToast === 'function') showToast('파일 검사 시간이 초과되었습니다.', 'error');
+                        finish();
+                        return;
+                    }
+                    setTimeout(tick, intervalMs);
+                    return;
+                }
+
+                if (status === 'clean') {
+                    _emitUploadedFileMessage(file, data, replyToId);
+                    finish();
+                    return;
+                }
+
+                if (typeof showToast === 'function') {
+                    showToast((data && data.error) || '파일 검사에 실패했습니다.', 'error');
+                }
+                finish();
+            })
+            .catch(function () {
+                if (attempts >= maxAttempts) {
+                    if (typeof showToast === 'function') showToast('파일 검사 상태 조회에 실패했습니다.', 'error');
+                    finish();
+                    return;
+                }
+                setTimeout(tick, intervalMs);
+            });
+    }
+
+    tick();
+}
+
+function _handleUploadApiResult(file, result, replyToId, onDone) {
+    if (!result || !result.success) {
+        if (typeof showToast === 'function') {
+            showToast((result && result.error) || '파일 업로드 실패', 'error');
+        }
+        if (typeof onDone === 'function') onDone();
+        return;
+    }
+
+    var status = result.scan_status || (result.upload_token ? 'clean' : 'pending');
+    if (status === 'pending') {
+        if (typeof showToast === 'function') showToast('파일 보안 검사를 진행 중입니다.', 'info');
+        _pollUploadScanJob(result.job_id, file, replyToId, onDone);
+        return;
+    }
+
+    _emitUploadedFileMessage(file, result, replyToId);
+    if (typeof onDone === 'function') onDone();
+}
+
 /**
  * 파일 업로드 처리
  * [v4.31] 업로드 진행률 표시 추가
@@ -927,6 +1038,7 @@ async function handleFileUpload(e) {
 
     var formData = new FormData();
     formData.append('file', file);
+    formData.append('room_id', currentRoom.id);
 
     // CSRF 토큰 추가
     var csrfToken = document.querySelector('meta[name="csrf-token"]');
@@ -957,34 +1069,13 @@ async function handleFileUpload(e) {
             var result = JSON.parse(xhr.responseText);
 
             if (result.success) {
-                // [v4.21] Socket 연결 상태 확인
-                if (!socket || !socket.connected) {
-                    if (typeof showToast === 'function') {
-                        showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
-                    }
-                    e.target.value = '';
-                    return;
-                }
-
-                var isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(file.name.split('.').pop().toLowerCase());
-                if (!result.upload_token) {
-                    if (typeof showToast === 'function') {
-                        showToast('업로드 토큰 발급에 실패했습니다. 다시 업로드해주세요.', 'error');
-                    }
-                    e.target.value = '';
-                    return;
-                }
-                // [v4.36] safeSocketEmit 사용
-                safeSocketEmit('send_message', {
-                    room_id: currentRoom.id,
-                    content: file.name,
-                    type: isImage ? 'image' : 'file',
-                    upload_token: result.upload_token,
-                    file_path: result.file_path,
-                    file_name: result.file_name,
-                    encrypted: false
-                });
-                showToast('파일 업로드 완료!', 'success');
+                _handleUploadApiResult(
+                    file,
+                    result,
+                    (typeof replyingTo !== 'undefined' && replyingTo) ? replyingTo.id : null,
+                    function () { e.target.value = ''; }
+                );
+                return;
             } else {
                 if (typeof showToast === 'function') {
                     showToast(result.error || '파일 업로드 실패', 'error');
@@ -1268,8 +1359,9 @@ function handleDroppedFiles(files) {
     }
     for (var i = 0; i < files.length; i++) {
         var file = files[i];
-        if (file.size > 16 * 1024 * 1024) {
-            if (typeof showToast === 'function') showToast('파일 크기는 16MB 이하여야 합니다.', 'warning');
+        var maxSize = getUploadMaxSizeBytes();
+        if (file.size > maxSize) {
+            if (typeof showToast === 'function') showToast('파일 크기 제한을 초과했습니다.', 'warning');
             continue;
         }
         uploadFile(file);
@@ -1290,42 +1382,11 @@ function uploadFile(file) {
     xhr.onload = function () {
         try {
             var result = JSON.parse(xhr.responseText);
-            if (result.success) {
-                var messageType = file.type.startsWith('image/') ? 'image' : 'file';
-                if (!result.upload_token) {
-                    if (typeof showToast === 'function') showToast('업로드 토큰 발급에 실패했습니다. 다시 업로드해주세요.', 'error');
-                    return;
-                }
-                // [v4.21] Socket 연결 상태 확인 개선
-                if (window.socket && window.socket.connected) {
-                    // [v4.36] safeSocketEmit 사용
-                    safeSocketEmit('send_message', {
-                        room_id: currentRoom.id,
-                        content: '',
-                        type: messageType,
-                        upload_token: result.upload_token,
-                        file_path: result.file_path,
-                        file_name: result.file_name,
-                        encrypted: false,
-                        reply_to: (typeof replyingTo !== 'undefined' && replyingTo) ? replyingTo.id : null
-                    });
-                    if (typeof clearReply === 'function') clearReply();
-                    if (typeof showToast === 'function') showToast('파일이 전송되었습니다.', 'success');
-                } else {
-                    if (typeof showToast === 'function') {
-                        showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
-                    }
-                }
-            } else {
-                if (typeof showToast === 'function') {
-                    var errMsg = result.error || '파일 업로드 실패';
-                    if (errMsg.indexOf('토큰') !== -1 || errMsg.indexOf('대화방') !== -1 || errMsg.indexOf('만료') !== -1) {
-                        showToast(errMsg, 'warning');
-                    } else {
-                        showToast(errMsg, 'error');
-                    }
-                }
-            }
+            _handleUploadApiResult(
+                file,
+                result,
+                (typeof replyingTo !== 'undefined' && replyingTo) ? replyingTo.id : null
+            );
         } catch (err) {
             console.error('파일 업로드 응답 파싱 실패:', err);
             if (typeof showToast === 'function') showToast('파일 업로드에 실패했습니다.', 'error');

@@ -7,6 +7,8 @@ import sqlite3
 import logging
 import threading
 import time
+import secrets
+import re
 
 from app.models.base import get_db, close_thread_db
 from app.utils import hash_password, verify_password
@@ -45,7 +47,7 @@ def authenticate_user(username: str, password: str) -> dict | None:
     cursor = conn.cursor()
     try:
         cursor.execute(
-            'SELECT id, username, nickname, profile_image, password_hash FROM users WHERE username = ?',
+            'SELECT id, username, nickname, profile_image, password_hash, session_token FROM users WHERE username = ?',
             (username,)
         )
         user = cursor.fetchone()
@@ -64,6 +66,17 @@ def authenticate_user(username: str, password: str) -> dict | None:
             
             user_dict = dict(user)
             del user_dict['password_hash']
+            if not user_dict.get('session_token'):
+                new_token = secrets.token_hex(32)
+                try:
+                    cursor.execute(
+                        "UPDATE users SET session_token = ? WHERE id = ?",
+                        (new_token, user['id'])
+                    )
+                    conn.commit()
+                    user_dict['session_token'] = new_token
+                except Exception as token_err:
+                    logger.warning(f"Failed to initialize session token for {username}: {token_err}")
             return user_dict
             
         return None
@@ -256,6 +269,94 @@ def get_user_session_token(user_id):
         return None
 
 
+def _to_safe_username(raw: str) -> str:
+    raw = (raw or "").strip().lower()
+    normalized = re.sub(r"[^a-z0-9_]+", "_", raw)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    if len(normalized) < 3:
+        normalized = f"user_{secrets.token_hex(2)}"
+    return normalized[:40]
+
+
+def _next_available_username(cursor, base_username: str) -> str:
+    base = _to_safe_username(base_username)
+    candidate = base
+    suffix = 1
+    while True:
+        cursor.execute("SELECT 1 FROM users WHERE username = ?", (candidate,))
+        if not cursor.fetchone():
+            return candidate
+        suffix += 1
+        candidate = f"{base}_{suffix}"
+
+
+def get_or_create_oidc_user(
+    provider: str,
+    subject: str,
+    email: str | None = None,
+    preferred_username: str | None = None,
+    nickname: str | None = None,
+):
+    """Lookup or create local user from OIDC subject mapping."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT u.id, u.username, u.nickname, u.profile_image, u.status, u.session_token
+            FROM sso_identities s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.provider = ? AND s.subject = ?
+            """,
+            (provider, subject),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            user = dict(existing)
+            if not user.get("session_token"):
+                session_token = secrets.token_hex(32)
+                cursor.execute("UPDATE users SET session_token = ? WHERE id = ?", (session_token, user["id"]))
+                conn.commit()
+                user["session_token"] = session_token
+            return user
+
+        username_hint = preferred_username or (email.split("@")[0] if email and "@" in email else None)
+        if not username_hint:
+            username_hint = f"{provider}_{subject[:10]}"
+        username = _next_available_username(cursor, username_hint)
+        local_nickname = (nickname or preferred_username or username).strip()[:50]
+        session_token = secrets.token_hex(32)
+
+        cursor.execute(
+            """
+            INSERT INTO users (username, password_hash, nickname, status, session_token)
+            VALUES (?, ?, ?, 'offline', ?)
+            """,
+            (username, hash_password(secrets.token_urlsafe(24)), local_nickname, session_token),
+        )
+        user_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT INTO sso_identities (provider, subject, user_id, email)
+            VALUES (?, ?, ?, ?)
+            """,
+            (provider, subject, user_id, email),
+        )
+        conn.commit()
+        return {
+            "id": user_id,
+            "username": username,
+            "nickname": local_nickname,
+            "profile_image": None,
+            "status": "offline",
+            "session_token": session_token,
+        }
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"OIDC provisioning error: {e}")
+        return None
+
+
 def delete_user(user_id, password):
     """회원 탈퇴"""
     import os
@@ -287,8 +388,46 @@ def delete_user(user_id, password):
             except Exception as e:
                 logger.warning(f"Profile image deletion failed: {e}")
         
-        # 외래키 참조 정리
-        cursor.execute("UPDATE rooms SET created_by = NULL WHERE created_by = ?", (user_id,))
+        # created_by 재할당: 대체 멤버(관리자 우선) 지정, 없으면 방 정리
+        cursor.execute("SELECT id FROM rooms WHERE created_by = ?", (user_id,))
+        owned_rooms = [row['id'] for row in cursor.fetchall()]
+        for room_id in owned_rooms:
+            cursor.execute("""
+                SELECT rm.user_id
+                FROM room_members rm
+                WHERE rm.room_id = ? AND rm.user_id != ?
+                ORDER BY CASE WHEN COALESCE(rm.role, 'member') = 'admin' THEN 0 ELSE 1 END, rm.user_id ASC
+                LIMIT 1
+            """, (room_id, user_id))
+            replacement_owner = cursor.fetchone()
+            if replacement_owner:
+                new_owner_id = replacement_owner['user_id']
+                cursor.execute("UPDATE rooms SET created_by = ? WHERE id = ?", (new_owner_id, room_id))
+                cursor.execute(
+                    "UPDATE room_members SET role = 'admin' WHERE room_id = ? AND user_id = ?",
+                    (room_id, new_owner_id),
+                )
+            else:
+                # 소유자 외 멤버가 없으면 방을 안전하게 정리
+                cursor.execute("SELECT file_path FROM room_files WHERE room_id = ?", (room_id,))
+                room_files = cursor.fetchall()
+                for rf in room_files:
+                    try:
+                        safe_file_delete(os.path.join(UPLOAD_FOLDER, rf['file_path']))
+                    except Exception as e:
+                        logger.warning(f"Room file delete failed during room cleanup: {e}")
+                cursor.execute("DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM messages WHERE room_id = ?)", (room_id,))
+                cursor.execute("DELETE FROM pinned_messages WHERE room_id = ?", (room_id,))
+                cursor.execute("DELETE FROM poll_votes WHERE poll_id IN (SELECT id FROM polls WHERE room_id = ?)", (room_id,))
+                cursor.execute("DELETE FROM polls WHERE room_id = ?", (room_id,))
+                cursor.execute("DELETE FROM room_files WHERE room_id = ?", (room_id,))
+                cursor.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
+                cursor.execute("DELETE FROM room_members WHERE room_id = ?", (room_id,))
+                try:
+                    cursor.execute("DELETE FROM admin_audit_logs WHERE room_id = ?", (room_id,))
+                except Exception:
+                    pass
+                cursor.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
 
         # polls.created_by는 NOT NULL이므로 재할당하거나 삭제
         cursor.execute("SELECT id, room_id FROM polls WHERE created_by = ?", (user_id,))

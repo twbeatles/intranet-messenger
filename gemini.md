@@ -116,3 +116,12 @@ When changing code, update docs and run:
 2) pytest --maxfail=1
 Then report changed files and test results.
 ```
+
+## 9) 2026-02-25 정합성 동기화 메모
+
+- README/API/감사문서/리스크문서 기준선 동기화 완료
+- 테스트 기준선: `pytest -q` -> `71 passed`
+- `.spec` 보강 반영:
+  - 신규 모듈 hidden import: `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
+  - Redis 동적 import: `redis`, `redis.asyncio`
+  - 런북 데이터 포함: `docs/BACKUP_RUNBOOK.md`

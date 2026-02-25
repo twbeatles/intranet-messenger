@@ -36,6 +36,7 @@ a = Analysis(
     datas=[
         ('static', 'static'),
         ('templates', 'templates'),
+        ('docs/BACKUP_RUNBOOK.md', 'docs'),
     ],
     hiddenimports=[
         # Gevent 관련
@@ -78,8 +79,24 @@ a = Analysis(
         'app.extensions',
         'app.crypto_manager',
         'app.upload_tokens',
+        'app.state_store',
+        'app.upload_scan',
+        'app.oidc',
         'app.control_api',
         'app.server_launcher',
+        'app.models.base',
+        'app.models.users',
+        'app.models.rooms',
+        'app.models.messages',
+        'app.models.polls',
+        'app.models.files',
+        'app.models.reactions',
+        'app.models.admin_audit',
+        'app.legacy.models_monolith',
+
+        # Redis (optional runtime backend)
+        'redis',
+        'redis.asyncio',
         
         # GUI 모듈
         'gui',

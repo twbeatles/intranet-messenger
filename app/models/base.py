@@ -13,11 +13,11 @@ from datetime import datetime, timedelta
 
 # config 임포트 (PyInstaller 호환)
 try:
-    from config import DATABASE_PATH, UPLOAD_FOLDER
+    from config import DATABASE_PATH, UPLOAD_FOLDER, RETENTION_DAYS
 except ImportError:
     import sys
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    from config import DATABASE_PATH, UPLOAD_FOLDER
+    from config import DATABASE_PATH, UPLOAD_FOLDER, RETENTION_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,8 @@ def init_db():
                 profile_image TEXT,
                 status TEXT DEFAULT 'offline',
                 public_key TEXT,
+                status_message TEXT,
+                session_token TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -305,9 +307,64 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         ''')
+
+        # OIDC identity table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sso_identities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                email TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(provider, subject),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Upload scan queue/status table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS upload_scan_jobs (
+                job_id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                room_id INTEGER NOT NULL,
+                temp_path TEXT NOT NULL,
+                final_path TEXT,
+                file_name TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                file_size INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending',
+                result TEXT,
+                token TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (room_id) REFERENCES rooms(id)
+            )
+        ''')
+
+        # Structured admin audit log table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_id INTEGER NOT NULL,
+                actor_user_id INTEGER NOT NULL,
+                target_user_id INTEGER,
+                action TEXT NOT NULL,
+                metadata_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (room_id) REFERENCES rooms(id),
+                FOREIGN KEY (actor_user_id) REFERENCES users(id),
+                FOREIGN KEY (target_user_id) REFERENCES users(id)
+            )
+        ''')
         
         # Auto-migration
         required_columns = {
+            'users': {
+                'status_message': 'TEXT',
+                'session_token': 'TEXT'
+            },
             'room_members': {
                 'role': 'TEXT DEFAULT "member"',
                 'pinned': 'INTEGER DEFAULT 0',
@@ -344,6 +401,11 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_user ON poll_votes(poll_id, user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_files_file_path ON room_files(file_path)')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_session_token ON users(session_token)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sso_provider_subject ON sso_identities(provider, subject)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_upload_scan_jobs_status ON upload_scan_jobs(status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_upload_scan_jobs_user ON upload_scan_jobs(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_room_created ON admin_audit_logs(room_id, created_at DESC)")
 
             # Full-text search (FTS5) for plaintext (encrypted=0) text/system messages.
             # If this SQLite build doesn't support FTS5, skip silently.
@@ -424,6 +486,8 @@ def init_db():
         close_expired_polls()
         cleanup_old_access_logs()
         cleanup_empty_rooms()
+        if RETENTION_DAYS > 0:
+            cleanup_retention_data(RETENTION_DAYS)
     except Exception as e:
         logger.warning(f"Maintenance tasks error: {e}")
 
@@ -465,6 +529,49 @@ def cleanup_old_access_logs(days_to_keep=90):
     except Exception as e:
         logger.error(f"Cleanup access logs error: {e}")
         return 0
+    finally:
+        close_thread_db()
+
+
+def cleanup_retention_data(days_to_keep: int):
+    """Apply retention policy to message/file data."""
+    if days_to_keep <= 0:
+        return {"messages": 0, "files": 0}
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).strftime('%Y-%m-%d %H:%M:%S')
+
+        # 1) Delete old uploaded files first (physical + DB row).
+        cursor.execute('SELECT id, file_path FROM room_files WHERE uploaded_at < ?', (cutoff_date,))
+        old_files = cursor.fetchall()
+        deleted_files = 0
+        for row in old_files:
+            full_path = os.path.join(UPLOAD_FOLDER, row['file_path'])
+            safe_file_delete(full_path)
+            cursor.execute('DELETE FROM room_files WHERE id = ?', (row['id'],))
+            deleted_files += 1
+
+        # 2) Delete old messages. Remove pins first to avoid FK failures.
+        cursor.execute('SELECT id FROM messages WHERE created_at < ?', (cutoff_date,))
+        old_msg_ids = [r['id'] for r in cursor.fetchall()]
+        deleted_messages = 0
+        if old_msg_ids:
+            placeholders = ",".join(["?"] * len(old_msg_ids))
+            cursor.execute(f'DELETE FROM pinned_messages WHERE message_id IN ({placeholders})', old_msg_ids)
+            cursor.execute(f'DELETE FROM messages WHERE id IN ({placeholders})', old_msg_ids)
+            deleted_messages = cursor.rowcount
+
+        conn.commit()
+        if deleted_messages or deleted_files:
+            logger.info(
+                f"Retention cleanup completed (days={days_to_keep}, messages={deleted_messages}, files={deleted_files})"
+            )
+        return {"messages": deleted_messages, "files": deleted_files}
+    except Exception as e:
+        logger.error(f"Retention cleanup error: {e}")
+        return {"messages": 0, "files": 0}
     finally:
         close_thread_db()
 

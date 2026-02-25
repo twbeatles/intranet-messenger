@@ -7,15 +7,16 @@ import logging
 import time
 import traceback
 from threading import Lock
-from flask import session, request
-from flask_socketio import emit, join_room, leave_room
+from flask import session, request, current_app
+from flask_socketio import emit, join_room, leave_room, disconnect
 
 from app.models import (
     update_user_status, get_user_by_id, is_room_member, is_room_admin,
     create_message, update_last_read, get_unread_count, server_stats,
-    get_user_rooms, edit_message, delete_message
+    get_user_rooms, edit_message, delete_message, get_user_session_token
 )
 from app.upload_tokens import consume_upload_token, get_upload_token_failure_reason
+from app.state_store import state_store
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +102,39 @@ def invalidate_user_cache(user_id):
 
 def register_socket_events(socketio):
     """Socket.IO 이벤트 등록"""
-    
+
+    def _is_session_token_valid() -> bool:
+        if 'user_id' not in session:
+            return False
+        user_id = session.get('user_id')
+        if not user_id:
+            return False
+        current_token = session.get('session_token')
+        db_token = get_user_session_token(user_id)
+        return bool(current_token and db_token and current_token == db_token)
+
+    def _ensure_session_token(event_name: str):
+        if _is_session_token_valid():
+            return True
+        logger.warning(f"Socket session invalidated during event: {event_name}")
+        emit('error', {'message': '세션이 만료되었거나 다른 세션에서 무효화되었습니다.'})
+        try:
+            disconnect()
+        except Exception:
+            pass
+        return False
+
+    def _check_send_message_rate_limit(user_id: int) -> bool:
+        per_minute = int(current_app.config.get('SOCKET_SEND_MESSAGE_PER_MINUTE', 100))
+        key = f"socket:send_message:{user_id}"
+        count = state_store.incr(key, ttl_seconds=60)
+        return count <= per_minute
+
     @socketio.on('connect')
     def handle_connect():
+        if not _is_session_token_valid():
+            return False
+
         if 'user_id' in session:
             user_id = session['user_id']
             
@@ -112,7 +143,7 @@ def register_socket_events(socketio):
                 if user_id not in user_sids:
                     user_sids[user_id] = []
                 user_sids[user_id].append(request.sid)
-                was_offline = len(user_sids[user_id]) == 1
+            was_offline = state_store.incr(f"presence:user:{user_id}") == 1
             
             # Join all my rooms so this client receives room events without polling.
             room_ids = get_user_room_ids(user_id)
@@ -150,12 +181,14 @@ def register_socket_events(socketio):
             if user_id and user_id in user_sids:
                 if request.sid in user_sids[user_id]:
                     user_sids[user_id].remove(request.sid)
-                still_online = len(user_sids[user_id]) > 0
-                if not still_online:
+                local_still_online = len(user_sids[user_id]) > 0
+                if not local_still_online:
                     del user_sids[user_id]
                     # [v4.2] 락 내에서 방 목록 캐시 복사
                     if user_id in user_cache:
                         room_ids = user_cache[user_id].get('rooms', []).copy()
+        if user_id:
+            still_online = state_store.decr(f"presence:user:{user_id}") > 0
         
         # [v4.2] 락 해제 후 DB 작업 및 브로드캐스트 (락 내에서 가져온 정보 사용)
         if user_id and not still_online:
@@ -182,7 +215,7 @@ def register_socket_events(socketio):
     @socketio.on('subscribe_rooms')
     def handle_subscribe_rooms(data):
         try:
-            if 'user_id' not in session:
+            if not _ensure_session_token('subscribe_rooms'):
                 return
 
             room_ids = data.get('room_ids') if isinstance(data, dict) else None
@@ -210,6 +243,8 @@ def register_socket_events(socketio):
     @socketio.on('join_room')
     def handle_join_room(data):
         try:
+            if not _ensure_session_token('join_room'):
+                return
             room_id = data.get('room_id')
             if room_id and 'user_id' in session:
                 # 캐시된 방 목록으로 빠른 확인
@@ -231,6 +266,8 @@ def register_socket_events(socketio):
     @socketio.on('leave_room')
     def handle_leave_room(data):
         try:
+            if not _ensure_session_token('leave_room'):
+                return
             room_id = data.get('room_id')
             if room_id:
                 leave_room(f'room_{room_id}')
@@ -243,7 +280,11 @@ def register_socket_events(socketio):
     @socketio.on('send_message')
     def handle_send_message(data):
         try:
-            if 'user_id' not in session:
+            if not _ensure_session_token('send_message'):
+                return
+            user_id = session['user_id']
+            if not _check_send_message_rate_limit(user_id):
+                emit('error', {'message': '메시지 전송 속도 제한을 초과했습니다.'})
                 return
             
             # [v4.2] 입력 유효성 검사 강화
@@ -273,9 +314,9 @@ def register_socket_events(socketio):
             encrypted = bool(data.get('encrypted', True))
 
             # 캐시된 방 목록으로 빠른 확인
-            user_rooms = get_user_room_ids(session['user_id'])
+            user_rooms = get_user_room_ids(user_id)
             if room_id not in user_rooms:
-                if not is_room_member(room_id, session['user_id']):
+                if not is_room_member(room_id, user_id):
                     emit('error', {'message': '대화방 접근 권한이 없습니다.'})
                     return
 
@@ -283,7 +324,7 @@ def register_socket_events(socketio):
                 token = data.get('upload_token')
                 reason = get_upload_token_failure_reason(
                     token=token,
-                    user_id=session['user_id'],
+                    user_id=user_id,
                     room_id=room_id,
                     expected_type=message_type,
                 )
@@ -293,7 +334,7 @@ def register_socket_events(socketio):
 
                 token_data = consume_upload_token(
                     token=token,
-                    user_id=session['user_id'],
+                    user_id=user_id,
                     room_id=room_id,
                     expected_type=message_type,
                 )
@@ -311,29 +352,29 @@ def register_socket_events(socketio):
                 return
             
             message = create_message(
-                room_id, session['user_id'], content, message_type, file_path, file_name, reply_to, encrypted
+                room_id, user_id, content, message_type, file_path, file_name, reply_to, encrypted
             )
             if message:
-                message['unread_count'] = get_unread_count(room_id, message['id'], session['user_id'])
+                message['unread_count'] = get_unread_count(room_id, message['id'], user_id)
                 if message_type in ('file', 'image') and file_path:
                     from app.models import add_room_file
 
                     try:
-                        add_room_file(room_id, session['user_id'], file_path, file_name, file_size, message_type, message['id'])
+                        add_room_file(room_id, user_id, file_path, file_name, file_size, message_type, message['id'])
                     except Exception as e:
                         logger.error(f"Failed to add room file record: {e}")
                         logger.warning(
-                            f"Potential orphan upload file detected: room={room_id}, user={session['user_id']}, path={file_path}"
+                            f"Potential orphan upload file detected: room={room_id}, user={user_id}, path={file_path}"
                         )
 
                 emit('new_message', message, room=f'room_{room_id}')
                 # broadcast 대신 해당 방 멤버들의 모든 세션에 전송
-                logger.debug(f"Message sent: room={room_id}, user={session['user_id']}, type={message_type}")
+                logger.debug(f"Message sent: room={room_id}, user={user_id}, type={message_type}")
             else:
-                logger.warning(f"Message creation failed: room={room_id}, user={session['user_id']}")
+                logger.warning(f"Message creation failed: room={room_id}, user={user_id}")
                 if message_type in ('file', 'image') and file_path:
                     logger.warning(
-                        f"Potential orphan upload file after message failure: room={room_id}, user={session['user_id']}, path={file_path}"
+                        f"Potential orphan upload file after message failure: room={room_id}, user={user_id}, path={file_path}"
                     )
                 emit('error', {'message': '메시지 저장에 실패했습니다.'})
         except Exception as e:
@@ -343,7 +384,7 @@ def register_socket_events(socketio):
     @socketio.on('message_read')
     def handle_message_read(data):
         try:
-            if 'user_id' not in session:
+            if not _ensure_session_token('message_read'):
                 return
             
             room_id = data.get('room_id')
@@ -366,7 +407,7 @@ def register_socket_events(socketio):
     @socketio.on('typing')
     def handle_typing(data):
         try:
-            if 'user_id' not in session:
+            if not _ensure_session_token('typing'):
                 return
             
             room_id = data.get('room_id')
@@ -413,6 +454,8 @@ def register_socket_events(socketio):
     @socketio.on('room_name_updated')
     def handle_room_name_updated(data):
         try:
+            if not _ensure_session_token('room_name_updated'):
+                return
             room_id = data.get('room_id')
             new_name = data.get('name')
             if room_id and new_name and 'user_id' in session:
@@ -439,7 +482,7 @@ def register_socket_events(socketio):
     def handle_room_members_updated(data):
         try:
             # [v4.14] 세션 검증 추가
-            if 'user_id' not in session:
+            if not _ensure_session_token('room_members_updated'):
                 return
             
             room_id = data.get('room_id')
@@ -453,6 +496,8 @@ def register_socket_events(socketio):
     @socketio.on('profile_updated')
     def handle_profile_updated(data):
         try:
+            if not _ensure_session_token('profile_updated'):
+                return
             if 'user_id' in session:
                 user_id = session['user_id']
                 nickname = data.get('nickname')
@@ -473,7 +518,7 @@ def register_socket_events(socketio):
     @socketio.on('edit_message')
     def handle_edit_message(data):
         try:
-            if 'user_id' not in session:
+            if not _ensure_session_token('edit_message'):
                 return
             
             message_id = data.get('message_id')
@@ -501,7 +546,7 @@ def register_socket_events(socketio):
     @socketio.on('delete_message')
     def handle_delete_message(data):
         try:
-            if 'user_id' not in session:
+            if not _ensure_session_token('delete_message'):
                 return
             
             message_id = data.get('message_id')
@@ -535,8 +580,7 @@ def register_socket_events(socketio):
             reactions = data.get('reactions', [])
             
             # [v4.21] 세션 및 멤버십 확인 강화
-            if 'user_id' not in session:
-                emit('error', {'message': '로그인이 필요합니다.'})
+            if not _ensure_session_token('reaction_updated'):
                 return
             if not room_id or not message_id:
                 emit('error', {'message': '잘못된 요청입니다.'})
@@ -560,8 +604,7 @@ def register_socket_events(socketio):
             poll = data.get('poll')
             
             # [v4.21] 세션 및 멤버십 확인 강화
-            if 'user_id' not in session:
-                emit('error', {'message': '로그인이 필요합니다.'})
+            if not _ensure_session_token('poll_updated'):
                 return
             if not room_id or not poll:
                 emit('error', {'message': '잘못된 요청입니다.'})
@@ -584,8 +627,7 @@ def register_socket_events(socketio):
             poll = data.get('poll')
             
             # [v4.21] 세션 및 멤버십 확인 강화
-            if 'user_id' not in session:
-                emit('error', {'message': '로그인이 필요합니다.'})
+            if not _ensure_session_token('poll_created'):
                 return
             if not room_id or not poll:
                 emit('error', {'message': '잘못된 요청입니다.'})
@@ -604,6 +646,8 @@ def register_socket_events(socketio):
     @socketio.on('pin_updated')
     def handle_pin_updated(data):
         try:
+            if not _ensure_session_token('pin_updated'):
+                return
             room_id = data.get('room_id')
             pins = data.get('pins', [])
             
@@ -632,6 +676,8 @@ def register_socket_events(socketio):
     @socketio.on('admin_updated')
     def handle_admin_updated(data):
         try:
+            if not _ensure_session_token('admin_updated'):
+                return
             room_id = data.get('room_id')
             target_user_id = data.get('user_id')
             is_admin_flag = data.get('is_admin')

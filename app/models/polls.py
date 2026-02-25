@@ -37,6 +37,12 @@ def get_poll(poll_id: int):
     conn = get_db()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            '''
+            UPDATE polls SET closed = 1
+            WHERE closed = 0 AND ends_at IS NOT NULL AND ends_at < datetime('now')
+            '''
+        )
         cursor.execute('SELECT * FROM polls WHERE id = ?', (poll_id,))
         poll = cursor.fetchone()
         if not poll:
@@ -69,6 +75,13 @@ def get_room_polls(room_id: int):
     conn = get_db()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            '''
+            UPDATE polls SET closed = 1
+            WHERE room_id = ? AND closed = 0 AND ends_at IS NOT NULL AND ends_at < datetime('now')
+            ''',
+            (room_id,),
+        )
         cursor.execute('''
             SELECT p.*, u.nickname as creator_name
             FROM polls p
@@ -103,12 +116,30 @@ def vote_poll(poll_id: int, option_id: int, user_id: int):
     cursor = conn.cursor()
     try:
         # 투표 마감 여부 확인
-        cursor.execute('SELECT closed, multiple_choice FROM polls WHERE id = ?', (poll_id,))
+        cursor.execute('SELECT closed, multiple_choice, ends_at FROM polls WHERE id = ?', (poll_id,))
         poll = cursor.fetchone()
         if not poll:
             return False, "투표를 찾을 수 없습니다."
+        cursor.execute(
+            '''
+            UPDATE polls SET closed = 1
+            WHERE id = ? AND closed = 0 AND ends_at IS NOT NULL AND ends_at < datetime('now')
+            ''',
+            (poll_id,),
+        )
+        if cursor.rowcount > 0:
+            conn.commit()
+            return False, "마감된 투표입니다."
         if poll['closed']:
             return False, "마감된 투표입니다."
+
+        # option_id must belong to the same poll.
+        cursor.execute(
+            'SELECT 1 FROM poll_options WHERE id = ? AND poll_id = ?',
+            (option_id, poll_id),
+        )
+        if not cursor.fetchone():
+            return False, "유효하지 않은 옵션입니다."
         
         # 복수 선택 불가 시 기존 투표 삭제
         if not poll['multiple_choice']:

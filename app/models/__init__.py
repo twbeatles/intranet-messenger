@@ -21,6 +21,7 @@ from app.models.base import (
     close_expired_polls,
     cleanup_old_access_logs,
     cleanup_empty_rooms,
+    cleanup_retention_data,
 )
 
 # Users - 사용자 관리
@@ -37,6 +38,7 @@ from app.models.users import (
     log_access,
     change_password,
     get_user_session_token,
+    get_or_create_oidc_user,
     delete_user,
 )
 
@@ -105,14 +107,20 @@ from app.models.reactions import (
     get_messages_reactions,
 )
 
+# Admin Audit Logs
+from app.models.admin_audit import (
+    log_admin_action,
+    get_admin_audit_logs,
+)
+
 __all__ = [
     # Base
     'get_db', 'close_thread_db', 'get_db_context', 'init_db', 'safe_file_delete',
-    'close_expired_polls', 'cleanup_old_access_logs', 'cleanup_empty_rooms',
+    'close_expired_polls', 'cleanup_old_access_logs', 'cleanup_empty_rooms', 'cleanup_retention_data',
     # Users
     'create_user', 'authenticate_user', 'get_user_by_id', 'get_user_by_id_cached',
     'invalidate_user_cache', 'get_all_users', 'update_user_status', 'update_user_profile',
-    'get_online_users', 'log_access', 'change_password', 'get_user_session_token', 'delete_user',
+    'get_online_users', 'log_access', 'change_password', 'get_user_session_token', 'get_or_create_oidc_user', 'delete_user',
     # Rooms
     'create_room', 'get_room_key', 'get_user_rooms', 'get_room_members',
     'is_room_member', 'add_room_member', 'leave_room_db', 'update_room_name',
@@ -130,4 +138,6 @@ __all__ = [
     # Reactions
     'add_reaction', 'remove_reaction', 'toggle_reaction', 
     'get_message_reactions', 'get_messages_reactions',
+    # Admin audit
+    'log_admin_action', 'get_admin_audit_logs',
 ]

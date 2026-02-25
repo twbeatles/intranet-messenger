@@ -45,6 +45,18 @@ async function api(url, options = {}) {
     }
 }
 
+async function loadRuntimeConfig() {
+    try {
+        const cfg = await api('/api/config');
+        window.serverConfig = cfg || {};
+        return window.serverConfig;
+    } catch (err) {
+        console.warn('런타임 설정 로드 실패:', err);
+        window.serverConfig = window.serverConfig || {};
+        return window.serverConfig;
+    }
+}
+
 // ============================================================================
 // 인증 UI 헬퍼
 // ============================================================================
@@ -247,6 +259,7 @@ async function doLogin() {
         });
 
         if (result.success) {
+            await loadRuntimeConfig();
             // CSRF 토큰 갱신
             if (result.csrf_token) {
                 const meta = document.querySelector('meta[name="csrf-token"]');
@@ -344,6 +357,7 @@ async function logout() {
  */
 async function checkSession() {
     try {
+        await loadRuntimeConfig();
         const result = await api('/api/me');
         if (result.logged_in && result.user) {
             currentUser = result.user;
@@ -441,6 +455,7 @@ window.doLogin = doLogin;
 window.doRegister = doRegister;
 window.logout = logout;
 window.checkSession = checkSession;
+window.loadRuntimeConfig = loadRuntimeConfig;
 // [v4.33] 패스워드 강도 검사
 window.calculatePasswordStrength = calculatePasswordStrength;
 window.updatePasswordStrength = updatePasswordStrength;

@@ -123,3 +123,52 @@ Then summarize:
 3) exact files to edit,
 and execute changes with verification (`pytest tests -q`, `pytest --maxfail=1`).
 ```
+
+## 9) 2026-02-25 기준선 업데이트 (Full Remediation)
+
+- 코드 기준선
+  - 리스크 매핑 R-01~R-11 반영 완료
+  - 추가 기능(옵션): OIDC, AV 스캔 큐, Redis state_store, 관리자 감사로그, 보존정책, 백업/복구 런북
+
+- 새/변경 주요 파일
+  - `app/state_store.py`
+  - `app/upload_scan.py`
+  - `app/oidc.py`
+  - `app/models/admin_audit.py`
+  - `app/legacy/models_monolith.py`
+  - `scripts/backup_local.py`
+  - `scripts/restore_local.py`
+  - `scripts/verify_restore.py`
+  - `docs/BACKUP_RUNBOOK.md`
+
+- 공개 API 기준선
+  - `GET /api/config`
+  - `GET /api/upload/jobs/<job_id>`
+  - `GET /api/auth/providers`
+  - `GET /auth/oidc/login`
+  - `GET /auth/oidc/callback`
+  - `GET /api/rooms/<room_id>/admin-audit-logs?format=json|csv`
+
+- 테스트 기준선
+  - `pytest -q` => `71 passed`
+
+- 작업 시 유의사항
+  - 세션 무효화는 HTTP(`before_request`) + Socket(`connect`/핵심 이벤트) 모두 유지
+  - 파일 메시지는 `upload_token` 검증 경로를 우회하지 않도록 유지
+  - `state_store`는 Redis 장애 시 메모리 강등 동작을 유지
+
+## 10) 2026-02-25 정합성 동기화 메모
+
+- README/API 계약/감사 문서/리스크 문서 간 기준선 동기화 완료
+- 테스트 기준선: `pytest -q` -> `71 passed`
+- `.spec` 점검 결과 반영:
+  - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
+  - `redis`, `redis.asyncio`
+  - `docs/BACKUP_RUNBOOK.md` 데이터 포함
+
+### API 계약 고정값
+- `GET /api/config`
+- `POST /api/upload` + `GET /api/upload/jobs/<job_id>`
+- `POST /api/polls/<poll_id>/vote` (`error`, `code`)
+- `GET /api/auth/providers`, `GET /auth/oidc/login`, `GET /auth/oidc/callback`
+- `GET /api/rooms/<room_id>/admin-audit-logs?format=json|csv`

@@ -8,6 +8,9 @@ import os
 import sys
 import logging
 import secrets
+import time
+import json
+import re
 from datetime import timedelta
 
 # gevent monkey patching (반드시 다른 import 전에 실행)
@@ -34,7 +37,7 @@ if not _SKIP_GEVENT and not _GEVENT_ALREADY_PATCHED:
     except ImportError:
         _GEVENT_AVAILABLE = False
 
-from flask import Flask
+from flask import Flask, jsonify, redirect, request, session
 from flask_socketio import SocketIO
 from app.extensions import limiter, csrf, compress
 from flask_session import Session
@@ -47,8 +50,14 @@ try:
         SESSION_TIMEOUT_HOURS, APP_NAME, VERSION, USE_HTTPS,
         STATIC_FOLDER, TEMPLATE_FOLDER,
         ASYNC_MODE, PING_TIMEOUT, PING_INTERVAL, MAX_HTTP_BUFFER_SIZE,
-        MAX_CONNECTIONS, MESSAGE_QUEUE,
-        SOCKETIO_CORS_ALLOWED_ORIGINS
+        MAX_CONNECTIONS, MESSAGE_QUEUE, SOCKETIO_CORS_ALLOWED_ORIGINS,
+        RATE_LIMIT_STORAGE_URI, STATE_STORE_REDIS_URL,
+        MAINTENANCE_INTERVAL_SECONDS, RETENTION_DAYS,
+        FEATURE_OIDC_ENABLED, FEATURE_AV_SCAN_ENABLED, FEATURE_REDIS_ENABLED,
+        OIDC_PROVIDER_NAME, OIDC_ISSUER_URL, OIDC_AUTHORIZE_URL, OIDC_TOKEN_URL, OIDC_USERINFO_URL,
+        OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_SCOPE, OIDC_REDIRECT_URI,
+        AV_SCANNER, AV_CLAMD_HOST, AV_CLAMD_PORT, AV_SCAN_TIMEOUT_SECONDS, UPLOAD_QUARANTINE_FOLDER,
+        SOCKET_SEND_MESSAGE_PER_MINUTE
     )
 except ImportError:
     # 패키징된 환경에서 상대 경로 시도
@@ -59,8 +68,14 @@ except ImportError:
         SESSION_TIMEOUT_HOURS, APP_NAME, VERSION, USE_HTTPS,
         STATIC_FOLDER, TEMPLATE_FOLDER,
         ASYNC_MODE, PING_TIMEOUT, PING_INTERVAL, MAX_HTTP_BUFFER_SIZE,
-        MAX_CONNECTIONS, MESSAGE_QUEUE,
-        SOCKETIO_CORS_ALLOWED_ORIGINS
+        MAX_CONNECTIONS, MESSAGE_QUEUE, SOCKETIO_CORS_ALLOWED_ORIGINS,
+        RATE_LIMIT_STORAGE_URI, STATE_STORE_REDIS_URL,
+        MAINTENANCE_INTERVAL_SECONDS, RETENTION_DAYS,
+        FEATURE_OIDC_ENABLED, FEATURE_AV_SCAN_ENABLED, FEATURE_REDIS_ENABLED,
+        OIDC_PROVIDER_NAME, OIDC_ISSUER_URL, OIDC_AUTHORIZE_URL, OIDC_TOKEN_URL, OIDC_USERINFO_URL,
+        OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_SCOPE, OIDC_REDIRECT_URI,
+        AV_SCANNER, AV_CLAMD_HOST, AV_CLAMD_PORT, AV_SCAN_TIMEOUT_SECONDS, UPLOAD_QUARANTINE_FOLDER,
+        SOCKET_SEND_MESSAGE_PER_MINUTE
     )
 
 # 로깅 설정
@@ -95,6 +110,64 @@ logger = logging.getLogger(__name__)
 # SocketIO 인스턴스 (전역)
 socketio = None
 
+_MOJIBAKE_HINT_TOKENS = (
+    "濡쒓렇", "꾩슂", "뺤옣", "먯꽌", "룞", "몄씠", "⑸땲", "뒿", "媛뺥",
+    "앹꽦", "怨듭", "뚯씪", "紐낆쓽", "쒖냼", "먮룞", "쒕쾭", "곗씠",
+)
+_MOJIBAKE_LATIN_RE = re.compile(r"[Ã-ÿ]{2,}")
+
+
+def _looks_like_mojibake(text: str) -> bool:
+    if not isinstance(text, str) or not text:
+        return False
+    if any(token in text for token in _MOJIBAKE_HINT_TOKENS):
+        return True
+    if _MOJIBAKE_LATIN_RE.search(text):
+        return True
+    if text.count("?") >= 2 and any(ord(ch) > 127 for ch in text):
+        return True
+    return False
+
+
+def _fallback_message_for_status(status_code: int) -> str:
+    if status_code == 400:
+        return "요청 값이 올바르지 않습니다."
+    if status_code == 401:
+        return "로그인이 필요합니다."
+    if status_code == 403:
+        return "접근 권한이 없습니다."
+    if status_code == 404:
+        return "요청한 리소스를 찾을 수 없습니다."
+    if status_code == 429:
+        return "요청 한도를 초과했습니다."
+    if status_code >= 500:
+        return "서버 내부 오류가 발생했습니다."
+    return "요청 처리 중 오류가 발생했습니다."
+
+
+def _normalize_json_response_messages(payload, status_code: int):
+    changed = False
+
+    def walk(node, key_name=None):
+        nonlocal changed
+
+        if isinstance(node, dict):
+            return {k: walk(v, key_name=k) for k, v in node.items()}
+
+        if isinstance(node, list):
+            return [walk(item, key_name=key_name) for item in node]
+
+        if isinstance(node, str) and key_name in ("error", "message", "detail"):
+            if _looks_like_mojibake(node):
+                changed = True
+                return _fallback_message_for_status(status_code)
+            return node
+
+        return node
+
+    normalized = walk(payload)
+    return normalized, changed
+
 
 def create_app():
     """Flask 앱 팩토리"""
@@ -111,6 +184,7 @@ def create_app():
         os.makedirs(template_folder, exist_ok=True)
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(os.path.join(UPLOAD_FOLDER, 'profiles'), exist_ok=True)  # 프로필 이미지 폴더
+    os.makedirs(UPLOAD_QUARANTINE_FOLDER, exist_ok=True)
     
     # Flask 앱 생성
     app = Flask(
@@ -150,6 +224,35 @@ def create_app():
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=SESSION_TIMEOUT_HOURS)
+    app.config['RATELIMIT_STORAGE_URI'] = RATE_LIMIT_STORAGE_URI
+    app.config['STATE_STORE_REDIS_URL'] = STATE_STORE_REDIS_URL
+    app.config['RETENTION_DAYS'] = RETENTION_DAYS
+    app.config['MAINTENANCE_INTERVAL_SECONDS'] = MAINTENANCE_INTERVAL_SECONDS
+    app.config['FEATURE_OIDC_ENABLED'] = FEATURE_OIDC_ENABLED
+    app.config['FEATURE_AV_SCAN_ENABLED'] = FEATURE_AV_SCAN_ENABLED
+    app.config['FEATURE_REDIS_ENABLED'] = FEATURE_REDIS_ENABLED
+    app.config['OIDC_PROVIDER_NAME'] = OIDC_PROVIDER_NAME
+    app.config['OIDC_ISSUER_URL'] = OIDC_ISSUER_URL
+    app.config['OIDC_AUTHORIZE_URL'] = OIDC_AUTHORIZE_URL
+    app.config['OIDC_TOKEN_URL'] = OIDC_TOKEN_URL
+    app.config['OIDC_USERINFO_URL'] = OIDC_USERINFO_URL
+    app.config['OIDC_CLIENT_ID'] = OIDC_CLIENT_ID
+    app.config['OIDC_CLIENT_SECRET'] = OIDC_CLIENT_SECRET
+    app.config['OIDC_SCOPE'] = OIDC_SCOPE
+    app.config['OIDC_REDIRECT_URI'] = OIDC_REDIRECT_URI
+    app.config['AV_SCANNER'] = AV_SCANNER
+    app.config['AV_CLAMD_HOST'] = AV_CLAMD_HOST
+    app.config['AV_CLAMD_PORT'] = AV_CLAMD_PORT
+    app.config['AV_SCAN_TIMEOUT_SECONDS'] = AV_SCAN_TIMEOUT_SECONDS
+    app.config['UPLOAD_QUARANTINE_FOLDER'] = UPLOAD_QUARANTINE_FOLDER
+    app.config['SOCKET_SEND_MESSAGE_PER_MINUTE'] = SOCKET_SEND_MESSAGE_PER_MINUTE
+
+    if str(app.config.get('RATELIMIT_STORAGE_URI', '')).startswith('redis'):
+        try:
+            import redis  # type: ignore # noqa: F401
+        except Exception as exc:
+            logger.warning(f"Redis client unavailable for rate limit storage, falling back to memory:// ({exc})")
+            app.config['RATELIMIT_STORAGE_URI'] = 'memory://'
     
     # [v4.6] Server-Side Session (Filesystem)
     app.config['SESSION_TYPE'] = 'filesystem'
@@ -158,6 +261,9 @@ def create_app():
     app.config['SESSION_USE_SIGNER'] = True
     os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
     Session(app)
+
+    from app.state_store import state_store
+    state_store.init_app(redis_url=app.config.get('STATE_STORE_REDIS_URL') or None)
 
     
     # Socket.IO 초기화 - 비동기 모드 선택
@@ -236,19 +342,87 @@ def create_app():
     
     # 데이터베이스 초기화
     # 데이터베이스 초기화
-    from app.models import init_db, close_thread_db
+    from app.models import (
+        init_db, close_thread_db, get_user_session_token, close_expired_polls,
+        cleanup_old_access_logs, cleanup_empty_rooms, cleanup_retention_data
+    )
     init_db()
+
+    @app.before_request
+    def enforce_session_token():
+        if 'user_id' not in session:
+            return None
+
+        path = request.path or ''
+        if path.startswith('/control/') or path.startswith('/static/'):
+            return None
+        if path in (
+            '/api/login',
+            '/api/register',
+            '/api/logout',
+            '/api/config',
+            '/api/auth/providers',
+            '/auth/oidc/login',
+            '/auth/oidc/callback',
+        ):
+            return None
+
+        user_id = session.get('user_id')
+        db_token = get_user_session_token(user_id)
+        sess_token = session.get('session_token')
+        if not db_token or not sess_token or db_token != sess_token:
+            session.clear()
+            if path.startswith('/api') or path.startswith('/uploads'):
+                return jsonify({'error': '세션이 만료되었거나 다른 세션에서 무효화되었습니다.'}), 401
+            return redirect('/')
+        return None
     
     # [v4.15] 요청 종료 시 DB 연결 정리 (스레드 로컬)
     @app.teardown_appcontext
     def shutdown_session(exception=None):
         close_thread_db()
+
+    def _maintenance_worker():
+        interval = max(30, int(app.config.get('MAINTENANCE_INTERVAL_SECONDS', 300)))
+        retention_days = int(app.config.get('RETENTION_DAYS', 0) or 0)
+        logger.info(f"Maintenance worker started (interval={interval}s, retention_days={retention_days})")
+        while True:
+            try:
+                close_expired_polls()
+                cleanup_old_access_logs()
+                cleanup_empty_rooms()
+                if retention_days > 0:
+                    cleanup_retention_data(retention_days)
+            except Exception as exc:
+                logger.warning(f"Maintenance worker error: {exc}")
+            time.sleep(interval)
+
+    is_testing_runtime = bool(app.config.get('TESTING')) or ('PYTEST_CURRENT_TEST' in os.environ)
+    if is_testing_runtime:
+        logger.info("Testing runtime detected; skipping background maintenance/upload scan workers")
+    else:
+        socketio.start_background_task(_maintenance_worker)
+
+        try:
+            from app.upload_scan import init_upload_scan_worker
+
+            init_upload_scan_worker(app)
+        except Exception as exc:
+            logger.warning(f"Upload scan worker init failed: {exc}")
     
     logger.info(f"{APP_NAME} v{VERSION} 앱 초기화 완료")
     
     # [v4.3] 보안 헤더 설정
     @app.after_request
     def add_security_headers(response):
+        if (request.path or "").startswith("/api") and response.mimetype == "application/json":
+            payload = response.get_json(silent=True)
+            if payload is not None:
+                normalized_payload, changed = _normalize_json_response_messages(payload, response.status_code)
+                if changed:
+                    response.set_data(json.dumps(normalized_payload, ensure_ascii=False).encode("utf-8"))
+                    response.headers["Content-Type"] = "application/json; charset=utf-8"
+
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
         # CSP: 기본적으로 self만 허용, 스타일과 스크립트 inline 허용 (onclick 핸들러 필요)
