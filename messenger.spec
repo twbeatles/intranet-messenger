@@ -61,6 +61,7 @@ a = Analysis(
         'flask_limiter',
         'flask_wtf',
         'flask_compress',
+        'cachelib',
         'cachelib.file',
         
         # 암호화 관련

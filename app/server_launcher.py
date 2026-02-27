@@ -13,6 +13,17 @@ current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+
+def _configure_utf8_stdio():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
+_configure_utf8_stdio()
+
 # gevent 모드를 사용하도록 환경변수 설정
 os.environ['SKIP_GEVENT_PATCH'] = '0'
 

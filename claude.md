@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 프로젝트: `intranet-messenger-main`  
-최종 업데이트: 2026-02-20
+최종 업데이트: 2026-02-27
 
 ## 1) 목적
 
@@ -10,7 +10,7 @@
 ## 2) 세션 시작 시 필수 확인
 
 1. `README.md`  
-2. `IMPLEMENTATION_AUDIT.md`  
+2. `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md`  
 3. 최근 변경 파일:
    - `app/routes.py`
    - `app/sockets.py`
@@ -23,8 +23,8 @@
 
 - 버전 문서 기준: `v4.36.3 (2026-02-20)`
 - 회귀 테스트 기준:
-  - `pytest tests -q` => `64 passed`
-  - `pytest --maxfail=1` => `64 passed`
+  - `pytest tests -q` => `71 passed`
+  - `pytest --maxfail=1` => `71 passed`
 - `pytest.ini` 존재:
   - `testpaths = tests`
   - `norecursedirs = backup dist build`
@@ -116,7 +116,7 @@
 아래를 새 세션 첫 메시지로 사용:
 
 ```
-Read `claude.md`, `README.md`, and `IMPLEMENTATION_AUDIT.md` first.
+Read `claude.md`, `README.md`, and `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md` first.
 Then summarize:
 1) current baseline (tests/contracts),
 2) risks if we change this area,
@@ -159,12 +159,19 @@ and execute changes with verification (`pytest tests -q`, `pytest --maxfail=1`).
 
 ## 10) 2026-02-25 정합성 동기화 메모
 
-- README/API 계약/감사 문서/리스크 문서 간 기준선 동기화 완료
+- README/API 계약/구조 분석 문서 간 기준선 동기화 완료
 - 테스트 기준선: `pytest -q` -> `71 passed`
 - `.spec` 점검 결과 반영:
   - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
   - `redis`, `redis.asyncio`
   - `docs/BACKUP_RUNBOOK.md` 데이터 포함
+
+## 11) 2026-02-27 구조 리스크 개선 반영
+
+- `messenger_server.py`는 deprecated shim으로 유지하고 신규 로직 추가 금지
+- 프론트 업로드 책임은 `static/js/message-upload.js`로 분리
+- 세션 저장소는 `cachelib` 백엔드 기준으로 유지
+- 인코딩 안정성: 서버 진입점 UTF-8 stdio 설정 유지
 
 ### API 계약 고정값
 - `GET /api/config`

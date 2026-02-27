@@ -41,6 +41,10 @@ from flask import Flask, jsonify, redirect, request, session
 from flask_socketio import SocketIO
 from app.extensions import limiter, csrf, compress
 from flask_session import Session
+try:
+    from cachelib.file import FileSystemCache
+except Exception:
+    FileSystemCache = None
 
 
 # config 임포트 (PyInstaller 호환)
@@ -254,12 +258,22 @@ def create_app():
             logger.warning(f"Redis client unavailable for rate limit storage, falling back to memory:// ({exc})")
             app.config['RATELIMIT_STORAGE_URI'] = 'memory://'
     
-    # [v4.6] Server-Side Session (Filesystem)
-    app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_FILE_DIR'] = os.path.join(BASE_DIR, 'flask_session')
+    # [v4.37] Server-Side Session
+    # Prefer cachelib backend to avoid deprecated filesystem session interface.
+    session_dir = os.path.join(BASE_DIR, 'flask_session')
+    os.makedirs(session_dir, exist_ok=True)
     app.config['SESSION_PERMANENT'] = True
-    app.config['SESSION_USE_SIGNER'] = True
-    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+    if FileSystemCache is not None:
+        app.config['SESSION_TYPE'] = 'cachelib'
+        app.config['SESSION_CACHELIB'] = FileSystemCache(
+            cache_dir=session_dir,
+            threshold=1000,
+            mode=0o600,
+        )
+    else:
+        # Fallback for extremely minimal environments.
+        app.config['SESSION_TYPE'] = 'filesystem'
+        app.config['SESSION_FILE_DIR'] = session_dir
     Session(app)
 
     from app.state_store import state_store

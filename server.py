@@ -11,6 +11,18 @@ import sys
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
+
+def _configure_utf8_stdio():
+    """Windows 콘솔 환경에서 인코딩 흔들림을 최소화한다."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
+_configure_utf8_stdio()
+
 # [v4.1] GUI 모드에서는 gevent 비활성화 (PyQt6 충돌 방지)
 # 이 설정은 app/__init__.py의 monkey patching 전에 적용되어야 함
 if len(sys.argv) <= 1 or sys.argv[1] != '--cli':

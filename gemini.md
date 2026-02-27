@@ -1,7 +1,7 @@
 # GEMINI.md
 
 프로젝트: `intranet-messenger-main`  
-최종 업데이트: 2026-02-20
+최종 업데이트: 2026-02-27
 
 ## 1) 문서 목표
 
@@ -11,15 +11,15 @@
 ## 2) 시작 절차 (Session Bootstrap)
 
 1. `README.md` 읽기  
-2. `IMPLEMENTATION_AUDIT.md` 읽기  
+2. `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md` 읽기  
 3. 본 문서(`gemini.md`) 기준으로 작업 계획 수립  
 4. 변경 전 영향 파일/테스트 명시
 
 ## 3) 현재 상태 스냅샷
 
 - 테스트 기준선:
-  - `pytest tests -q` => `64 passed`
-  - `pytest --maxfail=1` => `64 passed`
+  - `pytest tests -q` => `71 passed`
+  - `pytest --maxfail=1` => `71 passed`
 - 테스트 수집 안정화 완료:
   - `pytest.ini` (`testpaths = tests`, `norecursedirs = backup dist build`)
 - 보안/계약 핵심 반영 완료:
@@ -99,7 +99,7 @@
 
 - 코드 계약 바뀌면 최소 다음 문서를 같이 수정:
   - `README.md`
-  - `IMPLEMENTATION_AUDIT.md`
+  - `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md`
   - `claude.md`
   - `gemini.md`
 - 기존 내용 삭제 대신, "업데이트 섹션"을 추가해 이력 보존.
@@ -109,7 +109,7 @@
 새 세션 시작 시:
 
 ```
-Read `gemini.md`, `claude.md`, `README.md`, and `IMPLEMENTATION_AUDIT.md`.
+Read `gemini.md`, `claude.md`, `README.md`, and `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md`.
 Keep current security/API contracts intact.
 When changing code, update docs and run:
 1) pytest tests -q
@@ -117,11 +117,18 @@ When changing code, update docs and run:
 Then report changed files and test results.
 ```
 
-## 9) 2026-02-25 정합성 동기화 메모
+## 10) 2026-02-25 정합성 동기화 메모
 
-- README/API/감사문서/리스크문서 기준선 동기화 완료
+- README/API/구조 분석 문서 기준선 동기화 완료
 - 테스트 기준선: `pytest -q` -> `71 passed`
 - `.spec` 보강 반영:
   - 신규 모듈 hidden import: `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
   - Redis 동적 import: `redis`, `redis.asyncio`
   - 런북 데이터 포함: `docs/BACKUP_RUNBOOK.md`
+
+## 11) 2026-02-27 구조 리스크 개선 메모
+
+- 실행 기준 경로: `server.py` 단일화, `messenger_server.py`는 deprecated shim
+- 프론트 업로드 분리: `static/js/message-upload.js` 추가
+- 세션 저장소: Flask-Session `cachelib` 백엔드 사용
+- 인코딩 안정성: 서버 진입점 UTF-8 stdio 설정 적용

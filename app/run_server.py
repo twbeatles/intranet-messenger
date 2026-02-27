@@ -11,6 +11,17 @@ import threading
 import logging
 from multiprocessing import Queue
 
+
+def _configure_utf8_stdio():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
+_configure_utf8_stdio()
+
 def run_server_process(log_queue, host, port, use_https, ssl_paths=None):
     """
     별도 프로세스에서 Flask-SocketIO 서버 실행

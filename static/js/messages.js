@@ -918,114 +918,34 @@ function parseMentions(text) {
 // ============================================================================
 
 function getUploadMaxSizeBytes() {
-    return (window.serverConfig &&
-        window.serverConfig.upload &&
-        Number(window.serverConfig.upload.max_size_bytes)) || (16 * 1024 * 1024);
+    if (!window.MessengerUpload) return 16 * 1024 * 1024;
+    return window.MessengerUpload.getUploadMaxSizeBytes();
 }
 
 function _inferMessageType(file) {
-    var ext = (file.name.split('.').pop() || '').toLowerCase();
-    var imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'];
-    return imageExts.includes(ext) || (file.type || '').startsWith('image/') ? 'image' : 'file';
+    if (!window.MessengerUpload) return 'file';
+    return window.MessengerUpload.inferMessageType(file);
 }
 
 function _emitUploadedFileMessage(file, result, replyToId) {
-    if (!socket || !socket.connected) {
-        if (typeof showToast === 'function') {
-            showToast('서버 연결이 끊어졌습니다. 파일은 업로드되었으나 메시지 전송에 실패했습니다.', 'warning');
-        }
-        return false;
-    }
-
-    if (!result.upload_token) {
-        if (typeof showToast === 'function') {
-            showToast('업로드 토큰 발급에 실패했습니다. 다시 업로드해주세요.', 'error');
-        }
-        return false;
-    }
-
-    safeSocketEmit('send_message', {
-        room_id: currentRoom.id,
-        content: file.name || '',
-        type: _inferMessageType(file),
-        upload_token: result.upload_token,
-        file_path: result.file_path,
-        file_name: result.file_name || file.name,
-        encrypted: false,
-        reply_to: replyToId || null
-    });
-    if (typeof clearReply === 'function') clearReply();
-    if (typeof showToast === 'function') showToast('파일이 전송되었습니다.', 'success');
-    return true;
+    if (!window.MessengerUpload) return false;
+    return window.MessengerUpload.emitUploadedFileMessage(file, result, replyToId);
 }
 
 function _pollUploadScanJob(jobId, file, replyToId, onDone) {
-    var maxAttempts = 40;
-    var intervalMs = 1500;
-    var attempts = 0;
-
-    function finish() {
+    if (!window.MessengerUpload) {
         if (typeof onDone === 'function') onDone();
+        return;
     }
-
-    function tick() {
-        attempts += 1;
-        fetch('/api/upload/jobs/' + encodeURIComponent(jobId), { credentials: 'same-origin' })
-            .then(function (res) { return res.json(); })
-            .then(function (data) {
-                var status = (data && data.scan_status) || 'pending';
-                if (status === 'pending') {
-                    if (attempts >= maxAttempts) {
-                        if (typeof showToast === 'function') showToast('파일 검사 시간이 초과되었습니다.', 'error');
-                        finish();
-                        return;
-                    }
-                    setTimeout(tick, intervalMs);
-                    return;
-                }
-
-                if (status === 'clean') {
-                    _emitUploadedFileMessage(file, data, replyToId);
-                    finish();
-                    return;
-                }
-
-                if (typeof showToast === 'function') {
-                    showToast((data && data.error) || '파일 검사에 실패했습니다.', 'error');
-                }
-                finish();
-            })
-            .catch(function () {
-                if (attempts >= maxAttempts) {
-                    if (typeof showToast === 'function') showToast('파일 검사 상태 조회에 실패했습니다.', 'error');
-                    finish();
-                    return;
-                }
-                setTimeout(tick, intervalMs);
-            });
-    }
-
-    tick();
+    window.MessengerUpload.pollUploadScanJob(jobId, file, replyToId, onDone);
 }
 
 function _handleUploadApiResult(file, result, replyToId, onDone) {
-    if (!result || !result.success) {
-        if (typeof showToast === 'function') {
-            showToast((result && result.error) || '파일 업로드 실패', 'error');
-        }
+    if (!window.MessengerUpload) {
         if (typeof onDone === 'function') onDone();
         return;
     }
-
-    var status = result.scan_status || (result.upload_token ? 'clean' : 'pending');
-    if (status === 'pending') {
-        if (typeof showToast === 'function') showToast('파일 보안 검사를 진행 중입니다.', 'info');
-        _pollUploadScanJob(result.job_id, file, replyToId, onDone);
-        return;
-    }
-
-    _emitUploadedFileMessage(file, result, replyToId);
-    if (typeof onDone === 'function') onDone();
+    window.MessengerUpload.handleUploadApiResult(file, result, replyToId, onDone);
 }
 
 /**
@@ -1033,86 +953,8 @@ function _handleUploadApiResult(file, result, replyToId, onDone) {
  * [v4.31] 업로드 진행률 표시 추가
  */
 async function handleFileUpload(e) {
-    var file = e.target.files[0];
-    if (!file || !currentRoom) return;
-
-    var formData = new FormData();
-    formData.append('file', file);
-    formData.append('room_id', currentRoom.id);
-
-    // CSRF 토큰 추가
-    var csrfToken = document.querySelector('meta[name="csrf-token"]');
-
-    // [v4.31] XMLHttpRequest로 진행률 추적
-    var xhr = new XMLHttpRequest();
-    var progressToastId = null;
-
-    xhr.upload.onprogress = function (event) {
-        if (event.lengthComputable) {
-            var percent = Math.round((event.loaded / event.total) * 100);
-            // [v4.32] 진행률 토스트 개선: 25%, 50%, 75%에서 업데이트
-            if (percent >= 25 && !progressToastId) {
-                progressToastId = 25;
-                showToast('📤 파일 업로드 시작... 25%', 'info');
-            } else if (percent >= 50 && progressToastId < 50) {
-                progressToastId = 50;
-                showToast('📤 파일 업로드 중... 50%', 'info');
-            } else if (percent >= 75 && progressToastId < 75) {
-                progressToastId = 75;
-                showToast('📤 거의 완료... 75%', 'info');
-            }
-        }
-    };
-
-    xhr.onload = function () {
-        try {
-            var result = JSON.parse(xhr.responseText);
-
-            if (result.success) {
-                _handleUploadApiResult(
-                    file,
-                    result,
-                    (typeof replyingTo !== 'undefined' && replyingTo) ? replyingTo.id : null,
-                    function () { e.target.value = ''; }
-                );
-                return;
-            } else {
-                if (typeof showToast === 'function') {
-                    showToast(result.error || '파일 업로드 실패', 'error');
-                }
-            }
-        } catch (err) {
-            console.error('파일 업로드 응답 파싱 실패:', err);
-            if (typeof showToast === 'function') {
-                showToast('파일 업로드 응답 처리 실패', 'error');
-            }
-        }
-        e.target.value = '';
-    };
-
-    xhr.onerror = function () {
-        console.error('파일 업로드 실패');
-        if (typeof showToast === 'function') {
-            showToast('파일 업로드에 실패했습니다.', 'error');
-        }
-        e.target.value = '';
-    };
-
-    // [v4.32] 타임아웃 처리 추가 (2분)
-    xhr.timeout = 120000;
-    xhr.ontimeout = function () {
-        console.error('파일 업로드 타임아웃');
-        if (typeof showToast === 'function') {
-            showToast('파일 업로드 시간이 초과되었습니다. 더 작은 파일을 시도하거나 네트워크 연결을 확인하세요.', 'error');
-        }
-        e.target.value = '';
-    };
-
-    xhr.open('POST', '/api/upload');
-    if (csrfToken) {
-        xhr.setRequestHeader('X-CSRFToken', csrfToken.getAttribute('content'));
-    }
-    xhr.send(formData);
+    if (!window.MessengerUpload) return;
+    return window.MessengerUpload.handleFileUploadEvent(e);
 }
 
 
@@ -1353,65 +1195,13 @@ function setupDragDrop() {
 }
 
 function handleDroppedFiles(files) {
-    if (!currentRoom) {
-        if (typeof showToast === 'function') showToast('먼저 대화방을 선택해주세요.', 'warning');
-        return;
-    }
-    for (var i = 0; i < files.length; i++) {
-        var file = files[i];
-        var maxSize = getUploadMaxSizeBytes();
-        if (file.size > maxSize) {
-            if (typeof showToast === 'function') showToast('파일 크기 제한을 초과했습니다.', 'warning');
-            continue;
-        }
-        uploadFile(file);
-    }
+    if (!window.MessengerUpload) return;
+    return window.MessengerUpload.handleDroppedFiles(files);
 }
 
 function uploadFile(file) {
-    if (!currentRoom) return;
-    var formData = new FormData();
-    formData.append('file', file);
-    formData.append('room_id', currentRoom.id);
-
-    var csrfToken = document.querySelector('meta[name="csrf-token"]');
-
-    // [v4.32] XMLHttpRequest로 변경 - 타임아웃 지원
-    var xhr = new XMLHttpRequest();
-
-    xhr.onload = function () {
-        try {
-            var result = JSON.parse(xhr.responseText);
-            _handleUploadApiResult(
-                file,
-                result,
-                (typeof replyingTo !== 'undefined' && replyingTo) ? replyingTo.id : null
-            );
-        } catch (err) {
-            console.error('파일 업로드 응답 파싱 실패:', err);
-            if (typeof showToast === 'function') showToast('파일 업로드에 실패했습니다.', 'error');
-        }
-    };
-
-    xhr.onerror = function () {
-        console.error('파일 업로드 실패');
-        if (typeof showToast === 'function') showToast('파일 업로드에 실패했습니다.', 'error');
-    };
-
-    // [v4.32] 타임아웃 처리 (2분)
-    xhr.timeout = 120000;
-    xhr.ontimeout = function () {
-        console.error('파일 업로드 타임아웃');
-        if (typeof showToast === 'function') {
-            showToast('파일 업로드 시간이 초과되었습니다.', 'error');
-        }
-    };
-
-    xhr.open('POST', '/api/upload');
-    if (csrfToken) {
-        xhr.setRequestHeader('X-CSRFToken', csrfToken.getAttribute('content'));
-    }
-    xhr.send(formData);
+    if (!window.MessengerUpload) return;
+    return window.MessengerUpload.uploadFile(file);
 }
 
 // ============================================================================

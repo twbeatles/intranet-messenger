@@ -2,13 +2,13 @@
 
 내부망 전용 메신저 서버(Flask + Socket.IO)입니다.
 
-- 기준일: 2026-02-25
+- 기준일: 2026-02-27
 - 기준 브랜치: `main`
 - 최신 검증: `pytest -q` -> `71 passed`
 
 ## 1. 프로젝트 상태
 
-이번 주기에서 리스크 리뷰 문서(`INTRANET_MESSENGER_RISK_GAP_REVIEW_2026-02-25.md`)의 핵심 항목을 반영했습니다.
+이번 주기에서 보안/구조 개선 항목을 반영했습니다.
 
 - R-01 ~ R-11 대응 코드 반영
 - OIDC(옵션), AV 스캔 파이프라인(옵션), Redis state store(옵션) 반영
@@ -51,6 +51,11 @@ pip install -r requirements.txt
 ```bash
 python server.py --cli
 ```
+
+실행 기준 경로:
+
+- 표준 진입점: `server.py`
+- 레거시 호환 파일: `messenger_server.py` (deprecated shim, 신규 로직 추가 금지)
 
 브라우저 접속:
 
@@ -194,12 +199,22 @@ pyinstaller messenger.spec --clean
 
 - [claude.md](claude.md)
 - [gemini.md](gemini.md)
-- [IMPLEMENTATION_AUDIT.md](IMPLEMENTATION_AUDIT.md)
-- [INTRANET_MESSENGER_RISK_GAP_REVIEW_2026-02-25.md](INTRANET_MESSENGER_RISK_GAP_REVIEW_2026-02-25.md)
 - [docs/BACKUP_RUNBOOK.md](docs/BACKUP_RUNBOOK.md)
+- [PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md](PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md)
 
 ## 14. 2026-02-25 변경 요약
 
 - 리스크 R-01~R-11 대응 구현 반영
 - 추가 기능 7개(옵션 기반) 구현 반영
 - 테스트/문서/운영 런북 동기화 완료
+
+## 15. 2026-02-27 정합성 업데이트
+
+- 구조 리스크 개선 반영:
+  - `messenger_server.py` deprecated shim 전환(실행 기준 `server.py` 단일화)
+  - 파일 업로드 책임 분리(`static/js/message-upload.js`)
+  - 서버 진입점 UTF-8 stdio 고정 + 소켓 오류 메시지 정규화
+  - Flask-Session deprecation 대응(`cachelib` 백엔드 전환)
+- `.spec` 점검 결과:
+  - `static` 디렉터리 포함으로 신규 프론트 파일(`message-upload.js`)은 추가 설정 없이 패키징 포함
+  - `cachelib.file` hidden import 이미 반영됨(유지)
