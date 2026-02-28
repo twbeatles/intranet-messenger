@@ -25,6 +25,7 @@ from app.models import (
     add_room_file, get_room_files, delete_room_file,
     add_reaction, remove_reaction, toggle_reaction, get_message_reactions, get_messages_reactions,
     set_room_admin, is_room_admin, get_room_admins, advanced_search,
+    create_message,
     # v4.1 異붽? 湲곕뒫
     change_password, delete_user, get_or_create_oidc_user,
     log_admin_action, get_admin_audit_logs,
@@ -89,6 +90,54 @@ def register_routes(app):
             return None, json_error('JSON object payload is required.', 400, 'invalid_json')
         return data, None
 
+    def parse_int_from_json(data: dict, key: str, default: int, *, minimum: int | None = None, maximum: int | None = None):
+        value = data.get(key, default)
+        if value in (None, ""):
+            value = default
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None, json_error(f"Invalid integer for '{key}'.", 400, f"invalid_{key}")
+        if minimum is not None:
+            parsed = max(parsed, minimum)
+        if maximum is not None:
+            parsed = min(parsed, maximum)
+        return parsed, None
+
+    def _get_socketio():
+        try:
+            from app import socketio as socketio_instance
+            return socketio_instance
+        except Exception:
+            return None
+
+    def _emit_room_members_updated(room_id: int):
+        socketio_instance = _get_socketio()
+        if not socketio_instance:
+            return
+        try:
+            socketio_instance.emit('room_members_updated', {'room_id': room_id}, room=f'room_{room_id}')
+        except Exception as e:
+            logger.warning(f"room_members_updated emit failed: room_id={room_id}, error={e}")
+
+    def _emit_pin_updated(room_id: int):
+        socketio_instance = _get_socketio()
+        if not socketio_instance:
+            return
+        try:
+            socketio_instance.emit('pin_updated', {'room_id': room_id}, room=f'room_{room_id}')
+        except Exception as e:
+            logger.warning(f"pin_updated emit failed: room_id={room_id}, error={e}")
+
+    def _emit_pin_system_message(room_id: int, actor_user_id: int, content: str):
+        socketio_instance = _get_socketio()
+        try:
+            sys_msg = create_message(room_id, actor_user_id, content, 'system')
+            if sys_msg and socketio_instance:
+                socketio_instance.emit('new_message', sys_msg, room=f'room_{room_id}')
+        except Exception as e:
+            logger.warning(f"pin system message emit failed: room_id={room_id}, error={e}")
+
     def _get_max_upload_size() -> int:
         return int(app.config.get('MAX_CONTENT_LENGTH') or MAX_CONTENT_LENGTH or 16 * 1024 * 1024)
 
@@ -103,6 +152,7 @@ def register_routes(app):
                 'upload': '10/min',
                 'search_advanced': '30/min',
                 'socket_send_message': f"{int(app.config.get('SOCKET_SEND_MESSAGE_PER_MINUTE', SOCKET_SEND_MESSAGE_PER_MINUTE))}/min",
+                'socket_pin_updated': f"{int(app.config.get('SOCKET_PIN_UPDATED_PER_MINUTE', 30))}/min",
             },
             'features': {
                 'oidc': bool(app.config.get('FEATURE_OIDC_ENABLED', FEATURE_OIDC_ENABLED)),
@@ -156,10 +206,14 @@ def register_routes(app):
         if not oidc_enabled(app):
             return redirect('/')
 
-        expected_state = session.get('oidc_state')
+        expected_state = session.pop('oidc_state', None)
+        expected_nonce = session.pop('oidc_nonce', None)
         state = request.args.get('state')
         if not expected_state or not state or state != expected_state:
             logger.warning("OIDC callback state mismatch")
+            return redirect('/')
+        if not expected_nonce:
+            logger.warning("OIDC callback nonce missing")
             return redirect('/')
 
         code = request.args.get('code')
@@ -168,7 +222,12 @@ def register_routes(app):
 
         redirect_uri = app.config.get('OIDC_REDIRECT_URI') or url_for('oidc_callback', _external=True)
         try:
-            claims = exchange_code_for_userinfo(app, code=code, redirect_uri=redirect_uri)
+            claims = exchange_code_for_userinfo(
+                app,
+                code=code,
+                redirect_uri=redirect_uri,
+                expected_nonce=expected_nonce,
+            )
             provider = app.config.get('OIDC_PROVIDER_NAME', 'oidc')
             subject = (claims or {}).get('sub')
             if not subject:
@@ -433,6 +492,7 @@ def register_routes(app):
                 added += 1
         
         if added > 0:
+            _emit_room_members_updated(room_id)
             return jsonify({'success': True, 'added_count': added})
         return jsonify({'error': '?대? 李몄뿬以묒씤 ?ъ슜?먯엯?덈떎.'}), 400
     
@@ -440,9 +500,14 @@ def register_routes(app):
     def leave_room_route(room_id):
         if 'user_id' not in session:
             return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
-        
-        leave_room_db(room_id, session['user_id'])
-        return jsonify({'success': True})
+
+        user_id = session['user_id']
+        if not is_room_member(room_id, user_id):
+            return jsonify({'success': True, 'left': False, 'already_left': True})
+
+        leave_room_db(room_id, user_id)
+        _emit_room_members_updated(room_id)
+        return jsonify({'success': True, 'left': True, 'already_left': False})
     
     @app.route('/api/rooms/<int:room_id>/members/<int:target_user_id>', methods=['DELETE'])
     def kick_member(room_id, target_user_id):        # [v4.9] 관리자 강퇴 처리
@@ -466,6 +531,7 @@ def register_routes(app):
             return jsonify({'error': '?대떦 ?ъ슜?먮뒗 ??붾갑 硫ㅻ쾭媛 ?꾨떃?덈떎.'}), 400
         
         leave_room_db(room_id, target_user_id)
+        _emit_room_members_updated(room_id)
         log_admin_action(
             room_id=room_id,
             actor_user_id=session['user_id'],
@@ -768,8 +834,13 @@ def register_routes(app):
             safe_path = safe_filename
 
         # 寃쎈줈 寃利?
+        upload_root = os.path.realpath(upload_folder)
         full_path = os.path.realpath(os.path.join(upload_folder, safe_path))
-        if not full_path.startswith(os.path.realpath(upload_folder)):
+        try:
+            within_root = os.path.commonpath([full_path, upload_root]) == upload_root
+        except ValueError:
+            within_root = False
+        if not within_root:
             logger.warning(f"Path traversal attempt: {filename}")
             return jsonify({'error': '?섎せ???붿껌?낅땲??'}), 400
 
@@ -984,6 +1055,13 @@ def register_routes(app):
         
         pin_id = pin_message(room_id, session['user_id'], message_id, content)
         if pin_id:
+            nickname = session.get('nickname', 'User')
+            _emit_pin_system_message(
+                room_id,
+                session['user_id'],
+                f"{nickname} pinned a message.",
+            )
+            _emit_pin_updated(room_id)
             return jsonify({'success': True, 'pin_id': pin_id})
         return jsonify({'error': '怨듭? 怨좎젙???ㅽ뙣?덉뒿?덈떎.'}), 500
     
@@ -998,6 +1076,13 @@ def register_routes(app):
         
         success, error = unpin_message(pin_id, session['user_id'], room_id)
         if success:
+            nickname = session.get('nickname', 'User')
+            _emit_pin_system_message(
+                room_id,
+                session['user_id'],
+                f"{nickname} removed a pinned message.",
+            )
+            _emit_pin_updated(room_id)
             return jsonify({'success': True})
         if error and '찾을 수 없습니다' in error:
             return jsonify({'error': error}), 404
@@ -1288,6 +1373,12 @@ def register_routes(app):
         data, error_response = parse_json_payload()
         if error_response:
             return error_response
+        limit, error_response = parse_int_from_json(data, 'limit', 50, minimum=1, maximum=200)
+        if error_response:
+            return error_response
+        offset, error_response = parse_int_from_json(data, 'offset', 0, minimum=0)
+        if error_response:
+            return error_response
         results = advanced_search(
             user_id=session['user_id'],
             query=data.get('query'),
@@ -1296,8 +1387,8 @@ def register_routes(app):
             date_from=data.get('date_from'),
             date_to=data.get('date_to'),
             file_only=data.get('file_only', False),
-            limit=min(max(int(data.get('limit', 50) or 50), 1), 200),
-            offset=max(int(data.get('offset', 0) or 0), 0),
+            limit=limit,
+            offset=offset,
         )
         return jsonify(results)
 

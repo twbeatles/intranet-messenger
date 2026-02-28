@@ -102,6 +102,8 @@ STATE_STORE_REDIS_URL = os.getenv("STATE_STORE_REDIS_URL", REDIS_URL or "")
 
 # Socket message rate limit (per-user)
 SOCKET_SEND_MESSAGE_PER_MINUTE = int(os.getenv("SOCKET_SEND_MESSAGE_PER_MINUTE", "100"))
+# Socket pin update event rate limit (per-user)
+SOCKET_PIN_UPDATED_PER_MINUTE = int(os.getenv("SOCKET_PIN_UPDATED_PER_MINUTE", "30"))
 
 # Feature toggles
 FEATURE_OIDC_ENABLED = _env_bool("FEATURE_OIDC_ENABLED", False)
@@ -118,6 +120,8 @@ OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "")
 OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
 OIDC_SCOPE = os.getenv("OIDC_SCOPE", "openid profile email")
 OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "")
+OIDC_JWKS_URL = os.getenv("OIDC_JWKS_URL", "")
+OIDC_JWKS_CACHE_SECONDS = int(os.getenv("OIDC_JWKS_CACHE_SECONDS", "300"))
 
 # AV scan settings (optional, clamd TCP)
 AV_SCANNER = os.getenv("AV_SCANNER", "clamav")

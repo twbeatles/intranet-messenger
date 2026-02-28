@@ -142,7 +142,7 @@ async function createPoll() {
             showToast('투표가 생성되었습니다.', 'success');
             $('pollModal').classList.remove('active');
             if (typeof socket !== 'undefined' && socket && socket.connected) {
-                safeSocketEmit('poll_created', { room_id: currentRoom.id, poll: result.poll });
+                safeSocketEmit('poll_created', { room_id: currentRoom.id, poll_id: result.poll && result.poll.id, poll: result.poll });
             }
             loadRoomPolls();
         }
@@ -163,7 +163,7 @@ async function votePoll(pollId, optionId) {
         if (result.success) {
             updatePollDisplay(result.poll);
             if (typeof socket !== 'undefined' && socket && socket.connected) {
-                safeSocketEmit('poll_updated', { room_id: currentRoom.id, poll: result.poll });
+                safeSocketEmit('poll_updated', { room_id: currentRoom.id, poll_id: result.poll && result.poll.id, poll: result.poll });
             }
         }
     } catch (e) {
@@ -460,9 +460,6 @@ async function pinCurrentMessage(messageId, content) {
         if (result.success) {
             showToast('공지로 고정되었습니다.', 'success');
             loadPinnedMessages();
-            if (typeof socket !== 'undefined' && socket && socket.connected) {
-                safeSocketEmit('pin_updated', { room_id: currentRoom.id });
-            }
         }
     } catch (e) {
         showToast('공지 고정에 실패했습니다.', 'error');
@@ -481,9 +478,6 @@ async function deletePin(pinId) {
         if (result.success) {
             showToast('공지가 삭제되었습니다.', 'success');
             loadPinnedMessages();
-            if (typeof socket !== 'undefined' && socket && socket.connected) {
-                safeSocketEmit('pin_updated', { room_id: currentRoom.id });
-            }
         } else {
             showToast(result.error || '공지 삭제 실패', 'error');
         }

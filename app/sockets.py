@@ -14,7 +14,8 @@ from flask_socketio import emit, join_room, leave_room, disconnect
 from app.models import (
     update_user_status, get_user_by_id, is_room_member, is_room_admin,
     create_message, update_last_read, get_unread_count, server_stats,
-    get_user_rooms, edit_message, delete_message, get_user_session_token
+    get_user_rooms, edit_message, delete_message, get_user_session_token,
+    get_message_room_id, get_message_reactions, get_poll
 )
 from app.upload_tokens import consume_upload_token, get_upload_token_failure_reason
 from app.state_store import state_store
@@ -155,6 +156,20 @@ def register_socket_events(socketio):
         key = f"socket:send_message:{user_id}"
         count = state_store.incr(key, ttl_seconds=60)
         return count <= per_minute
+
+    def _parse_positive_int(data, key: str):
+        try:
+            value = int(data.get(key))
+            if value <= 0:
+                return None
+            return value
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    def _check_event_rate_limit(event: str, user_id: int, per_minute: int) -> bool:
+        key = f"socket:{event}:{user_id}"
+        count = state_store.incr(key, ttl_seconds=60)
+        return count <= max(int(per_minute), 1)
 
     @socketio.on('connect')
     def handle_connect():
@@ -507,14 +522,18 @@ def register_socket_events(socketio):
     @socketio.on('room_members_updated')
     def handle_room_members_updated(data):
         try:
-            # [v4.14] 세션 검증 추가
             if not _ensure_session_token('room_members_updated'):
                 return
-            
-            room_id = data.get('room_id')
-            if room_id:
-                # 관련 사용자들의 캐시 무효화
-                emit('room_members_updated', {'room_id': room_id}, room=f'room_{room_id}')
+
+            room_id = _parse_positive_int(data or {}, 'room_id')
+            if not room_id:
+                _emit_error('Invalid request.')
+                return
+            if not is_room_member(room_id, session['user_id']):
+                _emit_error('Room access denied.')
+                return
+
+            emit('room_members_updated', {'room_id': room_id}, room=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Room members update broadcast error: {e}")
     
@@ -524,19 +543,21 @@ def register_socket_events(socketio):
         try:
             if not _ensure_session_token('profile_updated'):
                 return
-            if 'user_id' in session:
-                user_id = session['user_id']
-                nickname = data.get('nickname')
-                profile_image = data.get('profile_image')
-                
-                # 모든 클라이언트에게 브로드캐스트 (본인 제외)
-                emit('user_profile_updated', {
-                    'user_id': user_id,
-                    'nickname': nickname,
-                    'profile_image': profile_image
-                }, broadcast=True, include_self=False)
-                
-                logger.info(f"Profile updated broadcast: user_id={user_id}, nickname={nickname}, image={profile_image}")
+            if 'user_id' not in session:
+                return
+
+            user_id = session['user_id']
+            user = get_user_by_id(user_id)
+            if not user:
+                return
+
+            emit('user_profile_updated', {
+                'user_id': user_id,
+                'nickname': user.get('nickname'),
+                'profile_image': user.get('profile_image')
+            }, broadcast=True, include_self=False)
+
+            logger.info(f"Profile updated broadcast: user_id={user_id}")
         except Exception as e:
             logger.error(f"Profile update broadcast error: {e}")
 
@@ -601,21 +622,26 @@ def register_socket_events(socketio):
     @socketio.on('reaction_updated')
     def handle_reaction_updated(data):
         try:
-            room_id = data.get('room_id')
-            message_id = data.get('message_id')
-            reactions = data.get('reactions', [])
-            
-            # [v4.21] 세션 및 멤버십 확인 강화
             if not _ensure_session_token('reaction_updated'):
                 return
+
+            room_id = _parse_positive_int(data or {}, 'room_id')
+            message_id = _parse_positive_int(data or {}, 'message_id')
             if not room_id or not message_id:
-                _emit_error('잘못된 요청입니다.')
+                _emit_error('Invalid request.')
                 return
             if not is_room_member(room_id, session['user_id']):
-                _emit_error('대화방 멤버만 리액션을 추가할 수 있습니다.')
+                _emit_error('Room access denied.')
                 return
-            
+
+            message_room_id = get_message_room_id(message_id)
+            if message_room_id != room_id:
+                _emit_error('Invalid request.')
+                return
+
+            reactions = get_message_reactions(message_id)
             emit('reaction_updated', {
+                'room_id': room_id,
                 'message_id': message_id,
                 'reactions': reactions
             }, room=f'room_{room_id}')
@@ -626,20 +652,30 @@ def register_socket_events(socketio):
     @socketio.on('poll_updated')
     def handle_poll_updated(data):
         try:
-            room_id = data.get('room_id')
-            poll = data.get('poll')
-            
-            # [v4.21] 세션 및 멤버십 확인 강화
             if not _ensure_session_token('poll_updated'):
                 return
-            if not room_id or not poll:
-                _emit_error('잘못된 요청입니다.')
+
+            room_id = _parse_positive_int(data or {}, 'room_id')
+            poll_id = _parse_positive_int(data or {}, 'poll_id')
+            if not poll_id:
+                poll_payload = (data or {}).get('poll') if isinstance(data, dict) else None
+                if isinstance(poll_payload, dict):
+                    poll_id = _parse_positive_int(poll_payload, 'id')
+
+            if not room_id or not poll_id:
+                _emit_error('Invalid request.')
                 return
             if not is_room_member(room_id, session['user_id']):
-                _emit_error('대화방 멤버만 투표를 업데이트할 수 있습니다.')
+                _emit_error('Room access denied.')
                 return
-            
+
+            poll = get_poll(poll_id)
+            if not poll or int(poll.get('room_id', 0)) != room_id:
+                _emit_error('Invalid request.')
+                return
+
             emit('poll_updated', {
+                'room_id': room_id,
                 'poll': poll
             }, room=f'room_{room_id}')
         except Exception as e:
@@ -649,20 +685,30 @@ def register_socket_events(socketio):
     @socketio.on('poll_created')
     def handle_poll_created(data):
         try:
-            room_id = data.get('room_id')
-            poll = data.get('poll')
-            
-            # [v4.21] 세션 및 멤버십 확인 강화
             if not _ensure_session_token('poll_created'):
                 return
-            if not room_id or not poll:
-                _emit_error('잘못된 요청입니다.')
+
+            room_id = _parse_positive_int(data or {}, 'room_id')
+            poll_id = _parse_positive_int(data or {}, 'poll_id')
+            if not poll_id:
+                poll_payload = (data or {}).get('poll') if isinstance(data, dict) else None
+                if isinstance(poll_payload, dict):
+                    poll_id = _parse_positive_int(poll_payload, 'id')
+
+            if not room_id or not poll_id:
+                _emit_error('Invalid request.')
                 return
             if not is_room_member(room_id, session['user_id']):
-                _emit_error('대화방 멤버만 투표를 생성할 수 있습니다.')
+                _emit_error('Room access denied.')
                 return
-            
+
+            poll = get_poll(poll_id)
+            if not poll or int(poll.get('room_id', 0)) != room_id:
+                _emit_error('Invalid request.')
+                return
+
             emit('poll_created', {
+                'room_id': room_id,
                 'poll': poll
             }, room=f'room_{room_id}')
         except Exception as e:
@@ -674,27 +720,23 @@ def register_socket_events(socketio):
         try:
             if not _ensure_session_token('pin_updated'):
                 return
-            room_id = data.get('room_id')
-            pins = data.get('pins', [])
-            
-            if room_id and 'user_id' in session:
-                # [v4.10] 모든 멤버가 공지 가능
-                if not is_room_member(room_id, session['user_id']):
-                    _emit_error('대화방 멤버만 공지를 수정할 수 있습니다.')
-                    return
-                
-                # 시스템 메시지 생성
-                nickname = session.get('nickname', '사용자')
-                content = f"{nickname}님이 공지사항을 업데이트했습니다."
-                sys_msg = create_message(room_id, session['user_id'], content, 'system')
-                
-                if sys_msg:
-                    emit('new_message', sys_msg, room=f'room_{room_id}')
-                
-                emit('pin_updated', {
-                    'room_id': room_id,
-                    'pins': pins
-                }, room=f'room_{room_id}')
+
+            room_id = _parse_positive_int(data or {}, 'room_id')
+            if not room_id:
+                _emit_error('Invalid request.')
+                return
+            if not is_room_member(room_id, session['user_id']):
+                _emit_error('Room access denied.')
+                return
+
+            per_minute = int(current_app.config.get('SOCKET_PIN_UPDATED_PER_MINUTE', 30))
+            if not _check_event_rate_limit('pin_updated', session['user_id'], per_minute):
+                _emit_error('Too many requests.')
+                return
+
+            emit('pin_updated', {
+                'room_id': room_id,
+            }, room=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Pin update broadcast error: {e}")
     

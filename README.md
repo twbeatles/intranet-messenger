@@ -2,9 +2,9 @@
 
 내부망 전용 메신저 서버(Flask + Socket.IO)입니다.
 
-- 기준일: 2026-02-27
+- 기준일: 2026-02-28
 - 기준 브랜치: `main`
-- 최신 검증: `pytest -q` -> `71 passed`
+- 최신 검증: `pytest -q` -> `84 passed`
 
 ## 1. 프로젝트 상태
 
@@ -75,9 +75,12 @@ python server.py --cli
   - `RATE_LIMIT_STORAGE_URI` (기본 `memory://`)
   - `STATE_STORE_REDIS_URL` (기본 공백)
   - `SOCKET_SEND_MESSAGE_PER_MINUTE` (기본 100)
+  - `SOCKET_PIN_UPDATED_PER_MINUTE` (기본 30)
 - OIDC(옵션)
   - `FEATURE_OIDC_ENABLED`
   - `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` 등
+  - `OIDC_JWKS_URL` (기본 공백, 미설정 시 well-known `jwks_uri` 사용)
+  - `OIDC_JWKS_CACHE_SECONDS` (기본 300)
 - AV 스캔(옵션)
   - `FEATURE_AV_SCAN_ENABLED`
   - `AV_CLAMD_HOST`, `AV_CLAMD_PORT`, `AV_SCAN_TIMEOUT_SECONDS`
@@ -91,7 +94,7 @@ python server.py --cli
 - `GET /api/config`
 - 응답 필드:
   - `upload.max_size_bytes`
-  - `rate_limits.{login,register,upload,search_advanced,socket_send_message}`
+  - `rate_limits.{login,register,upload,search_advanced,socket_send_message,socket_pin_updated}`
   - `features.{oidc,av,redis}`
 
 ### 7.2 파일 업로드
@@ -121,6 +124,7 @@ python server.py --cli
 - `GET /auth/oidc/login`
 - `GET /auth/oidc/callback`
 - 정책: 첫 로그인 시 로컬 계정 자동 프로비저닝
+- 검증: `id_token` 서명(JWKS), `iss`, `aud`, `exp`, `nonce` 검증 실패 시 로그인 거부
 
 ### 7.5 관리자 감사로그
 
@@ -133,6 +137,18 @@ python server.py --cli
 - `POST /api/upload`: `10/min`
 - `POST /api/search/advanced`: `30/min`
 - Socket `send_message`: 사용자 기준 `100/min` (기본)
+- Socket `pin_updated`: 사용자 기준 `30/min` (기본)
+
+고급검색 입력 정책:
+- `POST /api/search/advanced`에서 `limit`/`offset`이 정수가 아니면 `400`
+- 오류 코드: `invalid_limit`, `invalid_offset`
+
+방 나가기 API 응답:
+- `POST /api/rooms/<room_id>/leave`
+- 공통: `success: true`
+- 상태 필드:
+  - `left: true`, `already_left: false` (실제 나감)
+  - `left: false`, `already_left: true` (이미 비멤버)
 
 ## 9. 보안/운영 메모
 
@@ -176,7 +192,7 @@ pytest -q
 
 현재 기준선:
 
-- `71 passed` (2026-02-25)
+- `84 passed` (2026-02-28)
 
 ## 12. PyInstaller 빌드
 
@@ -192,6 +208,8 @@ pyinstaller messenger.spec --clean
   - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
 - Redis 동적 import 반영:
   - `redis`, `redis.asyncio`
+- OIDC/JWKS 검증 경로 반영:
+  - `jwt`, `jwt.algorithms`, `jwt.api_jwk`, `jwt.jwks_client`, `jwt.exceptions`
 - 런북 파일 포함:
   - `docs/BACKUP_RUNBOOK.md`
 
@@ -201,6 +219,7 @@ pyinstaller messenger.spec --clean
 - [gemini.md](gemini.md)
 - [docs/BACKUP_RUNBOOK.md](docs/BACKUP_RUNBOOK.md)
 - [PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md](PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md)
+- [FEATURE_RISK_REVIEW_2026-02-28.md](FEATURE_RISK_REVIEW_2026-02-28.md)
 
 ## 14. 2026-02-25 변경 요약
 
@@ -218,3 +237,21 @@ pyinstaller messenger.spec --clean
 - `.spec` 점검 결과:
   - `static` 디렉터리 포함으로 신규 프론트 파일(`message-upload.js`)은 추가 설정 없이 패키징 포함
   - `cachelib.file` hidden import 이미 반영됨(유지)
+
+## 16. 2026-02-28 기능 리스크 반영 업데이트
+
+- 서버 authoritative 소켓 계약 강화:
+  - `room_members_updated`: room 정수/멤버십 검증 필수
+  - `profile_updated`, `reaction_updated`, `poll_created`, `poll_updated`: 클라이언트 payload 위조값 무시, DB canonical 데이터 기준 브로드캐스트
+  - `pin_updated`: 시스템 메시지 생성 제거, 멤버십 검증 + rate limit 적용, room 신호만 브로드캐스트
+- 핀 생성/삭제 경로 정리:
+  - 시스템 메시지 생성은 `/api/rooms/<room_id>/pins` 생성/삭제 성공 경로에서만 수행
+  - 서버가 `new_message`, `pin_updated`를 직접 emit
+- HTTP 하드닝:
+  - `/api/search/advanced`의 `limit`, `offset` 타입 오류를 `400 + code`로 표준화
+  - `/uploads/<path>` 경로 검증을 `os.path.commonpath` 기반으로 강화
+  - `/api/rooms/<room_id>/leave` idempotent 응답 필드(`left`, `already_left`) 추가
+- OIDC strict 검증:
+  - `id_token` 필수
+  - JWKS 서명 검증 + `iss`, `aud`, `exp`, `nonce` 검증
+  - callback에서 `state`, `nonce` one-time pop 처리

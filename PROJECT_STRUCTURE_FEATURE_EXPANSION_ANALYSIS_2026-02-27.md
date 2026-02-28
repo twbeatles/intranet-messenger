@@ -1,82 +1,88 @@
-# Intranet Messenger 프로젝트 구조 정밀 분석 및 기능 확장 가이드
+﻿# Intranet Messenger ?꾨줈?앺듃 援ъ“ ?뺣? 遺꾩꽍 諛?湲곕뒫 ?뺤옣 媛?대뱶
 
-- 작성일: 2026-02-27
-- 대상 경로: `C:\twbeatles-repos\intranet-messenger`
-- 목적: 현재 구조를 기준으로 기능 확장 시 수정 지점, 리스크, 우선순위를 명확히 정의
+- ?묒꽦?? 2026-02-27
+- ???寃쎈줈: `C:\twbeatles-repos\intranet-messenger`
+- 紐⑹쟻: ?꾩옱 援ъ“瑜?湲곗??쇰줈 湲곕뒫 ?뺤옣 ???섏젙 吏?? 由ъ뒪?? ?곗꽑?쒖쐞瑜?紐낇솗???뺤쓽
 
-## 1. 참조 문서
+## 1. 李몄“ 臾몄꽌
 
 - `README.md`
 - `claude.md`
 - `gemini.md`
 - `docs/BACKUP_RUNBOOK.md`
 
-## 2. 현재 기준선
+## 2. ?꾩옱 湲곗???
+- ?뚯뒪??湲곗??? `pytest -q` -> `84 passed` (2026-02-27)
+- ?ㅽ뻾 吏꾩엯?? `server.py`
+- ?덇굅???명솚 吏꾩엯?? `messenger_server.py` (deprecated shim)
 
-- 테스트 기준선: `pytest -q` -> `71 passed` (2026-02-27)
-- 실행 진입점: `server.py`
-- 레거시 호환 진입점: `messenger_server.py` (deprecated shim)
+## 3. ?꾨줈?앺듃 理쒖긽??援ъ“
 
-## 3. 프로젝트 최상위 구조
+- `server.py`: CLI/GUI ?ㅽ뻾 吏꾩엯
+- `config.py`: ?고????ㅼ젙 諛?湲곕뒫 ?뚮옒洹?- `app/`: 諛깆뿏???듭떖(???⑺넗由? routes, sockets, models)
+- `static/`, `templates/`: ?꾨줎?몄뿏??由ъ냼??諛??⑥씪 ?섏씠吏 ?쒗뵆由?- `tests/`: ?뚭? ?뚯뒪??- `scripts/`: 諛깆뾽/蹂듦뎄/寃利??ㅽ겕由쏀듃
+- `docs/`: ?댁쁺 臾몄꽌
+- `messenger.spec`: PyInstaller 鍮뚮뱶 紐낆꽭
 
-- `server.py`: CLI/GUI 실행 진입
-- `config.py`: 런타임 설정 및 기능 플래그
-- `app/`: 백엔드 핵심(앱 팩토리, routes, sockets, models)
-- `static/`, `templates/`: 프론트엔드 리소스 및 단일 페이지 템플릿
-- `tests/`: 회귀 테스트
-- `scripts/`: 백업/복구/검증 스크립트
-- `docs/`: 운영 문서
-- `messenger.spec`: PyInstaller 빌드 명세
+## 4. 二쇱슂 ?ㅽ뻾/援ъ꽦 ?먮쫫
 
-## 4. 주요 실행/구성 흐름
+1. `server.py` ?ㅽ뻾
+2. `app.create_app()`?먯꽌 ?뺤옣 珥덇린??Session/Socket/RateLimit ??
+3. `app/routes.py` HTTP ?쇱슦???깅줉
+4. `app/sockets.py` ?뚯폆 ?대깽???깅줉
+5. `app/models/base.py` 湲곕컲 DB 珥덇린???좎?蹂댁닔
 
-1. `server.py` 실행
-2. `app.create_app()`에서 확장 초기화(Session/Socket/RateLimit 등)
-3. `app/routes.py` HTTP 라우트 등록
-4. `app/sockets.py` 소켓 이벤트 등록
-5. `app/models/base.py` 기반 DB 초기화/유지보수
+## 5. 援ъ“ 由ъ뒪??湲곗닠遺梨?
+### 5.1 肄붾뱶 寃쎈줈 ?댁쨷??
+- 怨쇨굅?먮뒗 `messenger_server.py`? `app/*`媛 蹂묓뻾?섏뼱 湲곗? 寃쎈줈 ?쇱꽑 ?꾪뿕??議댁옱
+- ?꾩옱??`server.py` 湲곗??쇰줈 ?⑥씪?뷀븯怨?`messenger_server.py`??shim?쇰줈 異뺤냼
 
-## 5. 구조 리스크/기술부채
+### 5.2 ?꾨줎?몄뿏??寃고빀??
+- `messages.js`/`rooms.js`??梨낆엫 吏묒쨷???ш퀬 蹂寃??곹뼢 踰붿쐞媛 ?볦쓬
+- ?낅줈??濡쒖쭅? `static/js/message-upload.js`濡?1李?遺꾨━ ?꾨즺
 
-### 5.1 코드 경로 이중화
+### 5.3 臾몄옄???몄퐫???붾뱾由?
+- 肄섏넄/濡쒓렇 ?몄퐫???섍꼍???곕씪 源⑥쭚 媛?μ꽦??議댁옱
+- ?쒕쾭 吏꾩엯?먯뿉 UTF-8 stdio ?ㅼ젙???곸슜???꾪솕
 
-- 과거에는 `messenger_server.py`와 `app/*`가 병행되어 기준 경로 혼선 위험이 존재
-- 현재는 `server.py` 기준으로 단일화하고 `messenger_server.py`는 shim으로 축소
+### 5.4 ?뚯뒪??寃쎄퀬 ?꾩쟻
 
-### 5.2 프론트엔드 결합도
+- Flask-Session deprecation 寃쎄퀬媛 ?꾩쟻???ъ?媛 ?덉뿀??- `cachelib` 諛깆뿏???꾪솚?쇰줈 寃쎄퀬 由ъ뒪?щ? ?꾪솕
 
-- `messages.js`/`rooms.js`의 책임 집중이 크고 변경 영향 범위가 넓음
-- 업로드 로직은 `static/js/message-upload.js`로 1차 분리 완료
+## 6. 2026-02-27 媛쒖꽑 諛섏쁺 ?붿빟
 
-### 5.3 문자열/인코딩 흔들림
+- `messenger_server.py` deprecated shim ?꾪솚
+- `static/js/message-upload.js` 異붽? 諛?`messages.js` ?꾩엫 援ъ“ ?곸슜
+- `server.py`, `app/server_launcher.py`, `app/run_server.py` UTF-8 stdio 怨좎젙
+- `app/sockets.py` ?ㅻ쪟 硫붿떆吏 紐⑥?諛붿? ?뺢퇋??寃쎈줈 異붽?
+- `app/__init__.py` ?몄뀡 ??μ냼 `cachelib` ?꾪솚
+- `requirements.txt`??`cachelib>=0.13.0` 異붽?
 
-- 콘솔/로그 인코딩 환경에 따라 깨짐 가능성이 존재
-- 서버 진입점에 UTF-8 stdio 설정을 적용해 완화
+## 7. 湲곕뒫 ?뺤옣 ?곗꽑?쒖쐞 ?쒖븞
 
-### 5.4 테스트 경고 누적
+- P1: ?뚮┝ ?쇳꽣(誘몄씫??硫섏뀡), 硫붿떆吏 ?섏젙 ?대젰, 蹂댁〈 ?뺤콉 UI
+- P2: ?ㅻ젅???듦?, ?덉빟 硫붿떆吏, 愿由ъ옄 ??쒕낫??- P3: 怨좉툒 寃???뺤옣, ?뚯씪 DLP ?쇰꺼, ?꾨줎??紐⑤뱢 ?꾪솚
 
-- Flask-Session deprecation 경고가 누적될 여지가 있었음
-- `cachelib` 백엔드 전환으로 경고 리스크를 완화
+## 8. ?묒뾽 ?먯튃
 
-## 6. 2026-02-27 개선 반영 요약
+1. API 怨꾩빟 蹂寃???`routes + static/js + tests + README`瑜?媛숈? 蹂寃??명듃濡?媛깆떊
+2. ?뚯씪 硫붿떆吏????긽 `upload_token` 寃利?寃쎈줈 ?좎?
+3. ?몄뀡 臾댄슚??寃利앹? HTTP/Socket 紐⑤몢 ?좎?
+4. 蹂寃???理쒖냼 `pytest -q` ?ㅽ뻾 寃곌낵瑜?湲곕줉
 
-- `messenger_server.py` deprecated shim 전환
-- `static/js/message-upload.js` 추가 및 `messages.js` 위임 구조 적용
-- `server.py`, `app/server_launcher.py`, `app/run_server.py` UTF-8 stdio 고정
-- `app/sockets.py` 오류 메시지 모지바케 정규화 경로 추가
-- `app/__init__.py` 세션 저장소 `cachelib` 전환
-- `requirements.txt`에 `cachelib>=0.13.0` 추가
 
-## 7. 기능 확장 우선순위 제안
 
-- P1: 알림 센터(미읽음/멘션), 메시지 수정 이력, 보존 정책 UI
-- P2: 스레드 답글, 예약 메시지, 관리자 대시보드
-- P3: 고급 검색 확장, 파일 DLP 라벨, 프론트 모듈 전환
+## 9. 2026-02-28 리스크 반영 후 구조 관찰
 
-## 8. 작업 원칙
+- API/Socket 계약 경계가 명확해졌음.
+  - HTTP pin create/delete가 시스템 메시지 생성의 단일 경로가 됨.
+  - 소켓 `pin_updated`는 동기화 신호 역할만 수행.
+- 소켓 payload 신뢰 모델이 `client-provided data`에서 `server DB canonical`로 전환됨.
+- OIDC 인증 실패면 즉시 로그인 거부하는 strict 정책으로 보안 경계가 강화됨.
+- 고급검색/leave/uploaded_file 경계 조건이 표준 에러 계약으로 정리됨.
 
-1. API 계약 변경 시 `routes + static/js + tests + README`를 같은 변경 세트로 갱신
-2. 파일 메시지는 항상 `upload_token` 검증 경로 유지
-3. 세션 무효화 검증은 HTTP/Socket 모두 유지
-4. 변경 후 최소 `pytest -q` 실행 결과를 기록
+### 후속 권장
 
+1. Socket event schema를 별도 문서(`docs/socket-events.md`)로 분리해 프론트/백엔드 공용 계약화.
+2. OIDC/JWKS 관련 운영 파라미터(`OIDC_JWKS_URL`, cache TTL)의 환경별 설정 표준화.
+3. PyInstaller 산출물 smoke test를 CI 단계에 추가.

@@ -189,7 +189,7 @@ function renderRoomList() {
 
         // 프로필 이미지 및 색상 처리
         var avatarUserId = room.type === 'direct' && room.partner ? room.partner.id : room.id;
-        var avatarName = room.type === 'direct' && room.partner ? room.partner.nickname : (room.name || '그');
+        var avatarName = room.type === 'direct' && room.partner ? room.partner.nickname : (room.name || '그룹');
         var avatarImage = room.type === 'direct' && room.partner ? room.partner.profile_image : null;
         var avatarHtml = createAvatarHtml(avatarName, avatarImage, avatarUserId, 'room-avatar');
 
@@ -609,20 +609,25 @@ async function editRoomName() {
 /**
  * 대화방 고정 토글
  */
-async function togglePinRoom() {
-    if (!currentRoom) return;
+async function togglePinRoom(targetRoom) {
+    var room = targetRoom || currentRoom;
+    if (!room) return;
 
-    var isPinned = currentRoom.pinned;
+    var isPinned = room.pinned;
 
     try {
-        var result = await api('/api/rooms/' + currentRoom.id + '/pin', {
+        var result = await api('/api/rooms/' + room.id + '/pin', {
             method: 'POST',
             body: JSON.stringify({ pinned: !isPinned })
         });
 
         if (result.success) {
-            currentRoom.pinned = !isPinned;
-            $('pinRoomText').textContent = currentRoom.pinned ? '고정 해제' : '상단 고정';
+            room.pinned = !isPinned;
+            if (currentRoom && currentRoom.id === room.id) {
+                currentRoom.pinned = room.pinned;
+                var pinRoomText = $('pinRoomText');
+                if (pinRoomText) pinRoomText.textContent = currentRoom.pinned ? '고정 해제' : '상단 고정';
+            }
             if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else loadRooms();
         }
     } catch (err) {
@@ -632,23 +637,29 @@ async function togglePinRoom() {
     $('roomSettingsMenu').classList.remove('active');
 }
 
+
 /**
  * 알림 음소거 토글
  */
-async function toggleMuteRoom() {
-    if (!currentRoom) return;
+async function toggleMuteRoom(targetRoom) {
+    var room = targetRoom || currentRoom;
+    if (!room) return;
 
-    var isMuted = currentRoom.muted;
+    var isMuted = room.muted;
 
     try {
-        var result = await api('/api/rooms/' + currentRoom.id + '/mute', {
+        var result = await api('/api/rooms/' + room.id + '/mute', {
             method: 'POST',
             body: JSON.stringify({ muted: !isMuted })
         });
 
         if (result.success) {
-            currentRoom.muted = !isMuted;
-            $('muteRoomText').textContent = currentRoom.muted ? '알림 켜기' : '알림 끄기';
+            room.muted = !isMuted;
+            if (currentRoom && currentRoom.id === room.id) {
+                currentRoom.muted = room.muted;
+                var muteRoomText = $('muteRoomText');
+                if (muteRoomText) muteRoomText.textContent = currentRoom.muted ? '알림 켜기' : '알림 끄기';
+            }
         }
     } catch (err) {
         console.error('알림 설정 실패:', err);
@@ -656,6 +667,7 @@ async function toggleMuteRoom() {
 
     $('roomSettingsMenu').classList.remove('active');
 }
+
 
 /**
  * 멤버 보기
@@ -724,32 +736,33 @@ async function viewMembers() {
  * 대화방 나가기
  * [v4.32] 나가기 후 멤버 변경 알림 추가
  */
-async function leaveRoom() {
-    if (!currentRoom) return;
+async function leaveRoom(targetRoom) {
+    var room = targetRoom || currentRoom;
+    if (!room) return;
 
-    var roomName = currentRoom.name || (currentRoom.partner ? currentRoom.partner.nickname : '대화방');
+    var roomName = room.name || (room.partner ? room.partner.nickname : '대화방');
     var confirmMsg = '"' + roomName + '" 대화방을 나가시겠습니까?\n\n⚠️ 나가면 대화 내역을 더 이상 볼 수 없습니다.';
 
     if (!confirm(confirmMsg)) return;
 
-    var leftRoomId = currentRoom.id;  // 나가기 전 ID 저장
+    var leftRoomId = room.id;
 
     try {
-        await api('/api/rooms/' + currentRoom.id + '/leave', { method: 'POST' });
+        await api('/api/rooms/' + room.id + '/leave', { method: 'POST' });
 
-        // [v4.32] 다른 멤버들에게 멤버 변경 알림
-        // [v4.36] socket safety check
         if (socket && socket.connected) {
-            safeSocketEmit('room_members_updated', { room_id: leftRoomId });
+            safeSocketEmit('leave_room', { room_id: leftRoomId });
         }
 
-        currentRoom = null;
-        currentRoomKey = null;
+        if (currentRoom && currentRoom.id === leftRoomId) {
+            currentRoom = null;
+            currentRoomKey = null;
 
-        var chatContent = document.getElementById('chatContent');
-        var emptyState = document.getElementById('emptyState');
-        if (chatContent) chatContent.classList.add('hidden');
-        if (emptyState) emptyState.classList.remove('hidden');
+            var chatContent = document.getElementById('chatContent');
+            var emptyState = document.getElementById('emptyState');
+            if (chatContent) chatContent.classList.add('hidden');
+            if (emptyState) emptyState.classList.remove('hidden');
+        }
 
         if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else loadRooms();
         showToast('대화방을 나갔습니다.', 'success');
@@ -758,6 +771,7 @@ async function leaveRoom() {
         showToast('대화방 나가기에 실패했습니다.', 'error');
     }
 }
+
 
 // ============================================================================
 // 온라인 사용자
@@ -859,6 +873,7 @@ var visibilityListenerRegistered = false;
 
 function startOnlineUsersPolling() {
     loadOnlineUsers(); // Initial load
+    if (onlinePollingInterval) return;
 
     // Start polling
     onlinePollingInterval = setInterval(loadOnlineUsers, 300000); // fallback (5min)
@@ -998,16 +1013,13 @@ function showRoomContextMenu(e, room) {
                     openRoom(room);
                     break;
                 case 'pin':
-                    currentRoom = room;
-                    togglePinRoom();
+                    togglePinRoom(room);
                     break;
                 case 'mute':
-                    currentRoom = room;
-                    toggleMuteRoom();
+                    toggleMuteRoom(room);
                     break;
                 case 'leave':
-                    currentRoom = room;
-                    leaveRoom();
+                    leaveRoom(room);
                     break;
             }
         };
