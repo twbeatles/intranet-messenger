@@ -332,9 +332,17 @@ def search_messages(user_id, query, offset=0, limit=50):
         return {'messages': [], 'total': 0, 'offset': 0, 'limit': limit, 'has_more': False}
 
 
-def advanced_search(user_id: int, query: str = None, room_id: int = None,
-                    sender_id: int = None, date_from: str = None, date_to: str = None,
-                    file_only: bool = False, limit: int = 50, offset: int = 0):
+def advanced_search(
+    user_id: int,
+    query: str | None = None,
+    room_id: int | None = None,
+    sender_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    file_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+):
     """고급 메시지 검색 - FTS 또는 LIKE 기반"""
     conn = get_db()
     cursor = conn.cursor()
@@ -351,7 +359,7 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
             except Exception:
                 return False
 
-        def _fts5_build_query(text: str):
+        def _fts5_build_query(text: str | None) -> str | None:
             text = (text or '').strip()
             if not text:
                 return None
@@ -360,7 +368,7 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
             return ' AND '.join([f'"{p}"' for p in parts]) if parts else None
 
         conditions = ['rm.user_id = ?']
-        params = [user_id]
+        params: list[object] = [user_id]
 
         if room_id:
             conditions.append('m.room_id = ?')
@@ -537,7 +545,7 @@ def advanced_search(user_id: int, query: str = None, room_id: int = None,
     except Exception as e:
         logger.error(f"Advanced search error: {e}")
         return {'messages': [], 'total': 0, 'offset': 0, 'limit': limit, 'has_more': False}
-def pin_message(room_id: int, pinned_by: int, message_id: int = None, content: str = None):
+def pin_message(room_id: int, pinned_by: int, message_id: int | None = None, content: str | None = None):
     """메시지 고정"""
     conn = get_db()
     cursor = conn.cursor()
@@ -553,7 +561,7 @@ def pin_message(room_id: int, pinned_by: int, message_id: int = None, content: s
         return None
 
 
-def unpin_message(pin_id: int, user_id: int, room_id: int = None):
+def unpin_message(pin_id: int, user_id: int, room_id: int | None = None):
     """공지 해제"""
     conn = get_db()
     cursor = conn.cursor()

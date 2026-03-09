@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-# 사내 메신저 v4.36.3 PyInstaller 빌드 명세서
+# 사내 메신저 v4.36 PyInstaller 빌드 명세서
 # 경량화 최적화 버전
+# 2026-03-09 정합성 점검: 런타임 타입/인코딩 수정에 따른 hidden import 추가 없음
 
 block_cipher = None
 
@@ -151,7 +152,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='사내메신저v4.36.3',
+    name='사내메신저v4.36',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,  # 심볼 제거 (Windows에서는 False 권장)

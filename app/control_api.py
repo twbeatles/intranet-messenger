@@ -27,7 +27,7 @@ def _get_base_dir():
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def get_or_create_control_token(base_dir: str = None) -> str:
+def get_or_create_control_token(base_dir: str | None = None) -> str:
     """Control API 인증 토큰 생성/로딩.
 
     토큰은 {BASE_DIR}/.control_token에 저장됩니다.
@@ -57,7 +57,7 @@ def get_or_create_control_token(base_dir: str = None) -> str:
     return token
 
 
-def _is_localhost(addr: str) -> bool:
+def _is_localhost(addr: str | None) -> bool:
     if not addr:
         return False
     return addr in ('127.0.0.1', '::1', '::ffff:127.0.0.1')

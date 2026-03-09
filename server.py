@@ -15,10 +15,14 @@ sys.path.insert(0, current_dir)
 def _configure_utf8_stdio():
     """Windows 콘솔 환경에서 인코딩 흔들림을 최소화한다."""
     for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding='utf-8', errors='replace')
-        except Exception:
-            pass
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding='utf-8', errors='replace')
+            except Exception:
+                pass
 
 
 _configure_utf8_stdio()

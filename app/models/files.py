@@ -18,8 +18,15 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_room_file(room_id: int, uploaded_by: int, file_path: str, file_name: str, 
-                  file_size: int = None, file_type: str = None, message_id: int = None):
+def add_room_file(
+    room_id: int,
+    uploaded_by: int,
+    file_path: str,
+    file_name: str,
+    file_size: int | None = None,
+    file_type: str | None = None,
+    message_id: int | None = None,
+):
     """파일 저장소에 파일 추가"""
     conn = get_db()
     cursor = conn.cursor()
@@ -35,7 +42,7 @@ def add_room_file(room_id: int, uploaded_by: int, file_path: str, file_name: str
         return None
 
 
-def get_room_files(room_id: int, file_type: str = None):
+def get_room_files(room_id: int, file_type: str | None = None):
     """대화방의 파일 목록"""
     conn = get_db()
     cursor = conn.cursor()
@@ -62,7 +69,7 @@ def get_room_files(room_id: int, file_type: str = None):
         return []
 
 
-def delete_room_file(file_id: int, user_id: int, room_id: int = None, is_admin: bool = False):
+def delete_room_file(file_id: int, user_id: int, room_id: int | None = None, is_admin: bool = False):
     """파일 삭제"""
     conn = get_db()
     cursor = conn.cursor()

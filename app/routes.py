@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Flask HTTP ?쇱슦??
 """
@@ -9,6 +9,7 @@ import logging
 import csv
 import io
 from datetime import datetime
+from typing import Any, cast
 from flask import request, jsonify, session, send_from_directory, render_template, redirect, url_for, make_response
 from werkzeug.utils import secure_filename
 
@@ -68,6 +69,7 @@ except ImportError:
     )
 
 logger = logging.getLogger(__name__)
+JsonDict = dict[str, Any]
 
 
 def register_routes(app):
@@ -75,22 +77,29 @@ def register_routes(app):
     advanced_search_rate_limit = "30 per minute"
 
     def json_error(message: str, status: int = 400, code: str | None = None):
-        payload = {'error': message}
+        payload: dict[str, str] = {'error': message}
         if code:
             payload['code'] = code
         return jsonify(payload), status
 
-    def parse_json_payload(required: bool = True):
+    def parse_json_payload(required: bool = True) -> tuple[JsonDict, Any]:
         data = request.get_json(silent=True)
         if data is None:
             if required:
-                return None, json_error('JSON body is required.', 400, 'invalid_json')
+                return {}, json_error('JSON body is required.', 400, 'invalid_json')
             return {}, None
         if not isinstance(data, dict):
-            return None, json_error('JSON object payload is required.', 400, 'invalid_json')
-        return data, None
+            return {}, json_error('JSON object payload is required.', 400, 'invalid_json')
+        return cast(JsonDict, data), None
 
-    def parse_int_from_json(data: dict, key: str, default: int, *, minimum: int | None = None, maximum: int | None = None):
+    def parse_int_from_json(
+        data: JsonDict,
+        key: str,
+        default: int,
+        *,
+        minimum: int | None = None,
+        maximum: int | None = None,
+    ) -> tuple[int | None, Any]:
         value = data.get(key, default)
         if value in (None, ""):
             value = default
@@ -116,7 +125,7 @@ def register_routes(app):
         if not socketio_instance:
             return
         try:
-            socketio_instance.emit('room_members_updated', {'room_id': room_id}, room=f'room_{room_id}')
+            socketio_instance.emit('room_members_updated', {'room_id': room_id}, to=f'room_{room_id}')
         except Exception as e:
             logger.warning(f"room_members_updated emit failed: room_id={room_id}, error={e}")
 
@@ -125,7 +134,7 @@ def register_routes(app):
         if not socketio_instance:
             return
         try:
-            socketio_instance.emit('pin_updated', {'room_id': room_id}, room=f'room_{room_id}')
+            socketio_instance.emit('pin_updated', {'room_id': room_id}, to=f'room_{room_id}')
         except Exception as e:
             logger.warning(f"pin_updated emit failed: room_id={room_id}, error={e}")
 
@@ -134,12 +143,31 @@ def register_routes(app):
         try:
             sys_msg = create_message(room_id, actor_user_id, content, 'system')
             if sys_msg and socketio_instance:
-                socketio_instance.emit('new_message', sys_msg, room=f'room_{room_id}')
+                socketio_instance.emit('new_message', sys_msg, to=f'room_{room_id}')
         except Exception as e:
             logger.warning(f"pin system message emit failed: room_id={room_id}, error={e}")
 
     def _get_max_upload_size() -> int:
         return int(app.config.get('MAX_CONTENT_LENGTH') or MAX_CONTENT_LENGTH or 16 * 1024 * 1024)
+
+    def _resolve_quarantine_folder(upload_folder: str) -> str:
+        configured = app.config.get('UPLOAD_QUARANTINE_FOLDER')
+        fallback = os.path.join(upload_folder, 'quarantine')
+        if not configured:
+            return fallback
+        configured_abs = os.path.abspath(str(configured))
+        upload_abs = os.path.abspath(upload_folder)
+        try:
+            common = os.path.commonpath([configured_abs, upload_abs])
+        except ValueError:
+            common = ''
+        if common != upload_abs:
+            logger.warning(
+                "UPLOAD_QUARANTINE_FOLDER is outside UPLOAD_FOLDER. "
+                f"configured={configured_abs}, upload={upload_abs}, using fallback={fallback}"
+            )
+            return fallback
+        return configured_abs
 
     def _public_config_payload():
         return {
@@ -267,12 +295,12 @@ def register_routes(app):
         nickname = data.get('nickname', '').strip() or username
         
         if not username or not password:
-            return jsonify({'error': '?꾩씠?붿? 鍮꾨?踰덊샇瑜??낅젰?댁＜?몄슂.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # [v4.15] ?꾩씠???뺤떇 寃??
         from app.utils import validate_username, validate_password
         if not validate_username(username):
-            return jsonify({'error': '?꾩씠?붾뒗 3-20???곷Ц, ?レ옄, 諛묒쨪留??ъ슜 媛?ν빀?덈떎.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # [v4.3] 鍮꾨?踰덊샇 媛뺣룄 寃??
         is_valid, error_msg = validate_password(password)
@@ -283,7 +311,7 @@ def register_routes(app):
         if user_id:
             log_access(user_id, 'register', request.remote_addr, request.user_agent.string)
             return jsonify({'success': True, 'user_id': user_id})
-        return jsonify({'error': '?대? 議댁옱?섎뒗 ?꾩씠?붿엯?덈떎.'}), 400
+        return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
     
     from flask_wtf.csrf import generate_csrf
 
@@ -316,7 +344,7 @@ def register_routes(app):
                 'user': user,
                 'csrf_token': new_csrf_token
             })
-        return jsonify({'error': '?꾩씠???먮뒗 鍮꾨?踰덊샇媛 ?щ컮瑜댁? ?딆뒿?덈떎.'}), 401
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
     
     @app.route('/api/logout', methods=['POST'])
     @csrf.exempt  # [v4.2] 濡쒓렇?꾩썐 CSRF ?덉쇅 (?몄뀡 ??젣 ?묒뾽?쇰줈 ?꾪뿕 ??쓬)
@@ -329,14 +357,14 @@ def register_routes(app):
     @app.route('/api/users')
     def get_users():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         users = get_all_users()
         return jsonify([u for u in users if u['id'] != session['user_id']])
     
     @app.route('/api/rooms')
     def get_rooms():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         include_members = str(request.args.get('include_members', '')).lower() in ('1', 'true', 'yes')
         rooms = get_user_rooms(session['user_id'], include_members=include_members)
         return jsonify(rooms)
@@ -344,7 +372,7 @@ def register_routes(app):
     @app.route('/api/rooms', methods=['POST'])
     def create_room_route():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -361,7 +389,7 @@ def register_routes(app):
         if raw_members is None:
             raw_members = []
         if not isinstance(raw_members, list):
-            return jsonify({'error': 'members ?먮뒗 member_ids??諛곗뿴?댁뼱???⑸땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
 
         normalized_members = []
         seen = set()
@@ -369,7 +397,7 @@ def register_routes(app):
             try:
                 member_id = int(value)
             except (TypeError, ValueError):
-                return jsonify({'error': '硫ㅻ쾭 ID???뺤닔?ъ빞 ?⑸땲??'}), 400
+                return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
             if member_id <= 0 or member_id in seen:
                 continue
             seen.add(member_id)
@@ -391,16 +419,16 @@ def register_routes(app):
             return jsonify({'success': True, 'room_id': room_id})
         except Exception as e:
             logger.error(f"Room creation failed: {e}")
-            return jsonify({'error': '??붾갑 ?앹꽦???ㅽ뙣?덉뒿?덈떎.'}), 500
+            return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     @app.route('/api/rooms/<int:room_id>/messages')
     def get_messages(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # ??붾갑 硫ㅻ쾭???뺤씤
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         try:
             before_id = request.args.get('before_id', type=int)
@@ -456,23 +484,23 @@ def register_routes(app):
                         unread = 0
                     msg['unread_count'] = unread
             
-            resp = {'messages': messages}
+            resp: JsonDict = {'messages': messages}
             if include_meta:
                 resp['members'] = members
                 resp['encryption_key'] = encryption_key
             return jsonify(resp)
         except Exception as e:
             logger.error(f"硫붿떆吏 濡쒕뱶 ?ㅻ쪟: {e}")
-            return jsonify({'error': '硫붿떆吏 濡쒕뱶 ?ㅽ뙣'}), 500
+            return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     @app.route('/api/rooms/<int:room_id>/members', methods=['POST'])
     def invite_member(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.5] 硫ㅻ쾭???뺤씤 - 諛?硫ㅻ쾭留?珥덈? 媛??
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -494,12 +522,12 @@ def register_routes(app):
         if added > 0:
             _emit_room_members_updated(room_id)
             return jsonify({'success': True, 'added_count': added})
-        return jsonify({'error': '?대? 李몄뿬以묒씤 ?ъ슜?먯엯?덈떎.'}), 400
+        return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
     
     @app.route('/api/rooms/<int:room_id>/leave', methods=['POST'])
     def leave_room_route(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
 
         user_id = session['user_id']
         if not is_room_member(room_id, user_id):
@@ -512,11 +540,11 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/members/<int:target_user_id>', methods=['DELETE'])
     def kick_member(room_id, target_user_id):        # [v4.9] 관리자 강퇴 처리
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # 愿由ъ옄 沅뚰븳 ?뺤씤
         if not is_room_admin(room_id, session['user_id']):
-            return jsonify({'error': '愿由ъ옄留?硫ㅻ쾭瑜??댁옣?쒗궗 ???덉뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         # ?먭린 ?먯떊? ?댁옣?쒗궗 ???놁쓬
         if target_user_id == session['user_id']:
@@ -528,7 +556,7 @@ def register_routes(app):
         
         # ??곸씠 ?대떦 諛⑹쓽 硫ㅻ쾭?몄? ?뺤씤
         if not is_room_member(room_id, target_user_id):
-            return jsonify({'error': '?대떦 ?ъ슜?먮뒗 ??붾갑 硫ㅻ쾭媛 ?꾨떃?덈떎.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         leave_room_db(room_id, target_user_id)
         _emit_room_members_updated(room_id)
@@ -544,20 +572,20 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/name', methods=['PUT'])
     def update_room_name_route(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.4] 硫ㅻ쾭??諛?愿由ъ옄 沅뚰븳 ?뺤씤
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         if not is_room_admin(room_id, session['user_id']):
-            return jsonify({'error': '愿由ъ옄留???붾갑 ?대쫫??蹂寃쏀븷 ???덉뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
             return error_response
         new_name = sanitize_input(data.get('name', ''), max_length=50)
         if not new_name:
-            return jsonify({'error': '??붾갑 ?대쫫???낅젰?댁＜?몄슂.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         update_room_name(room_id, new_name)
         return jsonify({'success': True})
@@ -567,11 +595,11 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/pin', methods=['POST'])
     def pin_room_route(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.4] 硫ㅻ쾭???뺤씤
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -579,16 +607,16 @@ def register_routes(app):
         pinned = data.get('pinned', True)
         if pin_room(session['user_id'], room_id, pinned):
             return jsonify({'success': True})
-        return jsonify({'error': '?ㅼ젙 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.'}), 400
+        return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
     
     @app.route('/api/rooms/<int:room_id>/mute', methods=['POST'])
     def mute_room_route(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.4] 硫ㅻ쾭???뺤씤
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -596,12 +624,12 @@ def register_routes(app):
         muted = data.get('muted', True)
         if mute_room(session['user_id'], room_id, muted):
             return jsonify({'success': True})
-        return jsonify({'error': '?ㅼ젙 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.'}), 400
+        return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
     
     @app.route('/api/users/online')
     def get_online_users_route():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         users = get_online_users()
         users = [u for u in users if u['id'] != session['user_id']]
@@ -610,7 +638,7 @@ def register_routes(app):
     @app.route('/api/messages/<int:message_id>', methods=['DELETE'])
     def delete_message_route(message_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         success, result = delete_message(message_id, session['user_id'])
         if success:
@@ -620,14 +648,14 @@ def register_routes(app):
     @app.route('/api/messages/<int:message_id>', methods=['PUT'])
     def edit_message_route(message_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         data, error_response = parse_json_payload()
         if error_response:
             return error_response
         new_content = data.get('content', '')
         if not new_content:
-            return jsonify({'error': '硫붿떆吏 ?댁슜???낅젰?댁＜?몄슂.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         success, error, room_id = edit_message(message_id, session['user_id'], new_content)
         if success:
@@ -637,15 +665,15 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/info')
     def get_room_info(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.8] 硫ㅻ쾭???뺤씤 異붽?
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         room = get_room_by_id(room_id)
         if not room:
-            return jsonify({'error': '??붾갑??李얠쓣 ???놁뒿?덈떎.'}), 404
+            return jsonify({'error': '요청한 대상을 찾을 수 없습니다.'}), 404
         
         members = get_room_members(room_id)
         room['members'] = members
@@ -656,7 +684,7 @@ def register_routes(app):
     @limiter.limit("30 per minute")
     def search():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
     
         query = request.args.get('q')
         date_from = request.args.get('date_from')
@@ -678,10 +706,10 @@ def register_routes(app):
     
         results = advanced_search(
             user_id=session['user_id'],
-            query=(q or None),
+            query=q or None,
             room_id=room_id,
-            date_from=(date_from or None),
-            date_to=(date_to or None),
+            date_from=date_from or None,
+            date_to=date_to or None,
             file_only=file_only,
             limit=limit,
             offset=offset,
@@ -692,14 +720,14 @@ def register_routes(app):
     @limiter.limit(upload_rate_limit)
     def upload_file():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         upload_folder = app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
 
         room_id = request.form.get('room_id', type=int)
         if not room_id:
-            return jsonify({'error': 'room_id媛 ?꾩슂?⑸땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         # [v4.2] ?좎젣???뚯씪 ?ш린 寃??(硫붾え由?濡쒕뱶 ??
         max_size = _get_max_upload_size()
@@ -707,19 +735,22 @@ def register_routes(app):
             return jsonify({'error': f'?뚯씪 ?ш린??{max_size} bytes ?댄븯?ъ빞 ?⑸땲??'}), 413
         
         if 'file' not in request.files:
-            return jsonify({'error': '?뚯씪???놁뒿?덈떎.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         file = request.files['file']
         if file.filename == '':
-            return jsonify({'error': '?뚯씪???좏깮?섏? ?딆븯?듬땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         if file and allowed_file(file.filename):
             # [v4.3] ?뚯씪 ?댁슜 寃利?(Magic Number)
             if not validate_file_header(file):
                 logger.warning(f"File signature mismatch: {file.filename}")
-                return jsonify({'error': '?뚯씪 ?댁슜???뺤옣?먯? ?쇱튂?섏? ?딆뒿?덈떎.'}), 400
+                return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
 
-            filename = secure_filename(file.filename)
+            raw_filename = file.filename or ''
+            filename = secure_filename(raw_filename)
+            if not filename:
+                return jsonify({'error': '유효한 파일 이름이 필요합니다.'}), 400
             # [v4.14] UUID 異붽?濡??숈떆 ?낅줈?????뚯씪紐?異⑸룎 諛⑹?
             unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}_{filename}"
             ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
@@ -727,7 +758,7 @@ def register_routes(app):
 
             av_enabled = bool(is_scan_enabled(app))
             if av_enabled:
-                quarantine_folder = app.config.get('UPLOAD_QUARANTINE_FOLDER') or os.path.join(upload_folder, 'quarantine')
+                quarantine_folder = _resolve_quarantine_folder(upload_folder)
                 os.makedirs(quarantine_folder, exist_ok=True)
 
                 temp_abs_path = os.path.join(quarantine_folder, unique_filename)
@@ -752,7 +783,7 @@ def register_routes(app):
                         safe_file_delete(temp_abs_path)
                     except Exception:
                         pass
-                    return jsonify({'error': '?낅줈???ㅼ???ㅽ뙣?덉뒿?덈떎.'}), 500
+                    return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
 
                 return jsonify({
                     'success': True,
@@ -781,18 +812,18 @@ def register_routes(app):
                 'upload_token': upload_token,
             })
         
-        return jsonify({'error': '?덉슜?섏? ?딅뒗 ?뚯씪 ?뺤떇?낅땲??'}), 400
+        return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
 
     @app.route('/api/upload/jobs/<job_id>')
     def get_upload_job_status(job_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
 
         job = get_scan_job(job_id)
         if not job:
-            return jsonify({'error': '?ㅼ??묒뾽???찾쓣 ???놁뒿?덈떎.'}), 404
+            return jsonify({'error': '요청한 대상을 찾을 수 없습니다.'}), 404
         if int(job.get('user_id') or 0) != int(session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
 
         status = (job.get('status') or 'pending').lower()
         payload = {
@@ -815,7 +846,7 @@ def register_routes(app):
     def uploaded_file(filename):
         # ?몄쬆 ?뺤씤
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         upload_folder = app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
 
         # ?뚯씪紐??뺢퇋??
@@ -827,7 +858,7 @@ def register_routes(app):
             subdir = os.path.dirname(filename)
             allowed_subdirs = ['profiles']
             if subdir not in allowed_subdirs:
-                return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+                return jsonify({'error': '접근 권한이 없습니다.'}), 403
             safe_path = os.path.join(subdir, safe_filename)
             is_profile = (subdir == 'profiles')
         else:
@@ -842,10 +873,10 @@ def register_routes(app):
             within_root = False
         if not within_root:
             logger.warning(f"Path traversal attempt: {filename}")
-            return jsonify({'error': '?섎せ???붿껌?낅땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
 
         if not os.path.isfile(full_path):
-            return jsonify({'error': '?뚯씪??李얠쓣 ???놁뒿?덈떎.'}), 404
+            return jsonify({'error': '요청한 대상을 찾을 수 없습니다.'}), 404
 
         download_name = safe_filename
         if not is_profile:
@@ -864,12 +895,12 @@ def register_routes(app):
                 row = None
 
             if not row:
-                return jsonify({'error': '?뚯씪??李얠쓣 ???놁뒿?덈떎.'}), 404
+                return jsonify({'error': '요청한 대상을 찾을 수 없습니다.'}), 404
 
             room_id = row['room_id']
             download_name = row['file_name'] or download_name
             if not is_room_member(room_id, session['user_id']):
-                return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+                return jsonify({'error': '접근 권한이 없습니다.'}), 403
 
         # Content-Disposition: ?대?吏??inline, 洹????뚯씪? attachment
         ext = os.path.splitext(safe_filename)[1].lower().lstrip('.')
@@ -904,17 +935,17 @@ def register_routes(app):
     @app.route('/api/profile')
     def get_profile():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         user = get_user_by_id(session['user_id'])
         if user:
             return jsonify(user)
-        return jsonify({'error': '?ъ슜?먮? 李얠쓣 ???놁뒿?덈떎.'}), 404
+        return jsonify({'error': '요청한 대상을 찾을 수 없습니다.'}), 404
     
     @app.route('/api/profile', methods=['PUT'])
     def update_profile():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -923,7 +954,7 @@ def register_routes(app):
         status_message = sanitize_input(data.get('status_message', ''), max_length=100)
         
         if nickname and len(nickname) < 2:
-            return jsonify({'error': '?됰꽕?꾩? 2???댁긽?댁뼱???⑸땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         success = update_user_profile(
             session['user_id'],
@@ -936,37 +967,38 @@ def register_routes(app):
             if nickname:
                 session['nickname'] = nickname
             return jsonify({'success': True})
-        return jsonify({'error': '?꾨줈???낅뜲?댄듃???ㅽ뙣?덉뒿?덈떎.'}), 500
+        return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     @app.route('/api/profile/image', methods=['POST'])
     def upload_profile_image():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         upload_folder = app.config.get('UPLOAD_FOLDER', UPLOAD_FOLDER)
         
         if 'file' not in request.files:
-            return jsonify({'error': '?뚯씪???놁뒿?덈떎.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         file = request.files['file']
         if file.filename == '':
-            return jsonify({'error': '?뚯씪???좏깮?섏? ?딆븯?듬땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # ?대?吏 ?뚯씪留??덉슜
         allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-        ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+        raw_filename = file.filename or ''
+        ext = raw_filename.rsplit('.', 1)[-1].lower() if '.' in raw_filename else ''
         if ext not in allowed_extensions:
-            return jsonify({'error': '?대?吏 ?뚯씪留??낅줈??媛?ν빀?덈떎.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # [v4.3] ?뚯씪 ?댁슜 寃利?
         if not validate_file_header(file):
-            return jsonify({'error': '?좏슚?섏? ?딆? ?대?吏 ?뚯씪?낅땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # ?뚯씪 ?ш린 ?쒗븳 (5MB)
         file.seek(0, 2)
         size = file.tell()
         file.seek(0)
         if size > 5 * 1024 * 1024:
-            return jsonify({'error': '?뚯씪 ?ш린??5MB ?댄븯?ъ빞 ?⑸땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # ?꾨줈???대?吏 ?대뜑 ?앹꽦
         profile_folder = os.path.join(upload_folder, 'profiles')
@@ -995,7 +1027,7 @@ def register_routes(app):
             
             if success:
                 return jsonify({'success': True, 'profile_image': profile_image})
-            return jsonify({'error': '?꾨줈???대?吏 ?곗씠?곕쿋?댁뒪 ?낅뜲?댄듃 ?ㅽ뙣'}), 500
+            return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
         except Exception as e:
             logger.error(f"Profile update error: {e}")
             return jsonify({'error': f'?꾨줈??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎: {str(e)}'}), 500
@@ -1003,7 +1035,7 @@ def register_routes(app):
     @app.route('/api/profile/image', methods=['DELETE'])
     def delete_profile_image():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.4] 湲곗〈 ?꾨줈???대?吏 議고쉶 ????젣
         user = get_user_by_id(session['user_id'])
@@ -1021,7 +1053,7 @@ def register_routes(app):
         
         if success:
             return jsonify({'success': True})
-        return jsonify({'error': '?꾨줈???대?吏 ??젣???ㅽ뙣?덉뒿?덈떎.'}), 500
+        return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     # ============================================================================
     # 怨듭??ы빆 (Pinned Messages) API
@@ -1029,18 +1061,18 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/pins')
     def get_room_pins(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         pins = get_pinned_messages(room_id)
         return jsonify(pins)
     
     @app.route('/api/rooms/<int:room_id>/pins', methods=['POST'])
     def create_pin(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         # [v4.20] 紐⑤뱺 硫ㅻ쾭媛 怨듭? ?깅줉 媛??(愿由ъ옄 ?쒗븳 ?쒓굅)
         
@@ -1051,7 +1083,7 @@ def register_routes(app):
         content = sanitize_input(data.get('content', ''), max_length=500)
         
         if not message_id and not content:
-            return jsonify({'error': '怨좎젙??硫붿떆吏 ?먮뒗 ?댁슜???낅젰?댁＜?몄슂.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         pin_id = pin_message(room_id, session['user_id'], message_id, content)
         if pin_id:
@@ -1063,14 +1095,14 @@ def register_routes(app):
             )
             _emit_pin_updated(room_id)
             return jsonify({'success': True, 'pin_id': pin_id})
-        return jsonify({'error': '怨듭? 怨좎젙???ㅽ뙣?덉뒿?덈떎.'}), 500
+        return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     @app.route('/api/rooms/<int:room_id>/pins/<int:pin_id>', methods=['DELETE'])
     def delete_pin(room_id, pin_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         # [v4.20] 紐⑤뱺 硫ㅻ쾭媛 怨듭? ??젣 媛??(愿由ъ옄 ?쒗븳 ?쒓굅)
         
@@ -1096,9 +1128,9 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/polls')
     def get_polls(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         polls = get_room_polls(room_id)
         for poll in polls:
@@ -1108,9 +1140,9 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/polls', methods=['POST'])
     def create_poll_route(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -1122,9 +1154,9 @@ def register_routes(app):
         ends_at = data.get('ends_at')  # [v4.8] ISO ?뺤떇 ?좎쭨/?쒓컙 臾몄옄??
         
         if not question:
-            return jsonify({'error': '吏덈Ц???낅젰?댁＜?몄슂.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         if len(options) < 2:
-            return jsonify({'error': '理쒖냼 2媛쒖쓽 ?듭뀡???꾩슂?⑸땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # [v4.9] ends_at ?뺤떇 寃利?
         if ends_at:
@@ -1133,11 +1165,11 @@ def register_routes(app):
                 # ISO ?뺤떇 ?뚯떛 ?쒕룄
                 ends_at_dt = datetime.fromisoformat(ends_at.replace('Z', '+00:00'))
                 if ends_at_dt < datetime.now(ends_at_dt.tzinfo) if ends_at_dt.tzinfo else ends_at_dt < datetime.now():
-                    return jsonify({'error': '留덇컧 ?쒓컙? ?꾩옱 ?쒓컙 ?댄썑?ъ빞 ?⑸땲??'}), 400
+                    return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
                 # DB ????뺤떇?쇰줈 蹂??(UTC ?놁씠 臾몄옄??
                 ends_at = ends_at_dt.strftime('%Y-%m-%d %H:%M:%S')
             except ValueError:
-                return jsonify({'error': '?щ컮瑜??좎쭨/?쒓컙 ?뺤떇???꾨떃?덈떎. (ISO 8601)'}), 400
+                return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         options = [sanitize_input(opt, max_length=100) for opt in options[:10]]
         
@@ -1147,20 +1179,20 @@ def register_routes(app):
             if poll:
                 return jsonify({'success': True, 'poll': poll})
             logger.error(f"Poll created but lookup failed: poll_id={poll_id}")
-            return jsonify({'error': '?ы몴 ?앹꽦 ??議고쉶???ㅽ뙣?덉뒿?덈떎.'}), 500
-        return jsonify({'error': '?ы몴 ?앹꽦???ㅽ뙣?덉뒿?덈떎.'}), 500
+            return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
+        return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     @app.route('/api/polls/<int:poll_id>/vote', methods=['POST'])
     def vote_poll_route(poll_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.6] ?ы몴媛 ?랁븳 諛⑹쓽 硫ㅻ쾭???뺤씤
         poll = get_poll(poll_id)
         if not poll:
-            return jsonify({'error': '?ы몴瑜?李얠쓣 ???놁뒿?덈떎.'}), 404
+            return jsonify({'error': '요청한 대상을 찾을 수 없습니다.'}), 404
         if not is_room_member(poll['room_id'], session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -1168,11 +1200,13 @@ def register_routes(app):
         option_id = data.get('option_id')
         
         if not option_id:
-            return json_error('?듭뀡???좏깮?댁＜?몄슂.', 400, 'missing_option_id')
+            return json_error('옵션을 선택해 주세요.', 400, 'missing_option_id')
 
         success, error = vote_poll(poll_id, option_id, session['user_id'])
         if success:
             poll = get_poll(poll_id)
+            if not poll:
+                return json_error('투표 조회에 실패했습니다.', 500, 'poll_lookup_failed')
             poll['my_votes'] = get_user_votes(poll_id, session['user_id'])
             return jsonify({'success': True, 'poll': poll})
         return json_error(error or '?ы몴 ?ㅽ뙣', 400, 'invalid_poll_option')
@@ -1180,14 +1214,14 @@ def register_routes(app):
     @app.route('/api/polls/<int:poll_id>/close', methods=['POST'])
     def close_poll_route(poll_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.5] ?ы몴媛 ?랁븳 諛⑹쓽 硫ㅻ쾭???뺤씤
         poll = get_poll(poll_id)
         if not poll:
-            return jsonify({'error': '?ы몴瑜?李얠쓣 ???놁뒿?덈떎.'}), 404
+            return jsonify({'error': '요청한 대상을 찾을 수 없습니다.'}), 404
         if not is_room_member(poll['room_id'], session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         # [v4.21] ?ы몴 ?앹꽦???먮뒗 愿由ъ옄留?留덇컧 媛??
         is_admin = is_room_admin(poll['room_id'], session['user_id'])
@@ -1202,9 +1236,9 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/files')
     def get_files(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         file_type = request.args.get('type')  # 'image', 'file', etc.
         files = get_room_files(room_id, file_type)
@@ -1213,9 +1247,9 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/files/<int:file_id>', methods=['DELETE'])
     def delete_file_route(room_id, file_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         # [v4.8] 愿由ъ옄???뚯씪 ??젣 媛??
         is_admin = is_room_admin(room_id, session['user_id'])
         # [v4.9] room_id ?꾨떖?섏뿬 ?ㅻⅨ 諛??뚯씪 ??젣 諛⑹?
@@ -1229,7 +1263,7 @@ def register_routes(app):
                     metadata={'file_id': file_id, 'file_path': file_path},
                 )
             return jsonify({'success': True})
-        return jsonify({'error': '?뚯씪 ??젣 沅뚰븳???놁뒿?덈떎.'}), 403
+        return jsonify({'error': '접근 권한이 없습니다.'}), 403
     
     # ============================================================================
     # 由ъ븸??(Reactions) API
@@ -1237,12 +1271,12 @@ def register_routes(app):
     @app.route('/api/messages/<int:message_id>/reactions')
     def get_reactions(message_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.4] 硫붿떆吏 ?묎렐 沅뚰븳 ?뺤씤
         room_id = get_message_room_id(message_id)
         if room_id is None or not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         reactions = get_message_reactions(message_id)
         return jsonify(reactions)
@@ -1250,25 +1284,25 @@ def register_routes(app):
     @app.route('/api/messages/<int:message_id>/reactions', methods=['POST'])
     def add_reaction_route(message_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         # [v4.4] 硫붿떆吏 ?묎렐 沅뚰븳 ?뺤씤
         room_id = get_message_room_id(message_id)
         if room_id is None or not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '??붾갑 ?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
             return error_response
         emoji = data.get('emoji', '')
         if not emoji or len(emoji) > 10:
-            return jsonify({'error': '?좏슚?섏? ?딆? ?대え吏?낅땲??'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         success, action = toggle_reaction(message_id, session['user_id'], emoji)
         if success:
             reactions = get_message_reactions(message_id)
             return jsonify({'success': True, 'action': action, 'reactions': reactions})
-        return jsonify({'error': '由ъ븸??異붽????ㅽ뙣?덉뒿?덈떎.'}), 500
+        return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     # ============================================================================
     # 愿由ъ옄 沅뚰븳 (Admin) API
@@ -1276,9 +1310,9 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/admins')
     def get_admins(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         admins = get_room_admins(room_id)
         return jsonify(admins)
@@ -1286,9 +1320,9 @@ def register_routes(app):
     @app.route('/api/rooms/<int:room_id>/admins', methods=['POST'])
     def set_admin_route(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_admin(room_id, session['user_id']):
-            return jsonify({'error': '愿由ъ옄 沅뚰븳???꾩슂?⑸땲??'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -1297,7 +1331,7 @@ def register_routes(app):
         is_admin = data.get('is_admin', True)
         
         if not target_user_id:
-            return jsonify({'error': '?ъ슜?먮? ?좏깮?댁＜?몄슂.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
         
         # [v4.13] 留덉?留?愿由ъ옄 ?댁젣 諛⑹?
         if not is_admin:
@@ -1314,24 +1348,24 @@ def register_routes(app):
                 metadata={'source': 'api'},
             )
             return jsonify({'success': True})
-        return jsonify({'error': '愿由ъ옄 ?ㅼ젙???ㅽ뙣?덉뒿?덈떎.'}), 500
+        return jsonify({'error': '서버 처리 중 오류가 발생했습니다.'}), 500
     
     @app.route('/api/rooms/<int:room_id>/admin-check')
     def check_admin(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         # [v4.22] 硫ㅻ쾭???뺤씤 異붽?
         if not is_room_member(room_id, session['user_id']):
-            return jsonify({'error': '?묎렐 沅뚰븳???놁뒿?덈떎.'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
         is_admin = is_room_admin(room_id, session['user_id'])
         return jsonify({'is_admin': is_admin})
 
     @app.route('/api/rooms/<int:room_id>/admin-audit-logs')
     def room_admin_audit_logs(room_id):
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         if not is_room_admin(room_id, session['user_id']):
-            return jsonify({'error': '愿由ъ옄 沅뚰븳???꾩슂?⑸땲??'}), 403
+            return jsonify({'error': '접근 권한이 없습니다.'}), 403
 
         output_format = (request.args.get('format') or 'json').lower()
         limit = request.args.get('limit', type=int) or 200
@@ -1368,7 +1402,7 @@ def register_routes(app):
     @limiter.limit(advanced_search_rate_limit)
     def advanced_search_route():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
         
         data, error_response = parse_json_payload()
         if error_response:
@@ -1379,14 +1413,18 @@ def register_routes(app):
         offset, error_response = parse_int_from_json(data, 'offset', 0, minimum=0)
         if error_response:
             return error_response
+        if limit is None:
+            limit = 50
+        if offset is None:
+            offset = 0
         results = advanced_search(
             user_id=session['user_id'],
-            query=data.get('query'),
-            room_id=data.get('room_id'),
-            sender_id=data.get('sender_id'),
-            date_from=data.get('date_from'),
-            date_to=data.get('date_to'),
-            file_only=data.get('file_only', False),
+            query=data.get('query') if isinstance(data.get('query'), str) else None,
+            room_id=data.get('room_id') if isinstance(data.get('room_id'), int) else None,
+            sender_id=data.get('sender_id') if isinstance(data.get('sender_id'), int) else None,
+            date_from=data.get('date_from') if isinstance(data.get('date_from'), str) else None,
+            date_to=data.get('date_to') if isinstance(data.get('date_to'), str) else None,
+            file_only=bool(data.get('file_only', False)),
             limit=limit,
             offset=offset,
         )
@@ -1398,7 +1436,7 @@ def register_routes(app):
     @app.route('/api/me/password', methods=['PUT'])
     def update_password():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
             
         data, error_response = parse_json_payload()
         if error_response:
@@ -1407,7 +1445,7 @@ def register_routes(app):
         new_password = data.get('new_password')
         
         if not current_password or not new_password:
-            return jsonify({'error': '?낅젰媛믪씠 遺議깊빀?덈떎.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
             
         # [v4.3] 鍮꾨?踰덊샇 媛뺣룄 寃??
         from app.utils import validate_password
@@ -1433,7 +1471,7 @@ def register_routes(app):
     @app.route('/api/me', methods=['DELETE'])
     def delete_account():
         if 'user_id' not in session:
-            return jsonify({'error': '濡쒓렇?몄씠 ?꾩슂?⑸땲??'}), 401
+            return jsonify({'error': '로그인이 필요합니다.'}), 401
             
         data, error_response = parse_json_payload()
         if error_response:
@@ -1441,7 +1479,7 @@ def register_routes(app):
         password = data.get('password')
         
         if not password:
-            return jsonify({'error': '鍮꾨?踰덊샇瑜??낅젰?댁＜?몄슂.'}), 400
+            return jsonify({'error': '요청 값이 올바르지 않습니다.'}), 400
             
         success, error = delete_user(session['user_id'], password)
         
@@ -1451,5 +1489,6 @@ def register_routes(app):
             return jsonify({'success': True})
         else:
             return jsonify({'error': error}), 400
+
 
 

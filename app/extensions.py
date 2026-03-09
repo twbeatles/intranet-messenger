@@ -10,13 +10,16 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 
 try:
-    from flask_compress import Compress
+    from flask_compress import Compress as FlaskCompress
 except Exception:  # pragma: no cover - exercised only in env without brotli
-    class Compress:  # type: ignore[override]
-        def init_app(self, app):
-            app.logger.warning("Flask-Compress disabled: brotli dependency unavailable")
+    FlaskCompress = None
+
+
+class FallbackCompress:
+    def init_app(self, app):
+        app.logger.warning("Flask-Compress disabled: brotli dependency unavailable")
 
 
 limiter = Limiter(key_func=get_remote_address)
 csrf = CSRFProtect()
-compress = Compress()
+compress = FlaskCompress() if FlaskCompress is not None else FallbackCompress()

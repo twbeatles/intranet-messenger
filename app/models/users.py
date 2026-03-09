@@ -116,7 +116,7 @@ def get_user_by_id_cached(user_id: int) -> dict | None:
     return user
 
 
-def invalidate_user_cache(user_id: int = None):
+def invalidate_user_cache(user_id: int | None = None):
     """사용자 캐시 무효화"""
     with _user_cache_lock:
         if user_id is None:

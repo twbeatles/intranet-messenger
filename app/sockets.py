@@ -171,19 +171,28 @@ def register_socket_events(socketio):
         count = state_store.incr(key, ttl_seconds=60)
         return count <= max(int(per_minute), 1)
 
+    def _get_request_sid() -> str | None:
+        sid = getattr(request, 'sid', None)
+        if isinstance(sid, str) and sid:
+            return sid
+        return None
+
     @socketio.on('connect')
     def handle_connect():
         if not _is_session_token_valid():
+            return False
+        sid = _get_request_sid()
+        if not sid:
             return False
 
         if 'user_id' in session:
             user_id = session['user_id']
             
             with online_users_lock:
-                online_users[request.sid] = user_id
+                online_users[sid] = user_id
                 if user_id not in user_sids:
                     user_sids[user_id] = []
-                user_sids[user_id].append(request.sid)
+                user_sids[user_id].append(sid)
             was_offline = state_store.incr(f"presence:user:{user_id}") == 1
             
             # Join all my rooms so this client receives room events without polling.
@@ -200,7 +209,7 @@ def register_socket_events(socketio):
                 # 해당 사용자의 방에만 상태 전송 (broadcast 대신)
                 for room_id in room_ids:
                     emit('user_status', {'user_id': user_id, 'status': 'online'}, 
-                         room=f'room_{room_id}')
+                         to=f'room_{room_id}')
             
             with stats_lock:
                 server_stats['total_connections'] += 1
@@ -216,12 +225,15 @@ def register_socket_events(socketio):
         user_id = None
         still_online = False
         room_ids = []  # [v4.2] 락 내에서 미리 저장
+        sid = _get_request_sid()
+        if not sid:
+            return
         
         with online_users_lock:
-            user_id = online_users.pop(request.sid, None)
+            user_id = online_users.pop(sid, None)
             if user_id and user_id in user_sids:
-                if request.sid in user_sids[user_id]:
-                    user_sids[user_id].remove(request.sid)
+                if sid in user_sids[user_id]:
+                    user_sids[user_id].remove(sid)
                 local_still_online = len(user_sids[user_id]) > 0
                 if not local_still_online:
                     del user_sids[user_id]
@@ -240,7 +252,7 @@ def register_socket_events(socketio):
             try:
                 for room_id in room_ids:
                     emit('user_status', {'user_id': user_id, 'status': 'offline'}, 
-                         room=f'room_{room_id}')
+                         to=f'room_{room_id}')
             except Exception as e:
                 logger.error(f"Disconnect broadcast error: {e}")
             
@@ -401,14 +413,28 @@ def register_socket_events(socketio):
                     from app.models import add_room_file
 
                     try:
-                        add_room_file(room_id, user_id, file_path, file_name, file_size, message_type, message['id'])
+                        if isinstance(file_name, str) and file_name:
+                            normalized_size = file_size if isinstance(file_size, int) else None
+                            add_room_file(
+                                room_id,
+                                user_id,
+                                file_path,
+                                file_name,
+                                normalized_size,
+                                message_type,
+                                message['id'],
+                            )
+                        else:
+                            logger.warning(
+                                f"Skipped room_files insert due to invalid file_name: room={room_id}, user={user_id}"
+                            )
                     except Exception as e:
                         logger.error(f"Failed to add room file record: {e}")
                         logger.warning(
                             f"Potential orphan upload file detected: room={room_id}, user={user_id}, path={file_path}"
                         )
 
-                emit('new_message', message, room=f'room_{room_id}')
+                emit('new_message', message, to=f'room_{room_id}')
                 # broadcast 대신 해당 방 멤버들의 모든 세션에 전송
                 logger.debug(f"Message sent: room={room_id}, user={user_id}, type={message_type}")
             else:
@@ -441,7 +467,7 @@ def register_socket_events(socketio):
                     'room_id': room_id,
                     'user_id': session['user_id'],
                     'message_id': message_id
-                }, room=f'room_{room_id}')
+                }, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Message read error: {e}")
     
@@ -487,7 +513,7 @@ def register_socket_events(socketio):
                 'user_id': user_id,
                 'nickname': nickname,
                 'is_typing': is_typing
-            }, room=f'room_{room_id}', include_self=False)
+            }, to=f'room_{room_id}', include_self=False)
         except Exception as e:
             logger.error(f"Typing event error: {e}")
     
@@ -512,9 +538,9 @@ def register_socket_events(socketio):
                 
                 # 시스템 메시지 전송
                 if sys_msg:
-                    emit('new_message', sys_msg, room=f'room_{room_id}')
+                    emit('new_message', sys_msg, to=f'room_{room_id}')
                 
-                emit('room_name_updated', {'room_id': room_id, 'name': new_name}, room=f'room_{room_id}')
+                emit('room_name_updated', {'room_id': room_id, 'name': new_name}, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Room name update broadcast error: {e}")
     
@@ -533,7 +559,7 @@ def register_socket_events(socketio):
                 _emit_error('Room access denied.')
                 return
 
-            emit('room_members_updated', {'room_id': room_id}, room=f'room_{room_id}')
+            emit('room_members_updated', {'room_id': room_id}, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Room members update broadcast error: {e}")
     
@@ -582,7 +608,7 @@ def register_socket_events(socketio):
                     'message_id': message_id,
                     'content': content,
                     'encrypted': encrypted
-                }, room=f'room_{room_id}')
+                }, to=f'room_{room_id}')
             else:
                 _emit_error(error_msg)
         except Exception as e:
@@ -607,7 +633,7 @@ def register_socket_events(socketio):
                 room_id = result
                 emit('message_deleted', {
                     'message_id': message_id
-                }, room=f'room_{room_id}')
+                }, to=f'room_{room_id}')
             else:
                 _emit_error(result)
         except Exception as e:
@@ -644,7 +670,7 @@ def register_socket_events(socketio):
                 'room_id': room_id,
                 'message_id': message_id,
                 'reactions': reactions
-            }, room=f'room_{room_id}')
+            }, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Reaction update broadcast error: {e}")
     
@@ -677,7 +703,7 @@ def register_socket_events(socketio):
             emit('poll_updated', {
                 'room_id': room_id,
                 'poll': poll
-            }, room=f'room_{room_id}')
+            }, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Poll update broadcast error: {e}")
     
@@ -710,7 +736,7 @@ def register_socket_events(socketio):
             emit('poll_created', {
                 'room_id': room_id,
                 'poll': poll
-            }, room=f'room_{room_id}')
+            }, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Poll created broadcast error: {e}")
     
@@ -736,7 +762,7 @@ def register_socket_events(socketio):
 
             emit('pin_updated', {
                 'room_id': room_id,
-            }, room=f'room_{room_id}')
+            }, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Pin update broadcast error: {e}")
     
@@ -759,7 +785,7 @@ def register_socket_events(socketio):
                     'room_id': room_id,
                     'user_id': target_user_id,
                     'is_admin': is_admin_flag
-                }, room=f'room_{room_id}')
+                }, to=f'room_{room_id}')
         except Exception as e:
             logger.error(f"Admin update broadcast error: {e}")
 

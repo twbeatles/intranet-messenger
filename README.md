@@ -255,3 +255,20 @@ pyinstaller messenger.spec --clean
   - `id_token` 필수
   - JWKS 서명 검증 + `iss`, `aud`, `exp`, `nonce` 검증
   - callback에서 `state`, `nonce` one-time pop 처리
+
+## 17. 2026-03-09 타입/인코딩 정합성 업데이트
+
+- 런타임 코드 기준 Pylance/Pyright 오류 정리 완료
+  - 기준 설정: `pyrightconfig.json`
+  - 제외 범위: `tests/`, `app/legacy/`, `**/__pycache__/`
+  - 검증 결과: `pyright` -> `0 errors`
+- 인코딩 깨짐(모지바케) 사용자 노출 오류 문자열 정리
+  - 대상: `app/routes.py`의 `jsonify({'error': ...})` / `json_error(...)` 경로
+  - 문서/주석 대량 치환은 제외, 실행 문자열 우선 복구
+- 업로드 AV pending 경로 정규화 보강
+  - `UPLOAD_QUARANTINE_FOLDER`가 `UPLOAD_FOLDER` 외부(또는 드라이브 상이)면
+    내부 `uploads/quarantine`로 안전 fallback
+  - 목적: Windows 환경의 `relpath` 드라이브 불일치 예외 방지
+- 테스트 기준선 갱신
+  - `pytest -q` -> `84 passed`
+  - `tests/test_risk_gap_remediation.py::test_upload_returns_pending_when_av_enabled` 통과

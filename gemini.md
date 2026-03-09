@@ -1,7 +1,7 @@
 # GEMINI.md
 
 프로젝트: `intranet-messenger-main`  
-최종 업데이트: 2026-02-27
+최종 업데이트: 2026-03-09
 
 ## 1) 문서 목표
 
@@ -18,8 +18,8 @@
 ## 3) 현재 상태 스냅샷
 
 - 테스트 기준선:
-  - `pytest tests -q` => `71 passed`
-  - `pytest --maxfail=1` => `71 passed`
+  - `pytest tests -q` => `84 passed`
+  - `pytest --maxfail=1` => `84 passed`
 - 테스트 수집 안정화 완료:
   - `pytest.ini` (`testpaths = tests`, `norecursedirs = backup dist build`)
 - 보안/계약 핵심 반영 완료:
@@ -132,3 +132,17 @@ Then report changed files and test results.
 - 프론트 업로드 분리: `static/js/message-upload.js` 추가
 - 세션 저장소: Flask-Session `cachelib` 백엔드 사용
 - 인코딩 안정성: 서버 진입점 UTF-8 stdio 설정 적용
+
+## 12) 2026-03-09 타입/인코딩 정합성 메모
+
+- 타입체커 기준 파일: `pyrightconfig.json`
+  - 제외 범위: `tests/`, `app/legacy/`, `**/__pycache__/`
+- 런타임 타입 정리 결과:
+  - `pyright` -> `0 errors`
+- 사용자 노출 오류 문자열 복구:
+  - `app/routes.py`의 모지바케 오류 문구를 한국어로 정규화
+- 업로드 안정성 보강:
+  - AV pending 경로에서 quarantine 폴더가 업로드 루트 밖이면 내부 fallback 적용
+  - Windows 드라이브 불일치(`D:`/`C:`) `relpath` 예외 방지
+- 회귀 결과:
+  - `pytest -q` -> `84 passed`

@@ -76,3 +76,18 @@
 ## 5) 메모
 
 - 현재 워킹트리는 문서/코드 동기화 상태이며, 본 문서 기준으로 README/claude/분석 문서와 구현 내용 정합을 맞춤.
+
+## 6) 2026-03-09 추가 정합성 반영
+
+- 타입 진단 기준 고정:
+  - `pyrightconfig.json` 추가
+  - 검사 제외: `tests/`, `app/legacy/`, `**/__pycache__/`
+- 런타임 타입 오류 정리:
+  - `app/models/base.py`의 `get_db()` 반환 타입을 `sqlite3.Connection`으로 고정
+  - `routes/sockets/models`의 Optional/호출 시그니처 경고 정리
+  - 결과: `pyright` -> `0 errors`
+- 사용자 노출 오류 문자열 인코딩 복구:
+  - `app/routes.py`의 모지바케 오류 메시지 정리(한국어 기준)
+- 회귀 수정 포함:
+  - AV pending 업로드 경로의 `relpath` 드라이브 불일치 이슈 수정
+  - `pytest -q` 기준 `84 passed` 유지

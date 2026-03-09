@@ -86,3 +86,19 @@
 1. Socket event schema를 별도 문서(`docs/socket-events.md`)로 분리해 프론트/백엔드 공용 계약화.
 2. OIDC/JWKS 관련 운영 파라미터(`OIDC_JWKS_URL`, cache TTL)의 환경별 설정 표준화.
 3. PyInstaller 산출물 smoke test를 CI 단계에 추가.
+
+## 10. 2026-03-09 정합성 점검 업데이트
+
+- 코드 정합성
+  - 런타임 타입 점검 기준을 `pyrightconfig.json`으로 고정함.
+  - 검사 제외는 `tests/`, `app/legacy/`, `**/__pycache__/`로 명시함.
+  - 결과: `pyright` 기준 런타임 오류 `0`.
+- 인코딩 정합성
+  - `app/routes.py`의 사용자 노출 오류 메시지 모지바케를 한국어 문구로 복구함.
+  - 주석/분석 문서 대량 치환은 범위 밖으로 유지함.
+- 업로드 안정성
+  - AV pending 경로에서 quarantine 경로가 업로드 루트 밖일 때 내부 fallback을 강제하여
+    Windows 드라이브 불일치(`D:` vs `C:`) 예외를 방지함.
+- 검증
+  - 단건 회귀: `tests/test_risk_gap_remediation.py::test_upload_returns_pending_when_av_enabled` 통과
+  - 전체 회귀: `pytest -q` -> `84 passed`

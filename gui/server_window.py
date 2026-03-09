@@ -142,7 +142,7 @@ class ServerThread(QThread):
             f"http://127.0.0.1:{self.port}/control",
         ]
 
-    def _request_control(self, path: str, method: str = 'GET', data: bytes = None, timeout: int = 3):
+    def _request_control(self, path: str, method: str = 'GET', data: bytes | None = None, timeout: int = 3):
         token = self._load_control_token()
         last_err = None
 
@@ -247,7 +247,9 @@ class ServerThread(QThread):
         """서버 프로세스의 stdout을 읽어서 로그로 전송"""
         if not self.process:
             return
-            
+        if self.process.stdout is None:
+            return
+             
         try:
             for line in iter(self.process.stdout.readline, ''):
                 if not line:
@@ -645,7 +647,11 @@ class ServerWindow(QMainWindow):
         self.activateWindow()
         self.raise_()
     
-    def closeEvent(self, event):
+    def closeEvent(self, a0):
+        event = a0
+        if event is None:
+            self.quit_app()
+            return
         if self.minimize_to_tray_check.isChecked():
             event.ignore()
             self.hide()

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_poll(room_id: int, created_by: int, question: str, options: list,
-                multiple_choice: bool = False, anonymous: bool = False, ends_at: str = None) -> int | None:
+                multiple_choice: bool = False, anonymous: bool = False, ends_at: str | None = None) -> int | None:
     """투표 생성 후 poll_id 반환"""
     conn = get_db()
     cursor = conn.cursor()

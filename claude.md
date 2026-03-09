@@ -199,4 +199,22 @@ and execute changes with verification (`pytest tests -q`, `pytest --maxfail=1`).
   - `POST /api/rooms/<room_id>/leave`: idempotent success with `left` and `already_left` flags.
 - Test baseline: `pytest -q` => `84 passed` (2026-02-28).
 
+## 13) 2026-03-09 타입/문서 정합성 업데이트
+
+- 런타임 타입 기준 고정:
+  - `pyrightconfig.json` 추가
+  - 제외: `tests/`, `app/legacy/`, `**/__pycache__/`
+- 타입 오류 정리 완료:
+  - `app/models/base.py`의 `get_db()` 반환 타입 고정
+  - `routes/sockets/models/gui/config` 관련 진단 정리
+  - 결과: `pyright` -> `0 errors`
+- 인코딩 정리:
+  - `app/routes.py` 사용자 노출 오류 메시지 모지바케 복구(한국어)
+- 업로드 경로 안정성 보강:
+  - AV pending 경로에서 quarantine 폴더가 업로드 루트 밖이면 내부 fallback 적용
+  - Windows 드라이브 불일치 `relpath` 예외 방지
+- 검증:
+  - `pytest -q tests/test_risk_gap_remediation.py::test_upload_returns_pending_when_av_enabled` 통과
+  - `pytest -q` -> `84 passed`
+
 

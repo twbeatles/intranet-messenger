@@ -10,6 +10,7 @@ import time
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from typing import Iterator
 
 # config 임포트 (PyInstaller 호환)
 try:
@@ -29,7 +30,7 @@ _db_initialized = False
 _db_local = threading.local()
 
 
-def _create_connection():
+def _create_connection() -> sqlite3.Connection:
     """새 데이터베이스 연결 생성 (재시도 로직 포함)"""
     max_retries = 3
     retry_delay = 0.1
@@ -56,38 +57,52 @@ def _create_connection():
                 raise
             time.sleep(retry_delay)
             retry_delay *= 2
+    raise RuntimeError("Unreachable: DB connection retries exhausted")
 
 
-def get_db():
+def _get_thread_connection() -> sqlite3.Connection | None:
+    conn = getattr(_db_local, "connection", None)
+    if isinstance(conn, sqlite3.Connection):
+        return conn
+    return None
+
+
+def _set_thread_connection(conn: sqlite3.Connection | None) -> None:
+    _db_local.connection = conn
+
+
+def get_db() -> sqlite3.Connection:
     """데이터베이스 연결 - 스레드별 연결 재사용 (성능 최적화)"""
-    if not hasattr(_db_local, 'connection') or _db_local.connection is None:
-        _db_local.connection = _create_connection()
+    conn = _get_thread_connection()
+    if conn is None:
+        conn = _create_connection()
+        _set_thread_connection(conn)
     else:
         try:
-            _db_local.connection.execute('SELECT 1')
+            conn.execute('SELECT 1')
         except (sqlite3.ProgrammingError, sqlite3.OperationalError):
             try:
-                if hasattr(_db_local.connection, 'close'):
-                    _db_local.connection.close()
+                conn.close()
             except Exception:
                 pass
-            _db_local.connection = _create_connection()
-            
-    return _db_local.connection
+            conn = _create_connection()
+            _set_thread_connection(conn)
+    return conn
 
 
 def close_thread_db():
     """현재 스레드의 데이터베이스 연결 종료"""
-    if hasattr(_db_local, 'connection') and _db_local.connection:
+    conn = _get_thread_connection()
+    if conn is not None:
         try:
-            _db_local.connection.close()
+            conn.close()
         except Exception:
             pass
-        _db_local.connection = None
+        _set_thread_connection(None)
 
 
 @contextmanager
-def get_db_context():
+def get_db_context() -> Iterator[sqlite3.Connection]:
     """데이터베이스 연결 컨텍스트 매니저"""
     conn = get_db()
     try:
