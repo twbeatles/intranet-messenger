@@ -1,146 +1,152 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
-?꾨줈?앺듃: `intranet-messenger-main`  
-理쒖쥌 ?낅뜲?댄듃: 2026-02-28
+프로젝트: `intranet-messenger-main`  
+최종 업데이트: 2026-03-15
 
-## 1) 紐⑹쟻
+## 1) 목적
 
-???묒뾽 ?몄뀡?먯꽌 Claude媛 ???뚯씪 ?섎굹濡??꾨줈?앺듃???꾩옱 ?곹깭, ?꾩닔 洹쒖튃, 寃利?湲곗???鍮좊Ⅴ寃??뚯븙?섎룄濡??섍린 ?꾪븳 ?댁쁺 臾몄꽌.
+Claude 세션에서 프로젝트의 현재 기준선, 핵심 계약, 검증 루틴을 빠르게 파악하기 위한 운영 문서다.
 
-## 2) ?몄뀡 ?쒖옉 ???꾩닔 ?뺤씤
+## 2) 세션 시작 전 필수 확인
 
-1. `README.md`  
-2. `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md`  
-3. 理쒓렐 蹂寃??뚯씪:
+1. `README.md`
+2. `pyrightconfig.json`
+3. `docs/BACKUP_RUNBOOK.md`
+4. 최근 변경 파일
    - `app/routes.py`
    - `app/sockets.py`
    - `app/upload_tokens.py`
    - `app/models/users.py`
    - `app/models/messages.py`
    - `app/models/polls.py`
+   - `tests/test_encoding_hygiene.py`
 
-## 3) ?꾩옱 湲곗???Baseline)
+## 3) 현재 기준선
 
-- 踰꾩쟾 臾몄꽌 湲곗?: `v4.36.3 (2026-02-20)`
-- ?뚭? ?뚯뒪??湲곗?:
-  - `pytest tests -q` => `84 passed`
-  - `pytest --maxfail=1` => `84 passed`
-- `pytest.ini` 議댁옱:
+- 버전 기준 문서: `v4.36.3 (2026-02-20)`
+- 타입 기준선
+  - `pyright` => `0 errors, 0 warnings`
+- 테스트 기준선
+  - `pytest tests -q` => `86 passed`
+  - `pytest --maxfail=1` => `86 passed`
+- `pytest.ini`
   - `testpaths = tests`
   - `norecursedirs = backup dist build`
 
-## 4) ?듭떖 API/蹂댁븞 怨꾩빟 (?덈? 源⑥?硫?????
+## 4) 핵심 API/보안 계약
 
-### 4.1 諛??앹꽦 API
+### 4.1 방 생성 API
 
-- ?붾뱶?ъ씤?? `POST /api/rooms`
-- ?쒖? ?낅젰 ?? `members`
-- ?명솚 ?낅젰 ?? `member_ids` (?섏쐞 ?명솚)
-- ?숈떆 ?낅젰 ?? `members` ?곗꽑, `member_ids` 臾댁떆(寃쎄퀬 濡쒓렇)
-- 硫ㅻ쾭 ?뺢퇋??
-  - ?뺤닔 蹂??
-  - 以묐났 ?쒓굅
-  - ?먭린 ?먯떊 ?먮룞 ?ы븿
+- 엔드포인트: `POST /api/rooms`
+- 주 입력 키: `members`
+- 호환 입력 키: `member_ids`
+- 둘 다 들어오면 `members`를 우선 사용하고 `member_ids`는 무시한다. 경고 로그는 남긴다.
+- 멤버 정규화 규칙
+  - 정수 변환
+  - 중복 제거
+  - 자기 자신 자동 포함
 
-### 4.2 ?낅줈???뚯씪 硫붿떆吏 蹂댁븞
+### 4.2 업로드/파일 메시지 보안
 
-- ?낅줈?? `POST /api/upload`
-  - `room_id` ?꾩닔
-  - ?깃났 ?묐떟??`upload_token` ?ы븿
-- ?뚯폆: `send_message`
-  - `type in ('file','image')`?대㈃ `upload_token` ?꾩닔
-  - ?쒕쾭???대씪?댁뼵??`file_path`/`file_name`???좊ː?섏? ?딆쓬
-  - ?좏겙 寃利? user/room/type/留뚮즺/1?뚯꽦 ?뚮퉬
-- ?좏겙 ??μ냼: `app/upload_tokens.py`
-  - 湲곕낯 TTL 5遺?
+- 업로드: `POST /api/upload`
+  - `room_id` 필수
+  - 성공 응답에는 `upload_token` 포함
+- 파일 메시지 전송: `send_message`
+  - `type in ('file', 'image')`이면 `upload_token` 필수
+  - 클라이언트가 `file_path`나 `file_name`을 임의 전달하지 않는다
+  - 토큰은 user/room/type/만료/1회성까지 검증한다
+- 토큰 저장소: `app/upload_tokens.py`
+  - 기본 TTL 5분
   - thread-safe lock
   - one-time consume
 
-### 4.3 ?뚯씪 ?ㅼ슫濡쒕뱶 罹먯떆 ?뺤콉
+### 4.3 파일 다운로드 캐시 정책
 
-- ?붾뱶?ъ씤?? `GET /uploads/<path>`
-- ?쇰컲 ?뚯씪: `Cache-Control: private, no-store`
-- ?꾨줈???대?吏: `Cache-Control: private, max-age=3600`
+- 엔드포인트: `GET /uploads/<path>`
+- 일반 파일: `Cache-Control: private, no-store`
+- 프로필 이미지: `Cache-Control: private, max-age=3600`
 
-### 4.4 寃??API ?뺤콉
+### 4.4 검색 API 정책
 
-- ?붾뱶?ъ씤?? `GET /api/search`
-- `limit` clamp: `1..200`
-- `offset`: ?뚯닔 諛⑹?(`>=0`)
+- 엔드포인트: `GET /api/search`
+- `limit` clamp 범위: `1..200`
+- `offset`은 음수 방지(`>= 0`)
 
-### 4.5 Poll/Pin 怨꾩빟
+### 4.5 Poll/Pin 계약
 
-- Poll ?앹꽦 紐⑤뜽 怨꾩빟:
+- Poll 생성 모델 계약
   - `create_poll(...) -> poll_id | None`
-- Poll ?앹꽦 ?쇱슦??
-  - `poll_id` ?앹꽦 ??`get_poll(poll_id)` 議고쉶?섏뿬 ?묐떟
-- Pin ??젣:
-  - `success, error = unpin_message(...)`濡??먯젙
-  - tuple truthy ?ㅽ뙋 湲덉?
-- Pin ?쒖뒪??硫붿떆吏:
-  - `pin_updated` ?뚯폆 ?대깽??寃쎈줈?먯꽌 ?앹꽦 湲덉?
-  - `/api/rooms/<room_id>/pins` ?앹꽦/??젣 ?깃났 寃쎈줈?먯꽌留??앹꽦
+- Poll 생성 라우트
+  - `poll_id` 생성 후 `get_poll(poll_id)`로 다시 조회해 응답한다
+- Pin 해제
+  - `success, error = unpin_message(...)` 형태를 사용한다
+  - tuple 자체의 truthy 판단은 금지한다
+- Pin 시스템 메시지
+  - `pin_updated` 소켓 이벤트 경로에서는 만들지 않는다
+  - `/api/rooms/<room_id>/pins`의 생성/삭제 성공 경로에서만 만든다
 
-### 4.7 Socket authoritative 怨꾩빟
+### 4.6 탈퇴와 무결성
 
-- ?뚯폆 釉뚮줈?쒖틦?ㅽ듃 payload???쒕쾭 DB ?ъ“??媛믪씠 湲곗?
-- `profile_updated`, `reaction_updated`, `poll_updated`, `poll_created`???대씪?댁뼵??payload瑜??좊ː?섏? ?딆쓬
-- `room_members_updated`??emit 二쇱껜??room 硫ㅻ쾭??寃利??꾩닔
+- `polls.created_by = NULL` 업데이트 금지 (`NOT NULL` 제약)
+- 탈퇴 사용자가 만든 poll 처리 규칙
+  - 같은 방의 다른 멤버에게 소유권을 넘긴다 (관리자 우선)
+  - 넘길 수 없으면 poll을 삭제한다
 
-### 4.6 ?뚯썝?덊눜 臾닿껐??
+### 4.7 Socket authoritative 계약
 
-- `polls.created_by = NULL` ?낅뜲?댄듃 湲덉? (`NOT NULL` ?쒖빟)
-- ?덊눜 ?ъ슜?먭? 留뚮뱺 poll 泥섎━:
-  - 媛숈? 諛⑹쓽 ?ㅻⅨ 硫ㅻ쾭?먭쾶 ?ы븷??愿由ъ옄 ?곗꽑)
-  - ????놁쑝硫?poll ??젣
+- 소켓 브로드캐스트 payload는 서버 DB 조회 결과를 기준으로 한다
+- `profile_updated`, `reaction_updated`, `poll_updated`, `poll_created`는 클라이언트 payload를 신뢰하지 않는다
+- `room_members_updated` emit 전에는 room 멤버 검증이 필수다
 
-## 5) ?묒뾽 ?먯튃
+## 5) 작업 원칙
 
-1. `app/models.py`(紐⑤?由ъ떇)蹂대떎 `app/models/*` 紐⑤뱢 寃쎈줈瑜??곗꽑 ?ъ슜.
-2. API 怨꾩빟 蹂寃???
-   - ?쇱슦??+ ?꾨줎??+ ?뚯뒪??+ README瑜??숈떆 媛깆떊.
-3. ?뚯씪 ?꾩넚 寃쎈줈?먯꽌 ?대씪?댁뼵???낅젰 寃쎈줈 ?좊ː 湲덉?.
-4. ??蹂댁븞 濡쒖쭅 異붽? ???뚭? ?뚯뒪?몃? 諛섎뱶??異붽?.
-5. README???먯뇙留??⑸웾/API ?ㅻ챸怨?援ы쁽????긽 ?쇱튂?쒗궗 寃?
+1. `app/models.py` 단일 모듈보다 `app/models/*` 경로를 우선 사용한다.
+2. API 계약을 바꾸면 라우트, 프런트엔드, 테스트, README를 함께 갱신한다.
+3. 파일 전송 경로에서는 클라이언트 입력 경로를 그대로 신뢰하지 않는다.
+4. 보안 로직을 추가하면 테스트도 반드시 함께 추가한다.
+5. README, 사용자 흐름, API 설명과 실제 구현이 일치하는지 확인한다.
+6. 타입/인코딩 관련 변경 시 `pyrightconfig.json`과 `tests/test_encoding_hygiene.py`도 함께 점검한다.
 
-## 6) 蹂寃???寃利?猷⑦떞
+## 6) 변경 검증 루틴
 
 1. `pytest tests -q`
 2. `pytest --maxfail=1`
-3. ?ㅼ쓬???섎룞 ?먭?:
-   - `/api/upload` ?묐떟??`upload_token` 議댁옱
-   - ?좏겙 ?놁씠 ?뚯씪 ?뚯폆 ?꾩넚 ???먮윭 emit
-   - `/api/search?limit=9999&offset=-1` clamp ?숈옉
-   - `/uploads` 罹먯떆 ?ㅻ뜑 ?뺤콉 遺꾧린
-   - `pin_updated` ?뚯폆 ?곗냽 ?몄텧 ??rate limit ?숈옉
-   - OIDC callback?먯꽌 nonce/state one-time pop + 寃利??ㅽ뙣 濡쒓렇??嫄곕?
+3. `pyright`
+4. 필요 시 수동 점검
+   - `/api/upload` 응답에 `upload_token`이 있는지
+   - 토큰 없이 파일 메시지 전송 시 에러가 발생하는지
+   - `/api/search?limit=9999&offset=-1`가 clamp 되는지
+   - `/uploads` 캐시 헤더가 경로별로 다르게 나가는지
+   - `pin_updated` 연속 호출 시 rate limit이 동작하는지
+   - OIDC callback에서 nonce/state one-time pop과 검증 실패 로그가 남는지
+   - tracked text files에 BOM이나 mojibake가 없는지
 
-## 7) PR/而ㅻ컠 泥댄겕由ъ뒪??
+## 7) PR/커밋 체크리스트
 
-- [ ] 怨꾩빟 蹂寃쎌씠 README/臾몄꽌??諛섏쁺?섏뿀?붽?
-- [ ] ?뚯뒪??異붽?/?섏젙???숇컲?섏뿀?붽?
-- [ ] 湲곗〈 ?뚯뒪???꾩껜 ?듦낵 ?щ? ?뺤씤?덈뒗媛
-- [ ] 蹂댁븞 愿???뚭?(?좏겙 ?고쉶, 沅뚰븳 ?고쉶) 耳?댁뒪瑜?寃利앺뻽?붽?
+- [ ] 계약 변경이 README와 문서에 반영되었는가
+- [ ] 테스트가 추가 또는 수정되었는가
+- [ ] 기존 테스트 전체 통과를 확인했는가
+- [ ] 보안 우회 케이스(토큰 우회, 권한 우회)를 검증했는가
 
-## 8) Claude ?몄뀡 ?꾨＼?꾪듃 ?쒗뵆由?沅뚯옣)
+## 8) Claude 세션 프롬프트 템플릿
 
-?꾨옒瑜????몄뀡 泥?硫붿떆吏濡??ъ슜:
+아래 문장을 세션 첫 메시지로 사용할 수 있다.
 
-```
-Read `claude.md`, `README.md`, and `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md` first.
+```text
+Read `claude.md`, `README.md`, `pyrightconfig.json`, and `docs/BACKUP_RUNBOOK.md` first.
 Then summarize:
 1) current baseline (tests/contracts),
 2) risks if we change this area,
 3) exact files to edit,
-and execute changes with verification (`pytest tests -q`, `pytest --maxfail=1`).
+and execute changes with verification (`pyright`, `pytest tests -q`, `pytest --maxfail=1`).
 ```
 
-## 9) 2026-02-25 湲곗????낅뜲?댄듃 (Full Remediation)
+## 9) 2026-02-25 기준 업데이트 (Full Remediation)
 
-- 肄붾뱶 湲곗???  - 由ъ뒪??留ㅽ븨 R-01~R-11 諛섏쁺 ?꾨즺
-  - 異붽? 湲곕뒫(?듭뀡): OIDC, AV ?ㅼ틪 ?? Redis state_store, 愿由ъ옄 媛먯궗濡쒓렇, 蹂댁〈?뺤콉, 諛깆뾽/蹂듦뎄 ?곕턿
-
-- ??蹂寃?二쇱슂 ?뚯씪
+- 코드 기준선
+  - 리스크 매핑 R-01~R-11 반영 완료
+  - 추가 기능: OIDC, AV 스캔, Redis state_store, 관리자 감사 로그, 보조 정책, 백업/복구
+- 주요 변경 파일
   - `app/state_store.py`
   - `app/upload_scan.py`
   - `app/oidc.py`
@@ -150,71 +156,66 @@ and execute changes with verification (`pytest tests -q`, `pytest --maxfail=1`).
   - `scripts/restore_local.py`
   - `scripts/verify_restore.py`
   - `docs/BACKUP_RUNBOOK.md`
-
-- 怨듦컻 API 湲곗???  - `GET /api/config`
+- 공개 API 기준선
+  - `GET /api/config`
   - `GET /api/upload/jobs/<job_id>`
   - `GET /api/auth/providers`
   - `GET /auth/oidc/login`
   - `GET /auth/oidc/callback`
   - `GET /api/rooms/<room_id>/admin-audit-logs?format=json|csv`
+- 테스트 기준선
+  - `pytest -q` => `84 passed`
+- 작업 시 주의사항
+  - 세션 무효화는 HTTP(`before_request`)와 Socket(`connect`/주요 이벤트)에서 모두 적용한다
+  - 파일 메시지의 `upload_token` 검증 경로를 우회할 수 없게 유지한다
+  - `state_store`는 Redis 장애 시 메모리 경로로 안전하게 폴백해야 한다
 
-- ?뚯뒪??湲곗???  - `pytest -q` => `84 passed`
+## 10) 2026-02-25 통합 문서 메모
 
-- ?묒뾽 ???좎쓽?ы빆
-  - ?몄뀡 臾댄슚?붾뒗 HTTP(`before_request`) + Socket(`connect`/?듭떖 ?대깽?? 紐⑤몢 ?좎?
-  - ?뚯씪 硫붿떆吏??`upload_token` 寃利?寃쎈줈瑜??고쉶?섏? ?딅룄濡??좎?
-  - `state_store`??Redis ?μ븷 ??硫붾え由?媛뺣벑 ?숈옉???좎?
-
-## 10) 2026-02-25 ?뺥빀???숆린??硫붾え
-
-- README/API 怨꾩빟/援ъ“ 遺꾩꽍 臾몄꽌 媛?湲곗????숆린???꾨즺
-- ?뚯뒪??湲곗??? `pytest -q` -> `84 passed`
-- `.spec` ?먭? 寃곌낵 諛섏쁺:
-  - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
+- README, API 계약, 구조 분석 문서 간 기준선 동기화 완료
+- 테스트 기준선: `pytest -q` => `84 passed`
+- `.spec` 반영 항목
+  - `app.state_store`
+  - `app.upload_scan`
+  - `app.oidc`
+  - `app.models.admin_audit`
   - `redis`, `redis.asyncio`
-  - `docs/BACKUP_RUNBOOK.md` ?곗씠???ы븿
+  - `docs/BACKUP_RUNBOOK.md` 데이터 포함
 
-## 11) 2026-02-27 援ъ“ 由ъ뒪??媛쒖꽑 諛섏쁺
+## 11) 2026-02-27 구조 리스크 개선 반영
 
-- `messenger_server.py`??deprecated shim?쇰줈 ?좎??섍퀬 ?좉퇋 濡쒖쭅 異붽? 湲덉?
-- ?꾨줎???낅줈??梨낆엫? `static/js/message-upload.js`濡?遺꾨━
-- ?몄뀡 ??μ냼??`cachelib` 諛깆뿏??湲곗??쇰줈 ?좎?
-- ?몄퐫???덉젙?? ?쒕쾭 吏꾩엯??UTF-8 stdio ?ㅼ젙 ?좎?
+- `messenger_server.py`는 deprecated shim으로 유지하고 신규 로직은 추가하지 않는다
+- 프런트엔드 업로드 책임은 `static/js/message-upload.js`로 분리한다
+- 세션 저장소는 `cachelib` 백엔드를 기준으로 유지한다
+- 인코딩 안정성을 위해 서버 진입점의 UTF-8 stdio 설정을 유지한다
 
-### API 怨꾩빟 怨좎젙媛?- `GET /api/config`
+### API 계약 고정값
+
+- `GET /api/config`
 - `POST /api/upload` + `GET /api/upload/jobs/<job_id>`
 - `POST /api/polls/<poll_id>/vote` (`error`, `code`)
-- `GET /api/auth/providers`, `GET /auth/oidc/login`, `GET /auth/oidc/callback`
+- `GET /api/auth/providers`
+- `GET /auth/oidc/login`
+- `GET /auth/oidc/callback`
 - `GET /api/rooms/<room_id>/admin-audit-logs?format=json|csv`
-
 
 ## 12) 2026-02-28 Feature Risk Review Sync
 
-- Socket authoritative policy is now enforced for `room_members_updated`, `profile_updated`, `reaction_updated`, `poll_created`, `poll_updated`, and `pin_updated`.
-- `pin_updated` socket event no longer creates system messages. System messages are created only in HTTP pin create/delete success paths.
-- OIDC callback uses one-time `state`/`nonce` pop, and login is denied when `id_token` or nonce verification fails.
-- OIDC `id_token` verification is strict: JWKS signature validation + `iss`, `aud`, `exp`, `nonce` checks.
-- API contracts updated:
-  - `POST /api/search/advanced`: invalid `limit`/`offset` returns `400` with `invalid_limit`/`invalid_offset`.
-  - `POST /api/rooms/<room_id>/leave`: idempotent success with `left` and `already_left` flags.
-- Test baseline: `pytest -q` => `84 passed` (2026-02-28).
+- Socket authoritative policy는 `room_members_updated`, `profile_updated`, `reaction_updated`, `poll_created`, `poll_updated`, `pin_updated`에 적용된다
+- `pin_updated` 소켓 이벤트는 더 이상 시스템 메시지를 생성하지 않는다
+- 시스템 메시지는 HTTP pin 생성/삭제 성공 경로에서만 생성된다
+- OIDC callback은 one-time `state`/`nonce` pop을 사용하며, `id_token` 또는 nonce 검증 실패 시 로그인을 거부한다
+- OIDC `id_token` 검증은 JWKS 서명 검증과 `iss`, `aud`, `exp`, `nonce` 체크를 포함한다
+- API 계약 업데이트
+  - `POST /api/search/advanced`: 잘못된 `limit`/`offset`은 `400`과 `invalid_limit`/`invalid_offset`을 반환한다
+  - `POST /api/rooms/<room_id>/leave`: `left`, `already_left` 플래그를 포함한 idempotent success를 반환한다
+- 테스트 기준선: `pytest -q` => `84 passed` (2026-02-28)
 
-## 13) 2026-03-09 타입/문서 정합성 업데이트
+## 13) 2026-03-15 Pylance/인코딩 정합성 반영
 
-- 런타임 타입 기준 고정:
-  - `pyrightconfig.json` 추가
-  - 제외: `tests/`, `app/legacy/`, `**/__pycache__/`
-- 타입 오류 정리 완료:
-  - `app/models/base.py`의 `get_db()` 반환 타입 고정
-  - `routes/sockets/models/gui/config` 관련 진단 정리
-  - 결과: `pyright` -> `0 errors`
-- 인코딩 정리:
-  - `app/routes.py` 사용자 노출 오류 메시지 모지바케 복구(한국어)
-- 업로드 경로 안정성 보강:
-  - AV pending 경로에서 quarantine 폴더가 업로드 루트 밖이면 내부 fallback 적용
-  - Windows 드라이브 불일치 `relpath` 예외 방지
-- 검증:
-  - `pytest -q tests/test_risk_gap_remediation.py::test_upload_returns_pending_when_av_enabled` 통과
-  - `pytest -q` -> `84 passed`
-
-
+- `pyrightconfig.json` 추가로 로컬 타입체크 기준선을 고정했다
+- `pyright` 기준 `0 errors, 0 warnings`
+- `pytest -q` 기준 `86 passed`
+- UTF-8 BOM 제거와 깨진 한글 복구를 반영했다
+- `tests/test_encoding_hygiene.py`를 추가해 BOM/mojibake 회귀를 자동 검증한다
+- 의도적 detector token은 `app/__init__.py`, `app/sockets.py`만 allowlist로 유지한다

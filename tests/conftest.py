@@ -31,7 +31,7 @@ def app():
     
     # [v4.11] 스레드 로컬 DB 연결 초기화 - 이전 DB 연결 캐시 제거
     base_module._db_initialized = False
-    if hasattr(base_module._db_local, 'connection'):
+    if base_module._db_local.connection is not None:
         try:
             base_module._db_local.connection.close()
         except Exception:

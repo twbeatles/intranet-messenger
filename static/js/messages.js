@@ -384,7 +384,7 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
                 content = '<div class="message-bubble" data-decrypt-pending="1">[\uBCF5\uD638\uD654 \uC911...]</div>';
             } else {
                 var decrypted = msg.encrypted ? '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]' : msg.content;
-                // [v4.34] ?? ?? ???
+                // [v4.34] 코드 블록과 멘션 처리
                 var parsedContent = parseCodeBlocks(parseMentions(escapeHtml(decrypted)));
                 content = '<div class="message-bubble">' + parsedContent + '</div>';
             }

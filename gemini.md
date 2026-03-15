@@ -1,7 +1,7 @@
 # GEMINI.md
 
 프로젝트: `intranet-messenger-main`  
-최종 업데이트: 2026-03-09
+최종 업데이트: 2026-03-15
 
 ## 1) 문서 목표
 
@@ -11,15 +11,18 @@
 ## 2) 시작 절차 (Session Bootstrap)
 
 1. `README.md` 읽기  
-2. `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md` 읽기  
-3. 본 문서(`gemini.md`) 기준으로 작업 계획 수립  
-4. 변경 전 영향 파일/테스트 명시
+2. `pyrightconfig.json` 읽기  
+3. `docs/BACKUP_RUNBOOK.md` 읽기  
+4. 본 문서(`gemini.md`) 기준으로 작업 계획 수립  
+5. 변경 전 영향 파일/테스트 명시
 
 ## 3) 현재 상태 스냅샷
 
 - 테스트 기준선:
-  - `pytest tests -q` => `84 passed`
-  - `pytest --maxfail=1` => `84 passed`
+  - `pytest tests -q` => `86 passed`
+  - `pytest --maxfail=1` => `86 passed`
+- 타입 기준선:
+  - `pyright` => `0 errors, 0 warnings`
 - 테스트 수집 안정화 완료:
   - `pytest.ini` (`testpaths = tests`, `norecursedirs = backup dist build`)
 - 보안/계약 핵심 반영 완료:
@@ -27,6 +30,7 @@
   - `members` 표준 + `member_ids` 호환
   - `/api/search` limit/offset clamp
   - `/uploads` 인증 캐시 정책 강화
+  - UTF-8/BOM 정리 + encoding hygiene 테스트 추가
 
 ## 4) 절대 보존해야 할 계약
 
@@ -99,9 +103,10 @@
 
 - 코드 계약 바뀌면 최소 다음 문서를 같이 수정:
   - `README.md`
-  - `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md`
   - `claude.md`
   - `gemini.md`
+  - `docs/BACKUP_RUNBOOK.md` (운영 절차 영향 시)
+  - `pyrightconfig.json` / `tests/test_encoding_hygiene.py` (타입/인코딩 영향 시)
 - 기존 내용 삭제 대신, "업데이트 섹션"을 추가해 이력 보존.
 
 ## 9) Gemini 세션 프롬프트 템플릿(권장)
@@ -109,11 +114,12 @@
 새 세션 시작 시:
 
 ```
-Read `gemini.md`, `claude.md`, `README.md`, and `PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md`.
+Read `gemini.md`, `claude.md`, `README.md`, `pyrightconfig.json`, and `docs/BACKUP_RUNBOOK.md`.
 Keep current security/API contracts intact.
 When changing code, update docs and run:
-1) pytest tests -q
-2) pytest --maxfail=1
+1) pyright
+2) pytest tests -q
+3) pytest --maxfail=1
 Then report changed files and test results.
 ```
 
@@ -133,16 +139,14 @@ Then report changed files and test results.
 - 세션 저장소: Flask-Session `cachelib` 백엔드 사용
 - 인코딩 안정성: 서버 진입점 UTF-8 stdio 설정 적용
 
-## 12) 2026-03-09 타입/인코딩 정합성 메모
+## 12) 2026-03-15 Pylance/문서 정합성 메모
 
-- 타입체커 기준 파일: `pyrightconfig.json`
-  - 제외 범위: `tests/`, `app/legacy/`, `**/__pycache__/`
-- 런타임 타입 정리 결과:
-  - `pyright` -> `0 errors`
-- 사용자 노출 오류 문자열 복구:
-  - `app/routes.py`의 모지바케 오류 문구를 한국어로 정규화
-- 업로드 안정성 보강:
-  - AV pending 경로에서 quarantine 폴더가 업로드 루트 밖이면 내부 fallback 적용
-  - Windows 드라이브 불일치(`D:`/`C:`) `relpath` 예외 방지
-- 회귀 결과:
-  - `pytest -q` -> `84 passed`
+- `pyrightconfig.json` 추가로 로컬 Pylance/Pyright 기준선을 고정
+- `pyright` 기준 `0 errors, 0 warnings`
+- `pytest -q` 기준 `86 passed`
+- UTF-8 BOM 제거와 깨진 한글 복구 반영
+- `tests/test_encoding_hygiene.py` 추가
+  - tracked text files의 BOM 검사
+  - mojibake 탐지
+  - intentional detector token allowlist 유지
+- 활성 문서 세트는 `README.md`, `claude.md`, `gemini.md`, `docs/BACKUP_RUNBOOK.md` 기준으로 맞춘다

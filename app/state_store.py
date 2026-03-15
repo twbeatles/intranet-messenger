@@ -9,9 +9,22 @@ import json
 import logging
 import threading
 import time
-from typing import Any
+from importlib import import_module
+from typing import Any, Protocol, cast
 
 logger = logging.getLogger(__name__)
+
+
+class _RedisSyncClient(Protocol):
+    def ping(self) -> bool: ...
+    def set(self, key: str, value: str) -> bool: ...
+    def setex(self, key: str, time: int, value: str) -> bool: ...
+    def get(self, key: str) -> str | None: ...
+    def getdel(self, key: str) -> str | None: ...
+    def delete(self, key: str) -> int: ...
+    def incr(self, key: str) -> int: ...
+    def decr(self, key: str) -> int: ...
+    def expire(self, key: str, time: int) -> bool: ...
 
 
 class _InMemoryStateStore:
@@ -82,7 +95,7 @@ class _InMemoryStateStore:
 class StateStore:
     def __init__(self):
         self._backend = _InMemoryStateStore()
-        self._redis = None
+        self._redis: _RedisSyncClient | None = None
         self._namespace = "im"
         self._redis_degraded = False
 
@@ -96,9 +109,11 @@ class StateStore:
             return
 
         try:
-            import redis  # type: ignore
-
-            client = redis.Redis.from_url(redis_url, decode_responses=True)
+            redis_module = import_module("redis")
+            client = cast(
+                _RedisSyncClient,
+                redis_module.Redis.from_url(redis_url, decode_responses=True),
+            )
             client.ping()
             self._redis = client
             logger.info("StateStore using redis backend")

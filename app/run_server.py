@@ -14,14 +14,12 @@ from multiprocessing import Queue
 
 def _configure_utf8_stdio():
     for stream in (sys.stdout, sys.stderr):
-        if stream is None:
-            continue
-        reconfigure = getattr(stream, "reconfigure", None)
-        if callable(reconfigure):
-            try:
+        try:
+            reconfigure = getattr(stream, 'reconfigure', None)
+            if callable(reconfigure):
                 reconfigure(encoding='utf-8', errors='replace')
-            except Exception:
-                pass
+        except Exception:
+            pass
 
 
 _configure_utf8_stdio()

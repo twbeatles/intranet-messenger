@@ -1,7 +1,19 @@
 {
+  "include": [
+    "app",
+    "certs",
+    "config.py",
+    "gui",
+    "server.py",
+    "tests"
+  ],
   "exclude": [
-    "tests",
-    "app/legacy",
-    "**/__pycache__"
-  ]
+    "**/__pycache__",
+    ".pytest_cache",
+    "flask_session",
+    "uploads"
+  ],
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "basic",
+  "reportMissingModuleSource": "none"
 }

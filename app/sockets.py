@@ -8,6 +8,7 @@ import re
 import time
 import traceback
 from threading import Lock
+from typing import Any, cast
 from flask import session, request, current_app
 from flask_socketio import emit, join_room, leave_room, disconnect
 
@@ -171,22 +172,17 @@ def register_socket_events(socketio):
         count = state_store.incr(key, ttl_seconds=60)
         return count <= max(int(per_minute), 1)
 
-    def _get_request_sid() -> str | None:
-        sid = getattr(request, 'sid', None)
-        if isinstance(sid, str) and sid:
-            return sid
-        return None
+    def _request_sid() -> str:
+        return cast(str, getattr(request, 'sid'))
 
     @socketio.on('connect')
     def handle_connect():
         if not _is_session_token_valid():
             return False
-        sid = _get_request_sid()
-        if not sid:
-            return False
 
         if 'user_id' in session:
             user_id = session['user_id']
+            sid = _request_sid()
             
             with online_users_lock:
                 online_users[sid] = user_id
@@ -224,10 +220,8 @@ def register_socket_events(socketio):
     def handle_disconnect():
         user_id = None
         still_online = False
+        sid = _request_sid()
         room_ids = []  # [v4.2] 락 내에서 미리 저장
-        sid = _get_request_sid()
-        if not sid:
-            return
         
         with online_users_lock:
             user_id = online_users.pop(sid, None)
@@ -395,9 +389,16 @@ def register_socket_events(socketio):
                     _emit_error('업로드 토큰이 이미 사용되었거나 만료되었습니다.')
                     return
 
-                file_path = token_data.get('file_path')
-                file_name = token_data.get('file_name')
-                file_size = token_data.get('file_size')
+                file_path_value = token_data.get('file_path')
+                file_name_value = token_data.get('file_name')
+                if not isinstance(file_path_value, str) or not isinstance(file_name_value, str) or not file_name_value:
+                    _emit_error('?낅줈???뚯씪 ?뺣낫媛 ?뚯긽?섏뿀?듬땲??')
+                    return
+
+                file_path = file_path_value
+                file_name = file_name_value
+                raw_file_size = token_data.get('file_size')
+                file_size = int(raw_file_size) if isinstance(raw_file_size, int) else None
                 encrypted = False
                 content = file_name or content
 
@@ -410,24 +411,15 @@ def register_socket_events(socketio):
             if message:
                 message['unread_count'] = get_unread_count(room_id, message['id'], user_id)
                 if message_type in ('file', 'image') and file_path:
+                    if file_name is None:
+                        logger.error(f"Upload token missing file_name after validation: room={room_id}, user={user_id}")
+                        _emit_error('?낅줈???뚯씪 ?뺣낫媛 ?뚯긽?섏뿀?듬땲??')
+                        return
+
                     from app.models import add_room_file
 
                     try:
-                        if isinstance(file_name, str) and file_name:
-                            normalized_size = file_size if isinstance(file_size, int) else None
-                            add_room_file(
-                                room_id,
-                                user_id,
-                                file_path,
-                                file_name,
-                                normalized_size,
-                                message_type,
-                                message['id'],
-                            )
-                        else:
-                            logger.warning(
-                                f"Skipped room_files insert due to invalid file_name: room={room_id}, user={user_id}"
-                            )
+                        add_room_file(room_id, user_id, file_path, file_name, file_size, message_type, message['id'])
                     except Exception as e:
                         logger.error(f"Failed to add room file record: {e}")
                         logger.warning(

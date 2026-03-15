@@ -136,11 +136,11 @@ def get_logs():
 
 @control_bp.route('/shutdown', methods=['POST'])
 def shutdown():
-    """?? ?? ??"""
+    """서버 종료 요청."""
     global _shutdown_requested
     _shutdown_requested = True
 
-    # Control API? ?? ??? ?? ?? ???????, ???? ??? ???? ?.
+    # Control API는 종료 요청만 표시하고, 실제 종료는 현재 프로세스에서 수행한다.
     import os
     import signal
     try:

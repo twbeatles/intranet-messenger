@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Post-restore verification utility for local environment."""
 
 from __future__ import annotations

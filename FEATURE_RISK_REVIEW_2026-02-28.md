@@ -91,3 +91,17 @@
 - 회귀 수정 포함:
   - AV pending 업로드 경로의 `relpath` 드라이브 불일치 이슈 수정
   - `pytest -q` 기준 `84 passed` 유지
+
+## 7) 2026-03-15 Pylance/문서 정합성 반영
+
+- `pyright` 기준 `0 errors, 0 warnings`
+- `pytest -q` 기준 `86 passed`
+- UTF-8 BOM 제거와 문서/사용자 메시지 인코딩 복구 반영
+- `tests/test_encoding_hygiene.py` 추가
+  - tracked text files의 BOM 검사
+  - mojibake 탐지
+  - intentional detector token allowlist 유지
+- `messenger.spec` 보강
+  - `eventlet`, `engineio.async_drivers.eventlet`
+  - `certs.generate_cert`
+  - `cryptography.x509`, `cryptography.x509.oid`

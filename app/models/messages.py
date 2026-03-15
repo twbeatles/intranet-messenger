@@ -359,7 +359,7 @@ def advanced_search(
             except Exception:
                 return False
 
-        def _fts5_build_query(text: str | None) -> str | None:
+        def _fts5_build_query(text: str):
             text = (text or '').strip()
             if not text:
                 return None
@@ -545,7 +545,12 @@ def advanced_search(
     except Exception as e:
         logger.error(f"Advanced search error: {e}")
         return {'messages': [], 'total': 0, 'offset': 0, 'limit': limit, 'has_more': False}
-def pin_message(room_id: int, pinned_by: int, message_id: int | None = None, content: str | None = None):
+def pin_message(
+    room_id: int,
+    pinned_by: int,
+    message_id: int | None = None,
+    content: str | None = None,
+):
     """메시지 고정"""
     conn = get_db()
     cursor = conn.cursor()

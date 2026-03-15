@@ -14,7 +14,8 @@ import sys
 
 if getattr(sys, 'frozen', False):
     # PyInstaller로 패키징된 경우
-    BUNDLE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))  # 번들 리소스 (static, templates 등)
+    _bundle_dir = getattr(sys, '_MEIPASS', None)
+    BUNDLE_DIR = _bundle_dir if isinstance(_bundle_dir, str) and _bundle_dir else os.path.dirname(sys.executable)  # 번들 리소스 (static, templates 등)
     BASE_DIR = os.path.dirname(sys.executable)  # 실행 파일 위치 (DB, 로그 등)
 else:
     # 개발 환경

@@ -1,10 +1,10 @@
-﻿# Intranet Messenger
+# Intranet Messenger
 
 내부망 전용 메신저 서버(Flask + Socket.IO)입니다.
 
-- 기준일: 2026-02-28
+- 기준일: 2026-03-15
 - 기준 브랜치: `main`
-- 최신 검증: `pytest -q` -> `84 passed`
+- 최신 검증: `pyright` -> `0 errors, 0 warnings`, `pytest -q` -> `86 passed`
 
 ## 1. 프로젝트 상태
 
@@ -15,6 +15,8 @@
 - 관리자 감사로그 API 반영
 - `/api/config` 기반 프론트-서버 계약 단일화
 - 로컬 수동 백업/복구/검증 스크립트 + 런북 추가
+- Pylance/Pyright 타입 정리 완료
+- UTF-8/BOM 정리 및 인코딩 hygiene 회귀 테스트 추가
 
 ## 2. 핵심 기능
 
@@ -192,7 +194,19 @@ pytest -q
 
 현재 기준선:
 
-- `84 passed` (2026-02-28)
+- `86 passed` (2026-03-15)
+
+타입/인코딩 검증:
+
+```bash
+pyright
+pytest tests/test_encoding_hygiene.py -q
+```
+
+관련 파일:
+
+- `pyrightconfig.json`
+- `tests/test_encoding_hygiene.py`
 
 ## 12. PyInstaller 빌드
 
@@ -208,8 +222,14 @@ pyinstaller messenger.spec --clean
   - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
 - Redis 동적 import 반영:
   - `redis`, `redis.asyncio`
+- 선택 비동기 런타임 반영:
+  - `eventlet`, `engineio.async_drivers.eventlet`
 - OIDC/JWKS 검증 경로 반영:
   - `jwt`, `jwt.algorithms`, `jwt.api_jwk`, `jwt.jwks_client`, `jwt.exceptions`
+- 인증서 생성 경로 반영:
+  - `certs.generate_cert`
+  - `cryptography.x509`, `cryptography.x509.oid`
+  - `cryptography.hazmat.backends`, `cryptography.hazmat.primitives`, `cryptography.hazmat.primitives.asymmetric`
 - 런북 파일 포함:
   - `docs/BACKUP_RUNBOOK.md`
 
@@ -218,8 +238,7 @@ pyinstaller messenger.spec --clean
 - [claude.md](claude.md)
 - [gemini.md](gemini.md)
 - [docs/BACKUP_RUNBOOK.md](docs/BACKUP_RUNBOOK.md)
-- [PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md](PROJECT_STRUCTURE_FEATURE_EXPANSION_ANALYSIS_2026-02-27.md)
-- [FEATURE_RISK_REVIEW_2026-02-28.md](FEATURE_RISK_REVIEW_2026-02-28.md)
+- [pyrightconfig.json](pyrightconfig.json)
 
 ## 14. 2026-02-25 변경 요약
 
@@ -256,19 +275,13 @@ pyinstaller messenger.spec --clean
   - JWKS 서명 검증 + `iss`, `aud`, `exp`, `nonce` 검증
   - callback에서 `state`, `nonce` one-time pop 처리
 
-## 17. 2026-03-09 타입/인코딩 정합성 업데이트
+## 17. 2026-03-15 Pylance/인코딩 정합성 업데이트
 
-- 런타임 코드 기준 Pylance/Pyright 오류 정리 완료
-  - 기준 설정: `pyrightconfig.json`
-  - 제외 범위: `tests/`, `app/legacy/`, `**/__pycache__/`
-  - 검증 결과: `pyright` -> `0 errors`
-- 인코딩 깨짐(모지바케) 사용자 노출 오류 문자열 정리
-  - 대상: `app/routes.py`의 `jsonify({'error': ...})` / `json_error(...)` 경로
-  - 문서/주석 대량 치환은 제외, 실행 문자열 우선 복구
-- 업로드 AV pending 경로 정규화 보강
-  - `UPLOAD_QUARANTINE_FOLDER`가 `UPLOAD_FOLDER` 외부(또는 드라이브 상이)면
-    내부 `uploads/quarantine`로 안전 fallback
-  - 목적: Windows 환경의 `relpath` 드라이브 불일치 예외 방지
-- 테스트 기준선 갱신
-  - `pytest -q` -> `84 passed`
-  - `tests/test_risk_gap_remediation.py::test_upload_returns_pending_when_av_enabled` 통과
+- `pyrightconfig.json` 추가로 리포지토리 로컬 타입체크 기준선 고정
+- `pyright` 기준 `0 errors, 0 warnings` 달성
+- `pytest -q` 기준 `86 passed`
+- UTF-8 BOM 제거 및 깨진 한글 복구
+- `tests/test_encoding_hygiene.py` 추가
+  - tracked text files의 UTF-8 without BOM 검사
+  - mojibake 탐지
+  - 의도적 detector token은 `app/__init__.py`, `app/sockets.py`만 allowlist

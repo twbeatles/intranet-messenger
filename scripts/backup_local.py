@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Manual local backup utility for intranet-messenger."""
 
 from __future__ import annotations

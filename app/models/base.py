@@ -27,7 +27,15 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 _db_lock = threading.Lock()
 _db_initialized = False
-_db_local = threading.local()
+
+
+class _ConnectionLocal(threading.local):
+    def __init__(self):
+        super().__init__()
+        self.connection: sqlite3.Connection | None = None
+
+
+_db_local = _ConnectionLocal()
 
 
 def _create_connection() -> sqlite3.Connection:
@@ -57,48 +65,35 @@ def _create_connection() -> sqlite3.Connection:
                 raise
             time.sleep(retry_delay)
             retry_delay *= 2
-    raise RuntimeError("Unreachable: DB connection retries exhausted")
-
-
-def _get_thread_connection() -> sqlite3.Connection | None:
-    conn = getattr(_db_local, "connection", None)
-    if isinstance(conn, sqlite3.Connection):
-        return conn
-    return None
-
-
-def _set_thread_connection(conn: sqlite3.Connection | None) -> None:
-    _db_local.connection = conn
+    raise RuntimeError("unreachable")
 
 
 def get_db() -> sqlite3.Connection:
     """데이터베이스 연결 - 스레드별 연결 재사용 (성능 최적화)"""
-    conn = _get_thread_connection()
-    if conn is None:
-        conn = _create_connection()
-        _set_thread_connection(conn)
+    if _db_local.connection is None:
+        _db_local.connection = _create_connection()
     else:
         try:
-            conn.execute('SELECT 1')
+            _db_local.connection.execute('SELECT 1')
         except (sqlite3.ProgrammingError, sqlite3.OperationalError):
             try:
-                conn.close()
+                if _db_local.connection is not None:
+                    _db_local.connection.close()
             except Exception:
                 pass
-            conn = _create_connection()
-            _set_thread_connection(conn)
-    return conn
+            _db_local.connection = _create_connection()
+            
+    return _db_local.connection
 
 
 def close_thread_db():
     """현재 스레드의 데이터베이스 연결 종료"""
-    conn = _get_thread_connection()
-    if conn is not None:
+    if _db_local.connection:
         try:
-            conn.close()
+            _db_local.connection.close()
         except Exception:
             pass
-        _set_thread_connection(None)
+        _db_local.connection = None
 
 
 @contextmanager

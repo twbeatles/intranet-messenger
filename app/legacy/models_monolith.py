@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 from contextlib import contextmanager
+from typing import Iterator
 
 # config 임포트 (PyInstaller 호환)
 try:
@@ -28,7 +29,15 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 _db_lock = threading.Lock()
 _db_initialized = False
-_db_local = threading.local()  # [v4.4] 스레드 로컬 저장소
+
+
+class _ConnectionLocal(threading.local):
+    def __init__(self):
+        super().__init__()
+        self.connection: sqlite3.Connection | None = None
+
+
+_db_local = _ConnectionLocal()  # [v4.4] 스레드 로컬 저장소
 
 # [v4.19] 사용자 정보 메모리 캐시 (LRU 스타일)
 _user_cache = {}
@@ -37,7 +46,7 @@ USER_CACHE_TTL = 60  # 60초
 USER_CACHE_MAX_SIZE = 500  # 최대 500명
 
 
-def _create_connection():
+def _create_connection() -> sqlite3.Connection:
     """새 데이터베이스 연결 생성 (재시도 로직 포함)"""
     max_retries = 3
     retry_delay = 0.1
@@ -62,12 +71,13 @@ def _create_connection():
                 raise
             time.sleep(retry_delay)
             retry_delay *= 2
+    raise RuntimeError("unreachable")
 
 
-def get_db():
+def get_db() -> sqlite3.Connection:
     """데이터베이스 연결 - 스레드별 연결 재사용 (성능 최적화)"""
     # [v4.4] 스레드 로컬 연결 풀링
-    if not hasattr(_db_local, 'connection') or _db_local.connection is None:
+    if _db_local.connection is None:
         _db_local.connection = _create_connection()
     else:
         # 연결이 유효한지 확인
@@ -76,7 +86,7 @@ def get_db():
         except (sqlite3.ProgrammingError, sqlite3.OperationalError):
             # 연결이 끊어졌거나 에러가 발생하면 재연결 시도
             try:
-                if hasattr(_db_local.connection, 'close'):
+                if _db_local.connection is not None:
                     _db_local.connection.close()
             except Exception:
                 pass
@@ -87,7 +97,7 @@ def get_db():
 
 def close_thread_db():
     """현재 스레드의 데이터베이스 연결 종료 (정리용)"""
-    if hasattr(_db_local, 'connection') and _db_local.connection:
+    if _db_local.connection:
         try:
             _db_local.connection.close()
         except Exception:
@@ -96,7 +106,7 @@ def close_thread_db():
 
 
 @contextmanager
-def get_db_context():
+def get_db_context() -> Iterator[sqlite3.Connection]:
     """데이터베이스 연결 컨텍스트 매니저 (자동 롤백, 커밋 지원)"""
     conn = get_db()
     try:
@@ -630,7 +640,7 @@ def get_user_by_id_cached(user_id: int) -> dict | None:
     return user
 
 
-def invalidate_user_cache(user_id: int = None):
+def invalidate_user_cache(user_id: int | None = None):
     """[v4.19] 사용자 캐시 무효화
     
     Args:
@@ -1333,7 +1343,12 @@ def search_messages(user_id, query):
 # ============================================================================
 # 공지사항 고정 메시지 관리
 # ============================================================================
-def pin_message(room_id: int, pinned_by: int, message_id: int = None, content: str = None):
+def pin_message(
+    room_id: int,
+    pinned_by: int,
+    message_id: int | None = None,
+    content: str | None = None,
+):
     """메시지 또는 공지 고정"""
     conn = get_db()
     cursor = conn.cursor()
@@ -1352,7 +1367,7 @@ def pin_message(room_id: int, pinned_by: int, message_id: int = None, content: s
         pass  # [v4.18] 스레드 로컬 연결 유지
 
 
-def unpin_message(pin_id: int, user_id: int, room_id: int = None):
+def unpin_message(pin_id: int, user_id: int, room_id: int | None = None):
     """[v4.20] 공지 해제 - 모든 멤버가 가능 (정책 변경)"""
     conn = get_db()
     cursor = conn.cursor()
@@ -1407,8 +1422,15 @@ def get_pinned_messages(room_id: int):
 # ============================================================================
 # 투표 관리
 # ============================================================================
-def create_poll(room_id: int, created_by: int, question: str, options: list,
-                multiple_choice: bool = False, anonymous: bool = False, ends_at: str = None):
+def create_poll(
+    room_id: int,
+    created_by: int,
+    question: str,
+    options: list[str],
+    multiple_choice: bool = False,
+    anonymous: bool = False,
+    ends_at: str | None = None,
+):
     """투표 생성
     
     [v4.21] 옵션 검증 추가: 빈 옵션 필터링 및 개수 제한
@@ -1619,8 +1641,15 @@ def close_poll(poll_id: int, user_id: int):
 # ============================================================================
 # 파일 저장소 관리
 # ============================================================================
-def add_room_file(room_id: int, uploaded_by: int, file_path: str, file_name: str, 
-                  file_size: int = None, file_type: str = None, message_id: int = None):
+def add_room_file(
+    room_id: int,
+    uploaded_by: int,
+    file_path: str,
+    file_name: str,
+    file_size: int | None = None,
+    file_type: str | None = None,
+    message_id: int | None = None,
+):
     """파일 저장소에 파일 추가"""
     conn = get_db()
     cursor = conn.cursor()
@@ -1638,7 +1667,7 @@ def add_room_file(room_id: int, uploaded_by: int, file_path: str, file_name: str
         pass  # [v4.18] 스레드 로컬 연결 유지
 
 
-def get_room_files(room_id: int, file_type: str = None):
+def get_room_files(room_id: int, file_type: str | None = None):
     """대화방의 파일 목록"""
     conn = get_db()
     cursor = conn.cursor()
@@ -1667,7 +1696,12 @@ def get_room_files(room_id: int, file_type: str = None):
         pass  # [v4.18] 스레드 로컬 연결 유지
 
 
-def delete_room_file(file_id: int, user_id: int, room_id: int = None, is_admin: bool = False):
+def delete_room_file(
+    file_id: int,
+    user_id: int,
+    room_id: int | None = None,
+    is_admin: bool = False,
+):
     """[v4.4] 파일 삭제 - DB 레코드 및 실제 파일
     
     [v4.8] is_admin=True면 업로더가 아니어도 삭제 가능
@@ -1893,15 +1927,22 @@ def get_room_admins(room_id: int):
 # ============================================================================
 # 고급 검색
 # ============================================================================
-def advanced_search(user_id: int, query: str = None, room_id: int = None, 
-                    sender_id: int = None, date_from: str = None, date_to: str = None,
-                    file_only: bool = False, limit: int = 50):
+def advanced_search(
+    user_id: int,
+    query: str | None = None,
+    room_id: int | None = None,
+    sender_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    file_only: bool = False,
+    limit: int = 50,
+):
     """고급 메시지 검색"""
     conn = get_db()
     cursor = conn.cursor()
     try:
         conditions = ['rm.user_id = ?']
-        params = [user_id]
+        params: list[object] = [user_id]
         
         if query:
             conditions.append('m.content LIKE ?')

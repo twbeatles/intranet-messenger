@@ -1,6 +1,7 @@
-﻿# BACKUP_RUNBOOK
+# BACKUP_RUNBOOK
 
 작성일: 2026-02-25
+최종 업데이트: 2026-03-15
 범위: 로컬 환경 수동 백업/복구/검증
 
 ## 1. 목적
@@ -73,11 +74,18 @@ python scripts/verify_restore.py
 4. 복구 직후: `verify_restore.py`
 5. 검증 성공 후 서비스 재기동
 
-## 8. 2026-03-09 운영 메모 (업로드 스캔 경로)
+## 8. 복구 후 권장 스모크 체크
 
-- AV 스캔 pending 경로는 `UPLOAD_FOLDER` 하위 상대경로를 기준으로 동작한다.
-- `UPLOAD_QUARANTINE_FOLDER`가 `UPLOAD_FOLDER` 외부(또는 드라이브 상이)인 경우,
-  서버는 내부 `uploads/quarantine`로 자동 fallback한다.
-- 운영 권장:
-  - quarantine 경로는 가능하면 `UPLOAD_FOLDER` 하위로 유지한다.
-  - 백업/복구 시 `uploads/` 전체를 함께 처리하면 pending/clean 파일 경로 정합성이 유지된다.
+복구 검증 스크립트 통과 후에는 아래 확인을 권장한다.
+
+1. 앱 기동 확인
+```bash
+python server.py --cli
+```
+2. 최소 기능 회귀 확인
+```bash
+pytest -q
+```
+3. 런타임 설정 엔드포인트 확인
+   - `GET /api/config`
+4. 업로드 디렉터리 및 DB 경로가 기대 경로를 가리키는지 확인

@@ -1,7 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-# 사내 메신저 v4.36 PyInstaller 빌드 명세서
+# 사내 메신저 v4.36.3 PyInstaller 빌드 명세서
 # 경량화 최적화 버전
-# 2026-03-09 정합성 점검: 런타임 타입/인코딩 수정에 따른 hidden import 추가 없음
 
 block_cipher = None
 
@@ -49,6 +48,10 @@ a = Analysis(
         'gevent.resolver_thread',
         'gevent._socket3',
         'greenlet',
+
+        # Eventlet 관련 (선택 async_mode)
+        'engineio.async_drivers.eventlet',
+        'eventlet',
         
         # Socket.IO 관련
         'engineio',
@@ -99,6 +102,14 @@ a = Analysis(
         # Redis (optional runtime backend)
         'redis',
         'redis.asyncio',
+
+        # 인증서 생성 경로 (GUI/CLI 공용)
+        'certs.generate_cert',
+        'cryptography.x509',
+        'cryptography.x509.oid',
+        'cryptography.hazmat.backends',
+        'cryptography.hazmat.primitives',
+        'cryptography.hazmat.primitives.asymmetric',
         
         # GUI 모듈
         'gui',
@@ -152,7 +163,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='사내메신저v4.36',
+    name='사내메신저v4.36.3',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,  # 심볼 제거 (Windows에서는 False 권장)

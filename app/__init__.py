@@ -11,6 +11,7 @@ import secrets
 import time
 import json
 import re
+from importlib import import_module
 from datetime import timedelta
 
 # gevent monkey patching (반드시 다른 import 전에 실행)
@@ -299,7 +300,7 @@ def create_app():
     
     if _async_mode is None and ASYNC_MODE == 'eventlet':
         try:
-            import eventlet  # noqa: F401
+            eventlet = import_module("eventlet")
             eventlet.monkey_patch()
             _async_mode = 'eventlet'
             logger.info("eventlet 비동기 모드 활성화")

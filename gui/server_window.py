@@ -162,11 +162,11 @@ class ServerThread(QThread):
         
     def run(self):
         try:
-            # [v4.3] ?? ?? ? ?? ?? ?? ???? ?? (WinError 10048 ??)
+            # [v4.3] 기존 서버가 점유한 포트를 먼저 정리한다. (WinError 10048 방지)
             if kill_process_on_port(self.port):
                 self.log_signal.emit(f"Port {self.port} process terminated")
 
-            # Control API ?? ?? (WinError 10048 ??)
+            # Control API 포트도 동일하게 정리한다. (WinError 10048 방지)
             if kill_process_on_port(self.control_port):
                 self.log_signal.emit(f"Port {self.control_port} process terminated")
 
@@ -247,11 +247,12 @@ class ServerThread(QThread):
         """서버 프로세스의 stdout을 읽어서 로그로 전송"""
         if not self.process:
             return
-        if self.process.stdout is None:
+        stdout = self.process.stdout
+        if stdout is None:
             return
-             
+            
         try:
-            for line in iter(self.process.stdout.readline, ''):
+            for line in iter(stdout.readline, ''):
                 if not line:
                     break
                 line = line.strip()
@@ -647,11 +648,7 @@ class ServerWindow(QMainWindow):
         self.activateWindow()
         self.raise_()
     
-    def closeEvent(self, a0):
-        event = a0
-        if event is None:
-            self.quit_app()
-            return
+    def closeEvent(self, event):
         if self.minimize_to_tray_check.isChecked():
             event.ignore()
             self.hide()

@@ -1,104 +1,155 @@
-﻿# Intranet Messenger ?꾨줈?앺듃 援ъ“ ?뺣? 遺꾩꽍 諛?湲곕뒫 ?뺤옣 媛?대뱶
+# Intranet Messenger 프로젝트 구조 분석 및 기능 확장 가이드
 
-- ?묒꽦?? 2026-02-27
-- ???寃쎈줈: `C:\twbeatles-repos\intranet-messenger`
-- 紐⑹쟻: ?꾩옱 援ъ“瑜?湲곗??쇰줈 湲곕뒫 ?뺤옣 ???섏젙 吏?? 由ъ뒪?? ?곗꽑?쒖쐞瑜?紐낇솗???뺤쓽
+- 작성일: 2026-02-27
+- 최종 업데이트: 2026-03-15
+- 대상 경로: `C:\twbeatles-repos\intranet-messenger`
+- 목적: 현재 구조를 기준으로 기능 확장과 유지보수 시 영향 범위와 우선순위를 빠르게 파악하기 위한 문서
 
-## 1. 李몄“ 臾몄꽌
+## 1. 현재 기준선
 
-- `README.md`
-- `claude.md`
-- `gemini.md`
-- `docs/BACKUP_RUNBOOK.md`
+- 표준 실행 진입점: `server.py`
+- 앱 팩토리: `app.create_app() -> (app, socketio)`
+- 타입 기준선: `pyright` -> `0 errors, 0 warnings`
+- 테스트 기준선: `pytest -q` -> `86 passed`
+- 문서 기준 세트
+  - `README.md`
+  - `claude.md`
+  - `gemini.md`
+  - `docs/BACKUP_RUNBOOK.md`
 
-## 2. ?꾩옱 湲곗???
-- ?뚯뒪??湲곗??? `pytest -q` -> `84 passed` (2026-02-27)
-- ?ㅽ뻾 吏꾩엯?? `server.py`
-- ?덇굅???명솚 吏꾩엯?? `messenger_server.py` (deprecated shim)
+## 2. 최상위 구조
 
-## 3. ?꾨줈?앺듃 理쒖긽??援ъ“
+- `server.py`
+  - CLI/GUI 실행 진입점
+  - HTTPS 인증서 생성 fallback 호출
+- `config.py`
+  - 런타임 설정, 기능 플래그, 경로 상수
+- `app/`
+  - Flask 앱 팩토리, 라우트, 소켓 이벤트, 모델, 보조 유틸리티
+- `static/`, `templates/`
+  - 프런트엔드 리소스 및 단일 페이지 템플릿
+- `tests/`
+  - 회귀 테스트와 운영/보안 계약 검증
+- `scripts/`
+  - 로컬 백업/복구/검증 스크립트
+- `docs/`
+  - 운영 문서
+- `messenger.spec`
+  - PyInstaller 빌드 명세
+- `pyrightconfig.json`
+  - 리포지토리 로컬 타입체크 기준선
 
-- `server.py`: CLI/GUI ?ㅽ뻾 吏꾩엯
-- `config.py`: ?고????ㅼ젙 諛?湲곕뒫 ?뚮옒洹?- `app/`: 諛깆뿏???듭떖(???⑺넗由? routes, sockets, models)
-- `static/`, `templates/`: ?꾨줎?몄뿏??由ъ냼??諛??⑥씪 ?섏씠吏 ?쒗뵆由?- `tests/`: ?뚭? ?뚯뒪??- `scripts/`: 諛깆뾽/蹂듦뎄/寃利??ㅽ겕由쏀듃
-- `docs/`: ?댁쁺 臾몄꽌
-- `messenger.spec`: PyInstaller 鍮뚮뱶 紐낆꽭
+## 3. 백엔드 구조
 
-## 4. 二쇱슂 ?ㅽ뻾/援ъ꽦 ?먮쫫
+### 3.1 앱 초기화
 
-1. `server.py` ?ㅽ뻾
-2. `app.create_app()`?먯꽌 ?뺤옣 珥덇린??Session/Socket/RateLimit ??
-3. `app/routes.py` HTTP ?쇱슦???깅줉
-4. `app/sockets.py` ?뚯폆 ?대깽???깅줉
-5. `app/models/base.py` 湲곕컲 DB 珥덇린???좎?蹂댁닔
+- `app/__init__.py`
+  - Flask 설정 로드
+  - Session / CSRF / Compress / Limiter 초기화
+  - Socket.IO async mode 선택
+  - maintenance worker 시작
 
-## 5. 援ъ“ 由ъ뒪??湲곗닠遺梨?
-### 5.1 肄붾뱶 寃쎈줈 ?댁쨷??
-- 怨쇨굅?먮뒗 `messenger_server.py`? `app/*`媛 蹂묓뻾?섏뼱 湲곗? 寃쎈줈 ?쇱꽑 ?꾪뿕??議댁옱
-- ?꾩옱??`server.py` 湲곗??쇰줈 ?⑥씪?뷀븯怨?`messenger_server.py`??shim?쇰줈 異뺤냼
+### 3.2 HTTP API
 
-### 5.2 ?꾨줎?몄뿏??寃고빀??
-- `messages.js`/`rooms.js`??梨낆엫 吏묒쨷???ш퀬 蹂寃??곹뼢 踰붿쐞媛 ?볦쓬
-- ?낅줈??濡쒖쭅? `static/js/message-upload.js`濡?1李?遺꾨━ ?꾨즺
+- `app/routes.py`
+  - 인증, 방, 메시지, 업로드, 프로필, 핀, 투표, 관리자 API 담당
+  - JSON payload 파싱과 공통 에러 응답이 집중된 파일
 
-### 5.3 臾몄옄???몄퐫???붾뱾由?
-- 肄섏넄/濡쒓렇 ?몄퐫???섍꼍???곕씪 源⑥쭚 媛?μ꽦??議댁옱
-- ?쒕쾭 吏꾩엯?먯뿉 UTF-8 stdio ?ㅼ젙???곸슜???꾪솕
+### 3.3 Socket 이벤트
 
-### 5.4 ?뚯뒪??寃쎄퀬 ?꾩쟻
+- `app/sockets.py`
+  - 실시간 메시지, 리액션, 프로필, 투표, 방 멤버십 이벤트 담당
+  - authoritative payload 원칙 적용
 
-- Flask-Session deprecation 寃쎄퀬媛 ?꾩쟻???ъ?媛 ?덉뿀??- `cachelib` 諛깆뿏???꾪솚?쇰줈 寃쎄퀬 由ъ뒪?щ? ?꾪솕
+### 3.4 데이터 계층
 
-## 6. 2026-02-27 媛쒖꽑 諛섏쁺 ?붿빟
+- `app/models/base.py`
+  - DB 연결, 마이그레이션성 초기화, 공용 쿼리 유틸
+- `app/models/*`
+  - 도메인별 쿼리 분리
+  - `users`, `rooms`, `messages`, `polls`, `files`, `reactions`, `admin_audit`
+- `app/legacy/models_monolith.py`
+  - 레거시 호환용 모놀리식 계층
+  - 신규 구현보다 유지보수/비교 기준 용도에 가깝다
 
-- `messenger_server.py` deprecated shim ?꾪솚
-- `static/js/message-upload.js` 異붽? 諛?`messages.js` ?꾩엫 援ъ“ ?곸슜
-- `server.py`, `app/server_launcher.py`, `app/run_server.py` UTF-8 stdio 怨좎젙
-- `app/sockets.py` ?ㅻ쪟 硫붿떆吏 紐⑥?諛붿? ?뺢퇋??寃쎈줈 異붽?
-- `app/__init__.py` ?몄뀡 ??μ냼 `cachelib` ?꾪솚
-- `requirements.txt`??`cachelib>=0.13.0` 異붽?
+## 4. 프런트 구조
 
-## 7. 湲곕뒫 ?뺤옣 ?곗꽑?쒖쐞 ?쒖븞
+- `static/js/app.js`, `static/js/rooms.js`, `static/js/messages.js`
+  - 기존 메인 동작 흐름 담당
+- `static/js/message-upload.js`
+  - 파일 업로드 전담 분리 모듈
+- `static/js/modules/*`
+  - 일부 기능의 점진적 모듈화 경로
 
-- P1: ?뚮┝ ?쇳꽣(誘몄씫??硫섏뀡), 硫붿떆吏 ?섏젙 ?대젰, 蹂댁〈 ?뺤콉 UI
-- P2: ?ㅻ젅???듦?, ?덉빟 硫붿떆吏, 愿由ъ옄 ??쒕낫??- P3: 怨좉툒 寃???뺤옣, ?뚯씪 DLP ?쇰꺼, ?꾨줎??紐⑤뱢 ?꾪솚
+## 5. 운영/보안 핵심 계약
 
-## 8. ?묒뾽 ?먯튃
+- 방 생성은 `members`를 표준 입력으로 사용하고 `member_ids`를 호환 입력으로 허용한다
+- 파일 메시지는 `upload_token` 검증이 선행되어야 한다
+- 세션 무효화는 HTTP와 Socket 양쪽에서 검증한다
+- 소켓 payload는 서버 DB 조회 결과를 기준으로 한다
+- `/uploads/<path>`는 경로 검증과 접근 권한 검증을 통과해야 한다
+- Poll/Pin 계약은 README와 `claude.md` 기준을 따른다
 
-1. API 怨꾩빟 蹂寃???`routes + static/js + tests + README`瑜?媛숈? 蹂寃??명듃濡?媛깆떊
-2. ?뚯씪 硫붿떆吏????긽 `upload_token` 寃利?寃쎈줈 ?좎?
-3. ?몄뀡 臾댄슚??寃利앹? HTTP/Socket 紐⑤몢 ?좎?
-4. 蹂寃???理쒖냼 `pytest -q` ?ㅽ뻾 寃곌낵瑜?湲곕줉
+## 6. 확장 시 우선 확인할 영향 범위
 
+### 6.1 API 계약 변경
 
+- 수정 파일
+  - `app/routes.py`
+  - 관련 `app/models/*`
+  - 관련 `static/js/*`
+  - 관련 `tests/*`
+  - `README.md`, `claude.md`, `gemini.md`
 
-## 9. 2026-02-28 리스크 반영 후 구조 관찰
+### 6.2 Socket 이벤트 변경
 
-- API/Socket 계약 경계가 명확해졌음.
-  - HTTP pin create/delete가 시스템 메시지 생성의 단일 경로가 됨.
-  - 소켓 `pin_updated`는 동기화 신호 역할만 수행.
-- 소켓 payload 신뢰 모델이 `client-provided data`에서 `server DB canonical`로 전환됨.
-- OIDC 인증 실패면 즉시 로그인 거부하는 strict 정책으로 보안 경계가 강화됨.
-- 고급검색/leave/uploaded_file 경계 조건이 표준 에러 계약으로 정리됨.
+- 수정 파일
+  - `app/sockets.py`
+  - 필요 시 `app/routes.py`
+  - 관련 프런트 핸들러
+  - 관련 보안/회귀 테스트
 
-### 후속 권장
+### 6.3 업로드/보안 로직 변경
 
-1. Socket event schema를 별도 문서(`docs/socket-events.md`)로 분리해 프론트/백엔드 공용 계약화.
-2. OIDC/JWKS 관련 운영 파라미터(`OIDC_JWKS_URL`, cache TTL)의 환경별 설정 표준화.
-3. PyInstaller 산출물 smoke test를 CI 단계에 추가.
+- 수정 파일
+  - `app/routes.py`
+  - `app/upload_tokens.py`
+  - `app/upload_scan.py`
+  - `static/js/message-upload.js`
+  - 업로드/권한/토큰 관련 테스트
 
-## 10. 2026-03-09 정합성 점검 업데이트
+### 6.4 패키징/배포 경로 변경
 
-- 코드 정합성
-  - 런타임 타입 점검 기준을 `pyrightconfig.json`으로 고정함.
-  - 검사 제외는 `tests/`, `app/legacy/`, `**/__pycache__/`로 명시함.
-  - 결과: `pyright` 기준 런타임 오류 `0`.
-- 인코딩 정합성
-  - `app/routes.py`의 사용자 노출 오류 메시지 모지바케를 한국어 문구로 복구함.
-  - 주석/분석 문서 대량 치환은 범위 밖으로 유지함.
-- 업로드 안정성
-  - AV pending 경로에서 quarantine 경로가 업로드 루트 밖일 때 내부 fallback을 강제하여
-    Windows 드라이브 불일치(`D:` vs `C:`) 예외를 방지함.
-- 검증
-  - 단건 회귀: `tests/test_risk_gap_remediation.py::test_upload_returns_pending_when_av_enabled` 통과
-  - 전체 회귀: `pytest -q` -> `84 passed`
+- 수정 파일
+  - `messenger.spec`
+  - 필요 시 `server.py`, `gui/server_window.py`
+  - 운영 문서와 README
+
+## 7. 현재 구조의 강점
+
+- 실행 진입점이 `server.py`로 정리되어 있다
+- 업로드, OIDC, Redis state store, 감사 로그처럼 옵션 기능의 경계가 비교적 명확하다
+- `app/models/*` 분리가 진행되어 있어 도메인 단위 수정이 가능하다
+- 타입 체크와 인코딩 hygiene 회귀 검증이 자동화되었다
+
+## 8. 현재 구조의 주의 지점
+
+- `app/routes.py`와 `app/sockets.py`는 여전히 크고 영향 범위가 넓다
+- `app/__init__.py`는 초기화 책임이 많아 async mode/세션/확장 초기화 변경 시 회귀 위험이 있다
+- 레거시 `app/legacy/models_monolith.py`와 분리 모델 계층이 공존한다
+- GUI, CLI, PyInstaller 경로가 모두 살아 있어 진입점 변경 시 패키징 영향 확인이 필요하다
+
+## 9. 권장 후속 개선
+
+1. Socket event schema를 별도 문서로 분리해 프런트/백엔드 계약을 명확히 유지한다.
+2. `app/routes.py`와 `app/sockets.py`를 도메인별 서브모듈로 점진 분리한다.
+3. PyInstaller smoke test를 자동화해 optional import 누락을 조기에 잡는다.
+4. 문서 기준선과 테스트 기준선을 릴리스 단위로 고정해 업데이트한다.
+
+## 10. 2026-03-15 정합성 업데이트
+
+- Pylance/Pyright 기준선을 `pyrightconfig.json`으로 고정했다
+- UTF-8 BOM 제거와 깨진 한글 복구를 반영했다
+- `tests/test_encoding_hygiene.py`를 추가했다
+- `messenger.spec`에 eventlet 및 인증서 생성 경로 hidden import를 보강했다
+- 활성 문서 세트 기준으로 README/운영 문서/세션 가이드를 다시 동기화했다

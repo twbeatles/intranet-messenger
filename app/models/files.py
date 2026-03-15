@@ -69,7 +69,12 @@ def get_room_files(room_id: int, file_type: str | None = None):
         return []
 
 
-def delete_room_file(file_id: int, user_id: int, room_id: int | None = None, is_admin: bool = False):
+def delete_room_file(
+    file_id: int,
+    user_id: int,
+    room_id: int | None = None,
+    is_admin: bool = False,
+):
     """파일 삭제"""
     conn = get_db()
     cursor = conn.cursor()
