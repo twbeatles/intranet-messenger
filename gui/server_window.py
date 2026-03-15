@@ -142,7 +142,7 @@ class ServerThread(QThread):
             f"http://127.0.0.1:{self.port}/control",
         ]
 
-    def _request_control(self, path: str, method: str = 'GET', data: bytes = None, timeout: int = 3):
+    def _request_control(self, path: str, method: str = 'GET', data: bytes | None = None, timeout: int = 3):
         token = self._load_control_token()
         last_err = None
 
@@ -162,11 +162,11 @@ class ServerThread(QThread):
         
     def run(self):
         try:
-            # [v4.3] ?? ?? ? ?? ?? ?? ???? ?? (WinError 10048 ??)
+            # [v4.3] 기존 서버가 점유한 포트를 먼저 정리한다. (WinError 10048 방지)
             if kill_process_on_port(self.port):
                 self.log_signal.emit(f"Port {self.port} process terminated")
 
-            # Control API ?? ?? (WinError 10048 ??)
+            # Control API 포트도 동일하게 정리한다. (WinError 10048 방지)
             if kill_process_on_port(self.control_port):
                 self.log_signal.emit(f"Port {self.control_port} process terminated")
 
@@ -247,9 +247,12 @@ class ServerThread(QThread):
         """서버 프로세스의 stdout을 읽어서 로그로 전송"""
         if not self.process:
             return
+        stdout = self.process.stdout
+        if stdout is None:
+            return
             
         try:
-            for line in iter(self.process.stdout.readline, ''):
+            for line in iter(stdout.readline, ''):
                 if not line:
                     break
                 line = line.strip()

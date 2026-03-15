@@ -48,6 +48,10 @@ a = Analysis(
         'gevent.resolver_thread',
         'gevent._socket3',
         'greenlet',
+
+        # Eventlet 관련 (선택 async_mode)
+        'engineio.async_drivers.eventlet',
+        'eventlet',
         
         # Socket.IO 관련
         'engineio',
@@ -98,6 +102,14 @@ a = Analysis(
         # Redis (optional runtime backend)
         'redis',
         'redis.asyncio',
+
+        # 인증서 생성 경로 (GUI/CLI 공용)
+        'certs.generate_cert',
+        'cryptography.x509',
+        'cryptography.x509.oid',
+        'cryptography.hazmat.backends',
+        'cryptography.hazmat.primitives',
+        'cryptography.hazmat.primitives.asymmetric',
         
         # GUI 모듈
         'gui',

@@ -2,54 +2,59 @@
 """
 유틸리티 함수
 - 암호화
-- 유효성 검사
-- 헬퍼 함수
+- 입력 검증
+- 파일 검증
 """
 
-import hashlib
+from __future__ import annotations
+
 import base64
-import re
+import hashlib
 import html
+import importlib
+import os
+import re
+import sys
+from types import ModuleType
+from typing import Any
+
 from flask import current_app
 
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
 
-# config 임포트 (PyInstaller 호환)
 try:
     from config import ALLOWED_EXTENSIONS
 except ImportError:
-    import sys
-    import os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from config import ALLOWED_EXTENSIONS
 
 
 class E2ECrypto:
-    """종단간 암호화 클래스"""
-    
+    """종단간 암호화 도우미."""
+
     @staticmethod
-    def generate_room_key():
-        """대화방별 암호화 키 생성 (32바이트 = 256비트)"""
-        return base64.b64encode(get_random_bytes(32)).decode('utf-8')
-    
+    def generate_room_key() -> str:
+        """채팅방용 대칭키를 생성한다."""
+        return base64.b64encode(get_random_bytes(32)).decode("utf-8")
+
     @staticmethod
-    def encrypt_message(plaintext, key_b64):
-        """메시지 암호화"""
+    def encrypt_message(plaintext: str, key_b64: str) -> str | None:
+        """메시지를 AES-CBC로 암호화한다."""
         try:
             key = base64.b64decode(key_b64)
             iv = get_random_bytes(16)
             cipher = AES.new(key, AES.MODE_CBC, iv)
-            padded_data = pad(plaintext.encode('utf-8'), AES.block_size)
+            padded_data = pad(plaintext.encode("utf-8"), AES.block_size)
             encrypted = cipher.encrypt(padded_data)
-            return base64.b64encode(iv + encrypted).decode('utf-8')
+            return base64.b64encode(iv + encrypted).decode("utf-8")
         except Exception:
             return None
-    
+
     @staticmethod
-    def decrypt_message(ciphertext_b64, key_b64):
-        """메시지 복호화"""
+    def decrypt_message(ciphertext_b64: str, key_b64: str) -> str:
+        """암호화된 메시지를 복호화한다."""
         try:
             key = base64.b64decode(key_b64)
             data = base64.b64decode(ciphertext_b64)
@@ -57,80 +62,71 @@ class E2ECrypto:
             encrypted = data[16:]
             cipher = AES.new(key, AES.MODE_CBC, iv)
             decrypted = unpad(cipher.decrypt(encrypted), AES.block_size)
-            return decrypted.decode('utf-8')
+            return decrypted.decode("utf-8")
         except Exception:
             return "[암호화된 메시지]"
 
 
-def _get_salt():
-    """솔트 가져오기 - Flask 앱 컨텍스트 우선, config.py 폴백
-    
-    [v4.35] 수정: app/__init__.py에서 .security_salt 파일로 관리하는 솔트를
-    우선 사용하여 회원가입/로그인 시 솔트 불일치 문제 해결
-    """
-    # 우선순위 1: Flask 앱 컨텍스트의 PASSWORD_SALT (app/__init__.py에서 설정)
+def _get_salt() -> str:
+    """비밀번호 해시용 솔트를 가져온다."""
     try:
-        salt = current_app.config.get('PASSWORD_SALT')
+        salt = current_app.config.get("PASSWORD_SALT")
         if salt:
-            return salt
+            return str(salt)
     except RuntimeError:
-        # Flask 앱 컨텍스트 외부에서 호출된 경우
         pass
-    
-    # 우선순위 2: config.py의 하드코딩된 값 (폴백)
+
     try:
         from config import PASSWORD_SALT
+
         return PASSWORD_SALT
     except ImportError:
-        pass
-    
-    # 우선순위 3: 기본값 (최후의 수단)
-    return 'messenger_salt_2025'
+        return "messenger_salt_2025"
 
-def hash_password(password):
-    """[v4.2] 비밀번호 해시 (bcrypt 사용)
-    
-    bcrypt는 자동으로 솔트를 생성하고 해시에 포함합니다.
-    기존 SHA-256 해시와의 호환성을 위해 verify_password() 함수 사용 필요.
-    """
+
+def _load_bcrypt() -> ModuleType | None:
     try:
-        import bcrypt
-        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    except ImportError:
-        # bcrypt 미설치 시 기존 방식 사용
+        return importlib.import_module("bcrypt")
+    except Exception:
+        return None
+
+
+def hash_password(password: str) -> str:
+    """비밀번호를 해시한다. 가능하면 bcrypt를 사용한다."""
+    bcrypt_module = _load_bcrypt()
+    if bcrypt_module is not None:
+        return bcrypt_module.hashpw(password.encode("utf-8"), bcrypt_module.gensalt()).decode("utf-8")
+
+    salt = _get_salt()
+    salted = f"{salt}{password}{salt}"
+    return hashlib.sha256(salted.encode()).hexdigest()
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """비밀번호를 검증한다. bcrypt와 레거시 SHA-256 해시를 모두 지원한다."""
+    try:
+        if hashed.startswith("$2"):
+            bcrypt_module = _load_bcrypt()
+            if bcrypt_module is None:
+                return False
+            return bool(bcrypt_module.checkpw(password.encode("utf-8"), hashed.encode("utf-8")))
+
         salt = _get_salt()
         salted = f"{salt}{password}{salt}"
-        return hashlib.sha256(salted.encode()).hexdigest()
-
-
-def verify_password(password, hashed):
-    """[v4.2] 비밀번호 검증 (bcrypt + SHA-256 호환)
-    
-    bcrypt 해시($2로 시작)와 기존 SHA-256 해시(64자 hex) 모두 지원.
-    """
-    try:
-        # bcrypt 해시인지 확인 ($2a$, $2b$ 등으로 시작)
-        if hashed.startswith('$2'):
-            import bcrypt
-            return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
-        else:
-            # 기존 SHA-256 해시
-            salt = _get_salt()
-            salted = f"{salt}{password}{salt}"
-            return hashlib.sha256(salted.encode()).hexdigest() == hashed
+        return hashlib.sha256(salted.encode()).hexdigest() == hashed
     except Exception:
         return False
 
 
-def validate_username(username):
-    """아이디 유효성 검사"""
+def validate_username(username: str) -> bool:
+    """아이디 형식을 검증한다."""
     if not username or len(username) < 3 or len(username) > 20:
         return False
-    return bool(re.match(r'^[a-zA-Z0-9_]+$', username))
+    return bool(re.match(r"^[a-zA-Z0-9_]+$", username))
 
 
-def validate_password(password):
-    """비밀번호 강도 검사"""
+def validate_password(password: str) -> tuple[bool, str]:
+    """비밀번호 강도를 검증한다."""
     if len(password) < 8:
         return False, "비밀번호는 8자 이상이어야 합니다."
     if not any(c.isalpha() for c in password):
@@ -140,60 +136,47 @@ def validate_password(password):
     return True, ""
 
 
-def sanitize_input(text, max_length=1000):
-    """입력값 정제 (XSS 방지)"""
+def sanitize_input(text: str | None, max_length: int = 1000) -> str:
+    """사용자 입력을 XSS-safe 형태로 정리한다."""
     if not text:
         return ""
-    text = text[:max_length]
-    # [v4.3] 태그 제거 대신 이스케이프 처리 (내용 보존)
-    return html.escape(text).strip()
+    return html.escape(text[:max_length]).strip()
 
 
-def allowed_file(filename):
-    """허용된 파일 확장자 확인"""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+def allowed_file(filename: str) -> bool:
+    """허용된 확장자인지 확인한다."""
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def validate_file_header(file):
-    """[v4.3] 파일 매직 넘버(헤더) 검증 - 보안 강화"""
-    filename = file.filename.lower()
-    ext = filename.rsplit('.', 1)[1] if '.' in filename else ''
-    
-    # 헤더 시그니처 정의
-    signatures = {
-        'png': b'\x89PNG\r\n\x1a\n',
-        'jpg': b'\xff\xd8',
-        'jpeg': b'\xff\xd8',
-        'gif': b'GIF8',
-        'pdf': b'%PDF',
-        'zip': b'PK\x03\x04',
-        'docx': b'PK\x03\x04',
-        'xlsx': b'PK\x03\x04',
-        'pptx': b'PK\x03\x04',
-        'webp': b'RIFF', # WEBP is RIFF...WEBP
-        'bmp': b'BM',
-        'ico': b'\x00\x00\x01\x00'
+def validate_file_header(file: Any) -> bool:
+    """파일 시그니처와 확장자가 대체로 일치하는지 확인한다."""
+    filename = str(file.filename or "").lower()
+    ext = filename.rsplit(".", 1)[1] if "." in filename else ""
+
+    signatures: dict[str, bytes] = {
+        "png": b"\x89PNG\r\n\x1a\n",
+        "jpg": b"\xff\xd8",
+        "jpeg": b"\xff\xd8",
+        "gif": b"GIF8",
+        "pdf": b"%PDF",
+        "zip": b"PK\x03\x04",
+        "docx": b"PK\x03\x04",
+        "xlsx": b"PK\x03\x04",
+        "pptx": b"PK\x03\x04",
+        "webp": b"RIFF",
+        "bmp": b"BM",
+        "ico": b"\x00\x00\x01\x00",
     }
-    
-    # 바이너리 검증 대상이 아닌 경우 (txt 등)
+
     if ext not in signatures:
-        # 텍스트 파일 등은 허용하되, 알려지지 않은 확장자는 주의
         return ext in ALLOWED_EXTENSIONS
 
-    if ext in signatures:
-        sig = signatures[ext]
-        # Read header
-        start_pos = file.tell()
-        file.seek(0)
-        # [v4.5] WEBP는 12바이트 읽어야 함 (RIFF....WEBP)
-        header = file.read(12 if ext == 'webp' else len(sig))
-        file.seek(start_pos)
-        
-        # [v4.5] WEBP 특수 검증: RIFF....WEBP 형식
-        if ext == 'webp':
-            if not (header[:4] == b'RIFF' and header[8:12] == b'WEBP'):
-                return False
-        elif not header.startswith(sig):
-            return False
-            
-    return True
+    sig = signatures[ext]
+    start_pos = file.tell()
+    file.seek(0)
+    header = file.read(12 if ext == "webp" else len(sig))
+    file.seek(start_pos)
+
+    if ext == "webp":
+        return bool(header[:4] == b"RIFF" and header[8:12] == b"WEBP")
+    return bool(header.startswith(sig))

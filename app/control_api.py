@@ -27,7 +27,7 @@ def _get_base_dir():
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def get_or_create_control_token(base_dir: str = None) -> str:
+def get_or_create_control_token(base_dir: str | None = None) -> str:
     """Control API 인증 토큰 생성/로딩.
 
     토큰은 {BASE_DIR}/.control_token에 저장됩니다.
@@ -57,7 +57,7 @@ def get_or_create_control_token(base_dir: str = None) -> str:
     return token
 
 
-def _is_localhost(addr: str) -> bool:
+def _is_localhost(addr: str | None) -> bool:
     if not addr:
         return False
     return addr in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
@@ -136,11 +136,11 @@ def get_logs():
 
 @control_bp.route('/shutdown', methods=['POST'])
 def shutdown():
-    """?? ?? ??"""
+    """서버 종료 요청."""
     global _shutdown_requested
     _shutdown_requested = True
 
-    # Control API? ?? ??? ?? ?? ???????, ???? ??? ???? ?.
+    # Control API는 종료 요청만 표시하고, 실제 종료는 현재 프로세스에서 수행한다.
     import os
     import signal
     try:
