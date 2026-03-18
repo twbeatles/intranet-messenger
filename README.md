@@ -2,9 +2,9 @@
 
 내부망 전용 메신저 서버(Flask + Socket.IO)입니다.
 
-- 기준일: 2026-03-15
+- 기준일: 2026-03-18
 - 기준 브랜치: `main`
-- 최신 검증: `pyright` -> `0 errors, 0 warnings`, `pytest -q` -> `86 passed`
+- 최신 검증: `pyright app gui` -> `0 errors, 0 warnings`, `pytest -q` -> `89 passed`
 
 ## 1. 프로젝트 상태
 
@@ -14,6 +14,8 @@
 - OIDC(옵션), AV 스캔 파이프라인(옵션), Redis state store(옵션) 반영
 - 관리자 감사로그 API 반영
 - `/api/config` 기반 프론트-서버 계약 단일화
+- Python runtime 분리 반영: `app/factory.py`, `app/bootstrap/`, `app/http/`, `app/socket_events/`, `app/services/`
+- Web/GUI presentation 분리 반영: `templates/partials/`, `static/js/{core,services,features,bootstrap}`, `static/css/*.css`, `gui/{services,widgets,styles,window}`
 - 로컬 수동 백업/복구/검증 스크립트 + 런북 추가
 - Pylance/Pyright 타입 정리 완료
 - UTF-8/BOM 정리 및 인코딩 hygiene 회귀 테스트 추가
@@ -31,6 +33,15 @@
 
 - 백엔드: Flask, Flask-SocketIO, SQLite
 - 프론트: Vanilla JS
+- 활성 구조:
+  - 앱 팩토리/부트스트랩: `app/factory.py`, `app/bootstrap/*`
+  - HTTP 블루프린트: `app/http/*`
+  - Socket.IO 이벤트: `app/socket_events/*`
+  - 서비스 계층: `app/services/*`
+  - 호환 shim: `app/routes.py`, `app/sockets.py`, `gui/server_window.py`
+  - 템플릿 분할: `templates/index.html` + `templates/partials/*`
+  - 프런트 런타임: `static/js/core/*`, `static/js/services/*`, `static/js/features/*`, `static/js/bootstrap/*`
+  - GUI 조립: `gui/window/main_window.py`
 - 옵션 백엔드:
   - Redis: 레이트리밋 저장소 + 상태 저장소
   - OIDC: 사내 SSO 연동
@@ -194,12 +205,16 @@ pytest -q
 
 현재 기준선:
 
-- `86 passed` (2026-03-15)
+- `89 passed` (2026-03-18)
+- 스모크 누락 방지 테스트 포함:
+  - `tests/test_route_map_smoke.py`
+  - `tests/test_template_assets_smoke.py`
+  - `tests/test_gui_import_smoke.py`
 
 타입/인코딩 검증:
 
 ```bash
-pyright
+pyright app gui
 pytest tests/test_encoding_hygiene.py -q
 ```
 
@@ -220,8 +235,11 @@ pyinstaller messenger.spec --clean
 
 - 신규 모듈 hidden import 추가:
   - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
+- 구조 분할 패키지 hidden import 추가:
+  - `app.bootstrap.*`, `app.http.*`, `app.socket_events.*`, `app.services.*`
+  - `gui.services.*`, `gui.styles.*`, `gui.widgets.*`, `gui.window.*`
 - Redis 동적 import 반영:
-  - `redis`, `redis.asyncio`
+  - `redis`, `redis.asyncio`는 설치된 경우에만 optional hidden import로 포함
 - 선택 비동기 런타임 반영:
   - `eventlet`, `engineio.async_drivers.eventlet`
 - OIDC/JWKS 검증 경로 반영:
@@ -285,3 +303,21 @@ pyinstaller messenger.spec --clean
   - tracked text files의 UTF-8 without BOM 검사
   - mojibake 탐지
   - 의도적 detector token은 `app/__init__.py`, `app/sockets.py`만 allowlist
+
+## 18. 2026-03-18 단계형 코드 분할 리팩토링 업데이트
+
+- Python runtime을 `factory/bootstrap/http/socket_events/services` 계층으로 분리하고, 기존 공개 import는 shim으로 유지했다
+- `app/routes.py`, `app/sockets.py`, `gui/server_window.py`는 외부 계약 유지를 위한 facade 역할만 맡긴다
+- `templates/index.html`을 shell + partial 구조로 분리하고, `static/js`를 `core/services/features/bootstrap` 구조로 재배치했다
+- `static/css/style.css`는 manifest로 유지하면서 `tokens/base/layout/components/features/responsive/themes` 파일로 분리했다
+- GUI는 `process_control`, `settings_service`, `toast`, `qss`, `main_window`로 분할했다
+- baseline 정리:
+  - 인코딩 hygiene 테스트의 stray control char 정리
+  - AV 업로드 pending 경로의 Windows cross-drive 처리 보강
+- 회귀 방지 테스트 추가:
+  - `tests/test_route_map_smoke.py`
+  - `tests/test_template_assets_smoke.py`
+  - `tests/test_gui_import_smoke.py`
+- 최신 기준선:
+  - `pytest -q` => `89 passed`
+  - `pyright app gui` => `0 errors, 0 warnings`

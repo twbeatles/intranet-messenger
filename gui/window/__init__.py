@@ -1,0 +1,3 @@
+"""
+GUI window assembly.
+"""

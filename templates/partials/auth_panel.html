@@ -1,0 +1,79 @@
+    <!-- 인증 화면 -->
+    <div id="authContainer" class="auth-container">
+        <div class="auth-box">
+            <h1>🔒 사내 메신저</h1>
+            <p class="subtitle">종단간 암호화로 안전하게 소통하세요</p>
+            <div style="text-align:center;"><span class="encryption-badge">🔒 E2E 암호화 적용</span></div>
+            <div id="authError" class="error-message hidden"></div>
+
+            <!-- 로그인 폼 -->
+            <form id="loginForm" onsubmit="return false;">
+                <div class="form-group">
+                    <label>아이디</label>
+                    <input type="text" id="loginUsername" placeholder="아이디를 입력하세요" required>
+                </div>
+                <div class="form-group">
+                    <label>비밀번호</label>
+                    <input type="password" id="loginPassword" placeholder="비밀번호를 입력하세요" required>
+                </div>
+                <button type="button" class="btn btn-primary" id="loginBtn">로그인</button>
+            </form>
+
+            <!-- 회원가입 폼 -->
+            <form id="registerForm" class="hidden" onsubmit="return false;">
+                <!-- [v4.34] 회원가입 단계 표시기 -->
+                <div class="step-indicator" id="stepIndicator">
+                    <div class="step active" data-step="1">
+                        <div class="step-circle">1</div>
+                        <div class="step-label">아이디</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="2">
+                        <div class="step-circle">2</div>
+                        <div class="step-label">비밀번호</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="3">
+                        <div class="step-circle">3</div>
+                        <div class="step-label">닉네임</div>
+                    </div>
+                </div>
+
+                <div class="form-group" data-step="1">
+                    <label>아이디</label>
+                    <input type="text" id="regUsername" placeholder="3자 이상" required aria-label="아이디 입력"
+                        onfocus="updateStepIndicator(1)" onblur="validateStep(1)">
+                </div>
+                <div class="form-group" data-step="2">
+                    <label>비밀번호</label>
+                    <input type="password" id="regPassword" placeholder="8자 이상 (영문+숫자)" required
+                        oninput="updatePasswordStrength(this.value)" aria-label="비밀번호 입력"
+                        aria-describedby="passwordStrength" onfocus="updateStepIndicator(2)" onblur="validateStep(2)">
+                    <!-- [v4.33] 패스워드 강도 표시기 -->
+                    <div id="passwordStrength" class="password-strength" style="display:none">
+                        <div class="strength-bar-container">
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                        </div>
+                        <span class="strength-label"></span>
+                    </div>
+                </div>
+                <div class="form-group" data-step="3">
+                    <label>닉네임</label>
+                    <input type="text" id="regNickname" placeholder="표시될 이름" aria-label="닉네임 입력"
+                        onfocus="updateStepIndicator(3)" onblur="validateStep(3)">
+                </div>
+                <button type="button" class="btn btn-primary" id="registerBtn">회원가입</button>
+            </form>
+
+            <div class="auth-switch">
+                <span id="switchToRegisterWrap">계정이 없으신가요? <a href="javascript:void(0)"
+                        id="showRegister">회원가입</a></span>
+                <span id="switchToLoginWrap" style="display:none">이미 계정이 있으신가요? <a href="javascript:void(0)"
+                        id="showLogin">로그인</a></span>
+            </div>
+        </div>
+    </div>
+

@@ -1,8 +1,28 @@
 # -*- mode: python ; coding: utf-8 -*-
 # 사내 메신저 v4.36.3 PyInstaller 빌드 명세서
+# 2026-03-18 구조 분할 리팩토링 반영
 # 경량화 최적화 버전
 
+import importlib.util
+
 block_cipher = None
+
+
+def _has_module(name):
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+OPTIONAL_HIDDENIMPORTS = [
+    name for name in (
+        'eventlet',
+        'redis',
+        'redis.asyncio',
+    )
+    if _has_module(name)
+]
 
 # 제외할 모듈 목록 (경량화)
 EXCLUDES = [
@@ -51,7 +71,6 @@ a = Analysis(
 
         # Eventlet 관련 (선택 async_mode)
         'engineio.async_drivers.eventlet',
-        'eventlet',
         
         # Socket.IO 관련
         'engineio',
@@ -77,6 +96,7 @@ a = Analysis(
         
         # 앱 모듈
         'app',
+        'app.factory',
         'app.routes',
         'app.sockets',
         'app.models',
@@ -89,6 +109,35 @@ a = Analysis(
         'app.oidc',
         'app.control_api',
         'app.server_launcher',
+        'app.bootstrap',
+        'app.bootstrap.runtime',
+        'app.bootstrap.socketio_config',
+        'app.bootstrap.hooks',
+        'app.bootstrap.workers',
+        'app.http',
+        'app.http.auth',
+        'app.http.public',
+        'app.http.rooms',
+        'app.http.messages',
+        'app.http.uploads',
+        'app.http.profile',
+        'app.http.collaboration',
+        'app.http.common',
+        'app.http.route_deps',
+        'app.socket_events',
+        'app.socket_events.register',
+        'app.socket_events.shared',
+        'app.socket_events.state',
+        'app.socket_events.connection',
+        'app.socket_events.messages',
+        'app.socket_events.presence',
+        'app.socket_events.rooms',
+        'app.socket_events.features',
+        'app.services',
+        'app.services.runtime_config',
+        'app.services.session_tokens',
+        'app.services.socket_broadcasts',
+        'app.services.uploads',
         'app.models.base',
         'app.models.users',
         'app.models.rooms',
@@ -100,9 +149,6 @@ a = Analysis(
         'app.legacy.models_monolith',
 
         # Redis (optional runtime backend)
-        'redis',
-        'redis.asyncio',
-
         # 인증서 생성 경로 (GUI/CLI 공용)
         'certs.generate_cert',
         'cryptography.x509',
@@ -114,6 +160,15 @@ a = Analysis(
         # GUI 모듈
         'gui',
         'gui.server_window',
+        'gui.services',
+        'gui.services.process_control',
+        'gui.services.settings_service',
+        'gui.widgets',
+        'gui.widgets.toast',
+        'gui.styles',
+        'gui.styles.qss',
+        'gui.window',
+        'gui.window.main_window',
         
         # 이메일 관련 (계정 기능)
         'email.mime',
@@ -133,7 +188,7 @@ a = Analysis(
         'werkzeug.security',
         'jinja2',
         'markupsafe',
-    ],
+    ] + OPTIONAL_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

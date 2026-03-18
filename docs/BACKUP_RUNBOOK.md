@@ -1,7 +1,7 @@
 # BACKUP_RUNBOOK
 
 작성일: 2026-02-25
-최종 업데이트: 2026-03-15
+최종 업데이트: 2026-03-18
 범위: 로컬 환경 수동 백업/복구/검증
 
 ## 1. 목적
@@ -86,6 +86,14 @@ python server.py --cli
 ```bash
 pytest -q
 ```
-3. 런타임 설정 엔드포인트 확인
+3. 구조 스모크 테스트 확인
+```bash
+pytest -q tests/test_route_map_smoke.py tests/test_template_assets_smoke.py tests/test_gui_import_smoke.py
+```
+4. 런타임 설정 엔드포인트 확인
    - `GET /api/config`
-4. 업로드 디렉터리 및 DB 경로가 기대 경로를 가리키는지 확인
+5. 업로드 디렉터리 및 DB 경로가 기대 경로를 가리키는지 확인
+6. 패키징/번들 리소스 이슈 의심 시 확인
+   - `templates/partials/*`
+   - `static/css/*.css`
+   - `static/js/{core,services,features,bootstrap}/*`

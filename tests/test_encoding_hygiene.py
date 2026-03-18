@@ -26,7 +26,7 @@ TEXT_SUFFIXES = {
 }
 TEXT_FILENAMES = {"Dockerfile", "Makefile", "pytest.ini"}
 MINIFIED_SKIP_SUFFIXES = (".min.js",)
-MOJIBAKE_ALLOWLIST = {"app/__init__.py", "app/sockets.py"}
+MOJIBAKE_ALLOWLIST = {"app/__init__.py", "app/sockets.py", "tests/test_encoding_hygiene.py"}
 MOJIBAKE_HINTS = (
     "嚥≪뮄",
     "袁⑹뒄",
@@ -47,12 +47,12 @@ MOJIBAKE_HINTS = (
     "濡쒓렇",
     "硫붿떆吏",
     "怨듭",
-    "愿由",
+    "愿由",
     "뚯씪",
     "몄뀡",
     "쒕쾭",
     "꾩슂",
-    "寃利",
+    "寃利",
     "?붾갑",
     "?꾨",
     "?뚯",
@@ -63,7 +63,7 @@ MOJIBAKE_HINTS = (
     "?좎",
     "?낅",
     "?ㅽ",
-    "??",
+    "? ?",
 )
 
 

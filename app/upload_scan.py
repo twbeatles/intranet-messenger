@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime
 
 from app.models.base import get_db, close_thread_db, safe_file_delete
+from app.services.uploads import resolve_stored_path
 from app.upload_tokens import issue_upload_token
 
 logger = logging.getLogger(__name__)
@@ -130,8 +131,8 @@ def _process_job(job_id: str):
                 return
 
             upload_root = app.config.get("UPLOAD_FOLDER")
-            abs_temp = os.path.join(upload_root, job["temp_path"])
-            abs_final = os.path.join(upload_root, job["final_path"])
+            abs_temp = resolve_stored_path(upload_root, job["temp_path"])
+            abs_final = resolve_stored_path(upload_root, job["final_path"])
             os.makedirs(os.path.dirname(abs_final), exist_ok=True)
 
             scanner = (app.config.get("AV_SCANNER") or "clamav").lower()

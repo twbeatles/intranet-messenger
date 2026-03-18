@@ -1,0 +1,114 @@
+    <!-- 메인 앱 -->
+    <div id="appContainer" class="app-container">
+        <!-- 사이드바 -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>🔒 대화</h2>
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="searchInput" placeholder="대화 검색...">
+                </div>
+            </div>
+            <div class="room-list" id="roomList" role="list" aria-label="대화방 목록"></div>
+            <!-- [v4.33] 접기/펴기 가능한 온라인 섹션 -->
+            <div class="online-section" id="onlineSection">
+                <div class="online-section-header" onclick="toggleOnlineSection()" role="button" aria-expanded="true"
+                    aria-controls="onlineUsersList">
+                    <h4><span class="dot"></span> 온라인 사용자</h4>
+                    <span class="online-section-toggle">▼</span>
+                </div>
+                <div class="online-users-list" id="onlineUsersList" role="list" aria-label="온라인 사용자 목록"></div>
+            </div>
+            <div class="user-section">
+                <div class="user-avatar clickable" id="userAvatar" title="프로필 수정"></div>
+                <div class="user-info clickable" id="userInfoClick" title="프로필 수정">
+                    <div class="user-name" id="userName"></div>
+                    <div class="user-status">온라인</div>
+                </div>
+                <div class="user-actions">
+                    <button class="icon-btn" id="helpBtn" title="도움말">❓</button>
+                    <button class="icon-btn" id="settingsBtn" title="화면 설정">🎨</button>
+                    <button class="icon-btn" id="profileBtn" title="프로필 수정">👤</button>
+                    <button class="icon-btn" id="newChatBtn" title="새 대화">➕</button>
+                    <button class="icon-btn" id="logoutBtn" title="로그아웃">🚪</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 채팅 영역 -->
+        <div class="chat-area" id="chatArea">
+            <div class="empty-state empty-state-enhanced" id="emptyState">
+                <div class="empty-illustration">💬</div>
+                <h3>대화를 선택하세요</h3>
+                <p>왼쪽에서 대화를 선택하거나<br>새 대화를 시작하세요</p>
+                <div class="empty-actions">
+                    <button class="btn btn-primary" onclick="openNewChatModal()">➕ 새 대화 시작</button>
+                </div>
+                <p style="margin-top:24px;font-size:12px;color:var(--text-muted);">
+                    <span class="kbd">Ctrl</span>+<span class="kbd">N</span> 으로 빠르게 시작
+                </p>
+            </div>
+
+            <div id="chatContent" class="chat-content hidden">
+                <div class="chat-header">
+                    <button class="icon-btn mobile-menu-btn" id="mobileMenuBtn">☰</button>
+                    <div class="chat-header-info">
+                        <div class="chat-header-avatar" id="chatAvatar"></div>
+                        <div>
+                            <div class="chat-header-name" id="chatName">🔒</div>
+                            <div class="chat-header-status" id="chatStatus"></div>
+                        </div>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button class="icon-btn" id="roomSettingsBtn" title="설정">⚙</button>
+                        <div class="dropdown-menu" id="roomSettingsMenu">
+                            <div class="dropdown-item" id="editRoomNameBtn">✏ 대화방 이름 변경</div>
+                            <div class="dropdown-item" id="pinRoomBtn">📌 <span id="pinRoomText">상단 고정</span></div>
+                            <div class="dropdown-item" id="muteRoomBtn">🔕 <span id="muteRoomText">알림 끄기</span></div>
+                            <div class="dropdown-item" id="viewMembersBtn">👥 멤버 보기</div>
+                            <div class="dropdown-divider"></div>
+                            <div class="dropdown-item" id="createPollBtn2">📋 투표 만들기</div>
+                            <div class="dropdown-item" id="viewFilesBtn">📁 파일 저장소</div>
+                            <div class="dropdown-item" id="viewPinsBtn">📌 공지 보기</div>
+                            <div class="dropdown-item" id="adminSettingsBtn">👑 관리자 설정</div>
+                        </div>
+                        <button class="icon-btn" id="inviteBtn" title="초대">👤➕</button>
+                        <button class="icon-btn" id="leaveRoomBtn" title="나가기">🚪</button>
+                    </div>
+                </div>
+                <!-- 공지 배너 -->
+                <div class="pinned-banner hidden" id="pinnedBanner">
+                    <span class="pinned-icon">📌</span>
+                    <span class="pinned-content" id="pinnedContent">공지사항이 여기에 표시됩니다</span>
+                    <button class="pinned-close" id="closePinnedBanner">✕</button>
+                </div>
+                <div class="messages-container drop-zone" id="messagesContainer">
+                    <div class="drop-overlay" id="dropOverlay">
+                        <div class="drop-overlay-content">
+                            <div class="drop-overlay-icon">📁</div>
+                            <div class="drop-overlay-text">파일을 놓아 업로드</div>
+                        </div>
+                    </div>
+                </div>
+                <button class="scroll-to-bottom-btn hidden" id="scrollToBottomBtn" title="맨 아래로">↓</button>
+                <div class="typing-indicator hidden" id="typingIndicator"></div>
+                <div id="replyPreview" class="hidden"></div>
+                <div class="chat-input-container">
+                    <div class="encryption-notice">🔒 메시지는 종단간 암호화됩니다</div>
+                    <div class="chat-input-wrapper">
+                        <div class="chat-input-actions">
+                            <button class="icon-btn" id="emojiBtn">😊</button>
+                            <button class="icon-btn" id="attachBtn">📎</button>
+                            <input type="file" id="fileInput" style="display:none;">
+                            <div class="emoji-picker" id="emojiPicker"></div>
+                        </div>
+                        <div class="mention-autocomplete hidden" id="mentionAutocomplete"></div>
+                        <textarea class="chat-input" id="messageInput" placeholder="메시지를 입력하세요... (@로 멘션)"
+                            rows="1"></textarea>
+                        <button class="send-btn" id="sendBtn">✉</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+

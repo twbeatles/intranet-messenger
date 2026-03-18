@@ -1,7 +1,7 @@
 # GEMINI.md
 
 프로젝트: `intranet-messenger-main`  
-최종 업데이트: 2026-03-15
+최종 업데이트: 2026-03-18
 
 ## 1) 문서 목표
 
@@ -19,10 +19,10 @@
 ## 3) 현재 상태 스냅샷
 
 - 테스트 기준선:
-  - `pytest tests -q` => `86 passed`
-  - `pytest --maxfail=1` => `86 passed`
+  - `pytest tests -q` => `89 passed`
+  - `pytest --maxfail=1` => `89 passed`
 - 타입 기준선:
-  - `pyright` => `0 errors, 0 warnings`
+  - `pyright app gui` => `0 errors, 0 warnings`
 - 테스트 수집 안정화 완료:
   - `pytest.ini` (`testpaths = tests`, `norecursedirs = backup dist build`)
 - 보안/계약 핵심 반영 완료:
@@ -31,6 +31,10 @@
   - `/api/search` limit/offset clamp
   - `/uploads` 인증 캐시 정책 강화
   - UTF-8/BOM 정리 + encoding hygiene 테스트 추가
+- 구조 분할 기준선:
+  - Python runtime: `app/factory.py`, `app/bootstrap/*`, `app/http/*`, `app/socket_events/*`, `app/services/*`
+  - Web/GUI: `templates/partials/*`, `static/js/{core,services,features,bootstrap}/*`, `static/css/*.css`, `gui/window/main_window.py`
+  - shim 유지: `app/routes.py`, `app/sockets.py`, `gui/server_window.py`
 
 ## 4) 절대 보존해야 할 계약
 
@@ -85,12 +89,14 @@
 3. 테스트 실행
 4. 결과 요약(실패 시 원인 분리: 코드/테스트/문서)
 5. README/감사문서 동기화 여부 확인
+6. shim 유지 여부와 smoke test 누락 여부 확인
 
 ## 7) 권장 테스트 세트
 
 - 전체:
   - `pytest tests -q`
   - `pytest --maxfail=1`
+  - `pyright app gui`
 - 보안 회귀 우선:
   - `tests/test_socket_upload_token.py`
   - `tests/test_upload_tokens.py`
@@ -98,6 +104,10 @@
   - `tests/test_pins_delete_api.py`
   - `tests/test_search_limit_clamp.py`
   - `tests/test_rooms_member_ids_compat.py`
+- 구조 회귀 우선:
+  - `tests/test_route_map_smoke.py`
+  - `tests/test_template_assets_smoke.py`
+  - `tests/test_gui_import_smoke.py`
 
 ## 8) 문서 동기화 원칙
 
@@ -150,3 +160,28 @@ Then report changed files and test results.
   - mojibake 탐지
   - intentional detector token allowlist 유지
 - 활성 문서 세트는 `README.md`, `claude.md`, `gemini.md`, `docs/BACKUP_RUNBOOK.md` 기준으로 맞춘다
+
+## 13) 2026-03-18 구조 분할 리팩토링 메모
+
+- Python runtime 분리
+  - `app/factory.py`
+  - `app/bootstrap/*`
+  - `app/http/*`
+  - `app/socket_events/*`
+  - `app/services/*`
+- Web/GUI 분리
+  - `templates/index.html` + `templates/partials/*`
+  - `static/js/core/*`, `static/js/services/*`, `static/js/features/*`, `static/js/bootstrap/*`
+  - `static/css/style.css` + 분할 stylesheet
+  - `gui/services/*`, `gui/widgets/*`, `gui/styles/*`, `gui/window/main_window.py`
+- 호환 shim
+  - `app/routes.py`
+  - `app/sockets.py`
+  - `gui/server_window.py`
+- 누락 방지 테스트
+  - `tests/test_route_map_smoke.py`
+  - `tests/test_template_assets_smoke.py`
+  - `tests/test_gui_import_smoke.py`
+- 최신 기준선
+  - `pytest -q` => `89 passed`
+  - `pyright app gui` => `0 errors, 0 warnings`

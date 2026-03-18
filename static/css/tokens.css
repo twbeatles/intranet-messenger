@@ -1,0 +1,144 @@
+/* 사내 메신저 v4.0 스타일시트 - 테마 시스템 */
+
+/* ============================================
+   다크 모드 (기본)
+   ============================================ */
+:root {
+    /* 기본 프라이머리 색상 */
+    --primary: #10B981;
+    --primary-hover: #059669;
+    --primary-light: rgba(16, 185, 129, 0.1);
+
+    /* 다크 테마 배경/텍스트 */
+    --secondary: #2D2F3A;
+    --bg-dark: #0F172A;
+    --bg-darker: #020617;
+    --bg-light: #1E293B;
+    --text: #F8FAFC;
+    --text-muted: #94A3B8;
+    --success: #22C55E;
+    --danger: #EF4444;
+    --warning: #F59E0B;
+    --border: rgba(255, 255, 255, 0.1);
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --radius: 12px;
+    --radius-sm: 8px;
+
+    /* 채팅 배경 */
+    --chat-bg: var(--bg-dark);
+    --chat-pattern: none;
+
+    /* 트랜지션 */
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.3s ease;
+}
+
+/* ============================================
+   라이트 모드
+   ============================================ */
+[data-theme="light"] {
+    --secondary: #E2E8F0;
+    --bg-dark: #F1F5F9;
+    --bg-darker: #E2E8F0;
+    --bg-light: #FFFFFF;
+    --text: #0F172A;
+    --text-muted: #64748B;
+    --border: rgba(0, 0, 0, 0.1);
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    --chat-bg: #F8FAFC;
+}
+
+/* ============================================
+   색상 프리셋
+   ============================================ */
+[data-color="emerald"] {
+    --primary: #10B981;
+    --primary-hover: #059669;
+    --primary-light: rgba(16, 185, 129, 0.1);
+}
+
+[data-color="ocean"] {
+    --primary: #3B82F6;
+    --primary-hover: #2563EB;
+    --primary-light: rgba(59, 130, 246, 0.1);
+}
+
+[data-color="purple"] {
+    --primary: #8B5CF6;
+    --primary-hover: #7C3AED;
+    --primary-light: rgba(139, 92, 246, 0.1);
+}
+
+[data-color="rose"] {
+    --primary: #F43F5E;
+    --primary-hover: #E11D48;
+    --primary-light: rgba(244, 63, 94, 0.1);
+}
+
+[data-color="orange"] {
+    --primary: #F97316;
+    --primary-hover: #EA580C;
+    --primary-light: rgba(249, 115, 22, 0.1);
+}
+
+[data-color="cyan"] {
+    --primary: #06B6D4;
+    --primary-hover: #0891B2;
+    --primary-light: rgba(6, 182, 212, 0.1);
+}
+
+[data-color="yellow"] {
+    --primary: #EAB308;
+    --primary-hover: #CA8A04;
+    --primary-light: rgba(234, 179, 8, 0.1);
+}
+
+[data-color="indigo"] {
+    --primary: #6366F1;
+    --primary-hover: #4F46E5;
+    --primary-light: rgba(99, 102, 241, 0.1);
+}
+
+[data-color="teal"] {
+    --primary: #14B8A6;
+    --primary-hover: #0D9488;
+    --primary-light: rgba(20, 184, 166, 0.1);
+}
+
+[data-color="pink"] {
+    --primary: #EC4899;
+    --primary-hover: #DB2777;
+    --primary-light: rgba(236, 72, 153, 0.1);
+}
+
+/* ============================================
+   채팅 배경 패턴
+   ============================================ */
+[data-chat-bg="dots"] {
+    --chat-pattern: radial-gradient(circle, var(--border) 1px, transparent 1px);
+    --chat-pattern-size: 20px 20px;
+}
+
+[data-chat-bg="grid"] {
+    --chat-pattern: linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    --chat-pattern-size: 20px 20px;
+}
+
+[data-chat-bg="gradient1"] {
+    --chat-bg: linear-gradient(135deg, var(--bg-dark), var(--bg-darker));
+}
+
+[data-chat-bg="gradient2"] {
+    --chat-bg: linear-gradient(135deg, var(--primary-light), var(--bg-dark));
+}
+
+/* ============================================
+   글로벌 스타일
+   ============================================ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
