@@ -239,6 +239,25 @@ function initRoomListEvents() {
 var currentOpenRequestId = 0;
 var isOpeningRoom = false;
 
+
+function resetActiveRoomState(roomId) {
+    if (!currentRoom || (roomId && currentRoom.id !== roomId)) return;
+
+    currentRoom = null;
+    currentRoomKey = null;
+
+    var chatContent = document.getElementById('chatContent');
+    var emptyState = document.getElementById('emptyState');
+    var messagesContainer = document.getElementById('messagesContainer');
+    if (chatContent) chatContent.classList.add('hidden');
+    if (emptyState) emptyState.classList.remove('hidden');
+    if (messagesContainer) messagesContainer.innerHTML = '';
+
+    if (typeof clearReply === 'function') clearReply();
+    if (typeof clearTypingUsers === 'function') clearTypingUsers();
+    if (typeof renderRoomList === 'function') renderRoomList();
+}
+
 /**
  * 대화방 열기
  */
@@ -755,13 +774,7 @@ async function leaveRoom(targetRoom) {
         }
 
         if (currentRoom && currentRoom.id === leftRoomId) {
-            currentRoom = null;
-            currentRoomKey = null;
-
-            var chatContent = document.getElementById('chatContent');
-            var emptyState = document.getElementById('emptyState');
-            if (chatContent) chatContent.classList.add('hidden');
-            if (emptyState) emptyState.classList.remove('hidden');
+            resetActiveRoomState(leftRoomId);
         }
 
         if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else loadRooms();
@@ -1293,6 +1306,7 @@ window.loadRooms = loadRooms;
 window.throttledLoadRooms = throttledLoadRooms;
 window.renderRoomList = renderRoomList;
 window.openRoom = openRoom;
+window.resetActiveRoomState = resetActiveRoomState;
 window.openNewChatModal = openNewChatModal;
 window.createRoom = createRoom;
 window.openInviteModal = openInviteModal;

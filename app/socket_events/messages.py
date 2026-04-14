@@ -6,6 +6,7 @@ Message, edit/delete, and reaction Socket.IO events.
 from __future__ import annotations
 
 import logging
+import os
 import traceback
 
 from flask import session
@@ -19,7 +20,9 @@ from app.models import (
     get_message_room_id,
     get_unread_count,
     is_room_member,
+    safe_file_delete,
 )
+from app.services.runtime_paths import get_upload_folder
 from app.socket_events.shared import check_send_message_rate_limit, emit_error, ensure_session_token, parse_positive_int
 from app.socket_events.state import get_user_room_ids
 from app.upload_tokens import consume_upload_token, get_upload_token_failure_reason
@@ -47,7 +50,10 @@ def register_message_events(socketio):
             content = data.get("content", "")
             content = content.strip()[:10000] if isinstance(content, str) else ""
             message_type = data.get("type", "text")
-            if message_type not in {"text", "file", "image", "system"}:
+            if message_type == "system":
+                emit_error("시스템 메시지는 클라이언트에서 전송할 수 없습니다.")
+                return
+            if message_type not in {"text", "file", "image"}:
                 message_type = "text"
 
             file_path = None
@@ -61,6 +67,9 @@ def register_message_events(socketio):
             user_rooms = get_user_room_ids(user_id)
             if room_id not in user_rooms and not is_room_member(room_id, user_id):
                 emit_error("대화방 접근 권한이 없습니다.")
+                return
+            if reply_to is not None and get_message_room_id(reply_to) != room_id:
+                emit_error("답장 대상 메시지가 현재 대화방에 없습니다.")
                 return
 
             if message_type in ("file", "image"):
@@ -91,27 +100,25 @@ def register_message_events(socketio):
             if not content and not file_path:
                 return
 
-            message = create_message(room_id, user_id, content, message_type, file_path, file_name, reply_to, encrypted)
+            message = create_message(
+                room_id,
+                user_id,
+                content,
+                message_type,
+                file_path,
+                file_name,
+                reply_to,
+                encrypted,
+                file_size=file_size,
+            )
             if not message:
                 if message_type in ("file", "image") and file_path:
                     logger.warning(f"Potential orphan upload file after message failure: room={room_id}, user={user_id}, path={file_path}")
+                    safe_file_delete(os.path.join(get_upload_folder(), file_path))
                 emit_error("메시지 저장에 실패했습니다.")
                 return
 
             message["unread_count"] = get_unread_count(room_id, message["id"], user_id)
-            if message_type in ("file", "image") and file_path:
-                if file_name is None:
-                    logger.error(f"Upload token missing file_name after validation: room={room_id}, user={user_id}")
-                    emit_error("업로드 파일 정보가 손상되었습니다.")
-                    return
-
-                from app.models import add_room_file
-
-                try:
-                    add_room_file(room_id, user_id, file_path, file_name, file_size, message_type, message["id"])
-                except Exception as exc:
-                    logger.error(f"Failed to add room file record: {exc}")
-                    logger.warning(f"Potential orphan upload file detected: room={room_id}, user={user_id}, path={file_path}")
 
             emit("new_message", message, to=f"room_{room_id}")
         except Exception as exc:
@@ -176,4 +183,3 @@ def register_message_events(socketio):
             emit("reaction_updated", {"room_id": room_id, "message_id": message_id, "reactions": get_message_reactions(message_id)}, to=f"room_{room_id}")
         except Exception as exc:
             logger.error(f"Reaction update broadcast error: {exc}")
-

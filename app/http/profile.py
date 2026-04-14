@@ -48,14 +48,20 @@ def update_profile():
         return error_response
 
     nickname = sanitize_input(data.get("nickname", ""), max_length=20)
-    status_message = sanitize_input(data.get("status_message", ""), max_length=100)
+    has_status_message = "status_message" in data
+    status_message_value = data.get("status_message", "")
+    if status_message_value is None:
+        status_message_value = ""
+    if not isinstance(status_message_value, str):
+        status_message_value = str(status_message_value)
+    status_message = sanitize_input(status_message_value, max_length=100)
     if nickname and len(nickname) < 2:
         return jsonify({"error": "닉네임은 2자 이상이어야 합니다."}), 400
 
     success = update_user_profile(
         session["user_id"],
         nickname=nickname if nickname else None,
-        status_message=status_message if status_message else None,
+        status_message=status_message if has_status_message else None,
     )
     if not success:
         return jsonify({"error": "프로필 업데이트에 실패했습니다."}), 500
@@ -139,4 +145,3 @@ def delete_profile_image():
     if success:
         return jsonify({"success": True})
     return jsonify({"error": "프로필 이미지 삭제에 실패했습니다."}), 500
-

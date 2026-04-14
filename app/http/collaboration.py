@@ -17,6 +17,7 @@ from app.models import (
     create_poll,
     get_pinned_messages,
     get_poll,
+    get_message_room_id,
     get_room_polls,
     get_user_votes,
     is_room_admin,
@@ -56,6 +57,13 @@ def create_pin(room_id: int):
     content = sanitize_input(data.get("content", ""), max_length=500)
     if not message_id and not content:
         return jsonify({"error": "고정할 메시지 또는 내용을 입력해 주세요."}), 400
+    if message_id is not None:
+        try:
+            message_id = int(message_id)
+        except (TypeError, ValueError):
+            return json_error("잘못된 메시지 ID입니다.", 400, "invalid_pin_message")
+        if get_message_room_id(message_id) != room_id:
+            return json_error("해당 메시지는 이 대화방에 속하지 않습니다.", 400, "invalid_pin_message")
 
     pin_id = pin_message(room_id, session["user_id"], message_id, content)
     if not pin_id:

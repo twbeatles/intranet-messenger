@@ -10,15 +10,10 @@ import re
 from datetime import datetime, timezone, timedelta
 
 from app.models.base import get_db, safe_file_delete
-
-try:
-    from config import UPLOAD_FOLDER
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    from config import UPLOAD_FOLDER
+from app.services.runtime_paths import get_upload_folder
 
 logger = logging.getLogger(__name__)
+_HIDDEN_DELETED_ATTACHMENT_WHERE = "NOT (m.message_type IN ('file', 'image') AND m.file_path IS NULL AND m.content = '[삭제된 메시지]')"
 
 # 서버 통계
 server_stats = {
@@ -45,8 +40,17 @@ def get_server_stats():
         return server_stats.copy()
 
 
-def create_message(room_id, sender_id, content, message_type='text', 
-                   file_path=None, file_name=None, reply_to=None, encrypted=True):
+def create_message(
+    room_id,
+    sender_id,
+    content,
+    message_type='text',
+    file_path=None,
+    file_name=None,
+    reply_to=None,
+    encrypted=True,
+    file_size=None,
+):
     """메시지 생성"""
     kst = timezone(timedelta(hours=9))
     now_kst = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
@@ -54,11 +58,24 @@ def create_message(room_id, sender_id, content, message_type='text',
     conn = get_db()
     cursor = conn.cursor()
     try:
+        if reply_to is not None:
+            cursor.execute('SELECT room_id FROM messages WHERE id = ?', (reply_to,))
+            reply_row = cursor.fetchone()
+            if not reply_row or reply_row['room_id'] != room_id:
+                conn.rollback()
+                return None
+
         cursor.execute('''
             INSERT INTO messages (room_id, sender_id, content, encrypted, message_type, file_path, file_name, reply_to, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (room_id, sender_id, content, 1 if encrypted else 0, message_type, file_path, file_name, reply_to, now_kst))
         message_id = cursor.lastrowid
+
+        if message_type in ('file', 'image') and file_path and file_name:
+            cursor.execute('''
+                INSERT INTO room_files (room_id, uploaded_by, file_path, file_name, file_size, file_type, message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (room_id, sender_id, file_path, file_name, file_size, message_type, message_id))
         conn.commit()
         
         # [v4.35] 답장 정보 포함하여 조회
@@ -77,6 +94,10 @@ def create_message(room_id, sender_id, content, message_type='text',
         
         return dict(message) if message else None
     except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         logger.error(f"Create message error: {e}")
         return None
 
@@ -96,7 +117,7 @@ def get_room_messages(room_id, limit=50, before_id=None, include_reactions=True)
                 JOIN users u ON m.sender_id = u.id
                 LEFT JOIN messages rm ON m.reply_to = rm.id
                 LEFT JOIN users ru ON rm.sender_id = ru.id
-                WHERE m.room_id = ? AND m.id < ?
+                WHERE m.room_id = ? AND m.id < ? AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
                 ORDER BY m.id DESC
                 LIMIT ?
             ''', (room_id, before_id, limit))
@@ -108,7 +129,7 @@ def get_room_messages(room_id, limit=50, before_id=None, include_reactions=True)
                 JOIN users u ON m.sender_id = u.id
                 LEFT JOIN messages rm ON m.reply_to = rm.id
                 LEFT JOIN users ru ON rm.sender_id = ru.id
-                WHERE m.room_id = ?
+                WHERE m.room_id = ? AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
                 ORDER BY m.id DESC
                 LIMIT ?
             ''', (room_id, limit))
@@ -208,7 +229,7 @@ def delete_message(message_id, user_id):
         conn.commit()
         
         if msg['file_path']:
-            full_path = os.path.join(UPLOAD_FOLDER, msg['file_path'])
+            full_path = os.path.join(get_upload_folder(), msg['file_path'])
             safe_file_delete(full_path)
         
         return True, msg['room_id']
@@ -555,6 +576,8 @@ def pin_message(
     conn = get_db()
     cursor = conn.cursor()
     try:
+        if message_id is not None and get_message_room_id(message_id) != room_id:
+            return None
         cursor.execute('''
             INSERT INTO pinned_messages (room_id, message_id, content, pinned_by)
             VALUES (?, ?, ?, ?)

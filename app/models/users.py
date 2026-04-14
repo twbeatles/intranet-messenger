@@ -11,6 +11,7 @@ import secrets
 import re
 
 from app.models.base import get_db, close_thread_db
+from app.services.runtime_paths import get_upload_folder
 from app.utils import hash_password, verify_password
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def authenticate_user(username: str, password: str) -> dict | None:
     cursor = conn.cursor()
     try:
         cursor.execute(
-            'SELECT id, username, nickname, profile_image, password_hash, session_token FROM users WHERE username = ?',
+            'SELECT id, username, nickname, profile_image, status_message, password_hash, session_token FROM users WHERE username = ?',
             (username,)
         )
         user = cursor.fetchone()
@@ -90,7 +91,7 @@ def get_user_by_id(user_id: int) -> dict | None:
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT id, username, nickname, profile_image, status FROM users WHERE id = ?', (user_id,))
+        cursor.execute('SELECT id, username, nickname, profile_image, status, status_message FROM users WHERE id = ?', (user_id,))
         user = cursor.fetchone()
         return dict(user) if user else None
     except Exception as e:
@@ -130,7 +131,7 @@ def get_all_users():
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT id, username, nickname, profile_image, status FROM users')
+        cursor.execute('SELECT id, username, nickname, profile_image, status, status_message FROM users')
         users = cursor.fetchall()
         return [dict(u) for u in users]
     except Exception as e:
@@ -193,7 +194,7 @@ def get_online_users():
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, username, nickname, profile_image FROM users WHERE status = 'online'")
+        cursor.execute("SELECT id, username, nickname, profile_image, status_message FROM users WHERE status = 'online'")
         users = cursor.fetchall()
         return [dict(u) for u in users]
     except Exception as e:
@@ -303,7 +304,7 @@ def get_or_create_oidc_user(
     try:
         cursor.execute(
             """
-            SELECT u.id, u.username, u.nickname, u.profile_image, u.status, u.session_token
+            SELECT u.id, u.username, u.nickname, u.profile_image, u.status, u.status_message, u.session_token
             FROM sso_identities s
             JOIN users u ON s.user_id = u.id
             WHERE s.provider = ? AND s.subject = ?
@@ -349,6 +350,7 @@ def get_or_create_oidc_user(
             "nickname": local_nickname,
             "profile_image": None,
             "status": "offline",
+            "status_message": None,
             "session_token": session_token,
         }
     except Exception as e:
@@ -360,14 +362,9 @@ def get_or_create_oidc_user(
 def delete_user(user_id, password):
     """회원 탈퇴"""
     import os
-    try:
-        from config import UPLOAD_FOLDER
-    except ImportError:
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        from config import UPLOAD_FOLDER
-    
+
     from app.models.base import safe_file_delete
+    upload_folder = get_upload_folder()
     
     conn = get_db()
     cursor = conn.cursor()
@@ -383,7 +380,7 @@ def delete_user(user_id, password):
         # 프로필 이미지 삭제
         if user['profile_image']:
             try:
-                profile_path = os.path.join(UPLOAD_FOLDER, user['profile_image'])
+                profile_path = os.path.join(upload_folder, user['profile_image'])
                 safe_file_delete(profile_path)
             except Exception as e:
                 logger.warning(f"Profile image deletion failed: {e}")
@@ -413,7 +410,7 @@ def delete_user(user_id, password):
                 room_files = cursor.fetchall()
                 for rf in room_files:
                     try:
-                        safe_file_delete(os.path.join(UPLOAD_FOLDER, rf['file_path']))
+                        safe_file_delete(os.path.join(upload_folder, rf['file_path']))
                     except Exception as e:
                         logger.warning(f"Room file delete failed during room cleanup: {e}")
                 cursor.execute("DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM messages WHERE room_id = ?)", (room_id,))
@@ -451,7 +448,7 @@ def delete_user(user_id, password):
         files_to_delete = cursor.fetchall()
         for f in files_to_delete:
             try:
-                full_path = os.path.join(UPLOAD_FOLDER, f['file_path'])
+                full_path = os.path.join(upload_folder, f['file_path'])
                 safe_file_delete(full_path)
             except Exception as e:
                 logger.warning(f"File deletion failed during user delete: {e}")

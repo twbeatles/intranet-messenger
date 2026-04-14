@@ -72,3 +72,7 @@ def invalidate_user_cache(user_id):
         if user_id in user_cache:
             del user_cache[user_id]
 
+
+def get_active_user_sids(user_id: int) -> list[str]:
+    with online_users_lock:
+        return list(user_sids.get(user_id, []))

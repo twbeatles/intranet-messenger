@@ -82,7 +82,7 @@ async function saveProfile() {
             method: 'PUT',
             body: JSON.stringify({
                 nickname: nickname || null,
-                status_message: statusMessage || null
+                status_message: statusMessage
             })
         });
 
@@ -97,12 +97,16 @@ async function saveProfile() {
                     userAvatarEl.textContent = nickname[0].toUpperCase();
                 }
             }
+            if (currentUser) {
+                currentUser.status_message = statusMessage;
+            }
 
             // [v4.21] 소켓으로 프로필 변경 알림 (safeSocketEmit 사용)
             if (typeof safeSocketEmit === 'function') {
                 safeSocketEmit('profile_updated', {
                     nickname: currentUser.nickname,
-                    profile_image: currentUser.profile_image
+                    profile_image: currentUser.profile_image,
+                    status_message: currentUser.status_message
                 });
             }
 

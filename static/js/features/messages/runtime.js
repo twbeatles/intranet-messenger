@@ -670,7 +670,20 @@ function handleMessageDeleted(data) {
         replyEl.onclick = function (e) { e.stopPropagation(); };
     });
 
-    // [v4.30] loadRooms() 호출 제거 - 메시지 삭제 시 전체 방 목록 리로드 불필요
+    if (replyingTo && replyingTo.id === data.message_id && typeof clearReply === 'function') {
+        clearReply();
+    }
+
+    if (typeof throttledLoadRooms === 'function') {
+        throttledLoadRooms();
+    } else if (typeof loadRooms === 'function') {
+        loadRooms();
+    }
+
+    var filesModal = document.getElementById('filesModal');
+    if (filesModal && filesModal.classList.contains('active') && typeof loadRoomFiles === 'function') {
+        loadRoomFiles();
+    }
 }
 
 /**
@@ -693,6 +706,12 @@ function handleMessageEdited(data) {
         setTimeout(function () {
             msgEl.classList.remove('highlight');
         }, 2000);
+    }
+
+    if (typeof throttledLoadRooms === 'function') {
+        throttledLoadRooms();
+    } else if (typeof loadRooms === 'function') {
+        loadRooms();
     }
 }
 

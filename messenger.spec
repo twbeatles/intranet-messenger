@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # 사내 메신저 v4.36.3 PyInstaller 빌드 명세서
-# 2026-03-18 구조 분할 리팩토링 반영
+# 2026-04-14 runtime/path + room membership contract sync 반영
 # 경량화 최적화 버전
 
 import importlib.util
@@ -135,8 +135,10 @@ a = Analysis(
         'app.socket_events.features',
         'app.services',
         'app.services.runtime_config',
+        'app.services.runtime_paths',
         'app.services.session_tokens',
         'app.services.socket_broadcasts',
+        'app.services.text_hygiene',
         'app.services.uploads',
         'app.models.base',
         'app.models.users',

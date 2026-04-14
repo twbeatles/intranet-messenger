@@ -2,12 +2,13 @@
 
 import json
 import os
-import tempfile
 import time
 
 import jwt
 import pytest
 from jwt.utils import base64url_encode
+
+from tests._temp_paths import make_temp_file
 
 
 def _register(client, username: str, password: str = "Password123!", nickname: str | None = None):
@@ -59,7 +60,7 @@ def _oct_jwk(secret: bytes, kid: str):
 
 
 def _write_jwks_file(jwks: dict) -> str:
-    fd, path = tempfile.mkstemp(prefix="oidc-jwks-", suffix=".json")
+    fd, path = make_temp_file(prefix="oidc-jwks-", suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(jwks, f)
     return "file:///" + path.replace("\\", "/")

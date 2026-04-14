@@ -260,8 +260,8 @@ function createPollElement(poll) {
     div.dataset.pollId = poll.id;
 
     var totalVotes = poll.options.reduce(function (sum, o) { return sum + (o.vote_count || 0); }, 0);
-    var isClosed = poll.is_closed || poll.status === 'closed';
-    var isCreator = currentUser && poll.creator_id === currentUser.id;
+    var isClosed = !!poll.closed;
+    var canClose = !isClosed && currentUser && (poll.created_by === currentUser.id || isCurrentUserAdmin);
 
     var statusBadge = isClosed
         ? '<span class="poll-status closed">종료됨</span>'
@@ -308,7 +308,7 @@ function createPollElement(poll) {
             '</div>';
     }).join('');
 
-    var closeBtn = (!isClosed && isCreator)
+    var closeBtn = canClose
         ? '<button class="btn btn-sm btn-secondary" onclick="closePoll(' + poll.id + ')">투표 종료</button>'
         : '';
 

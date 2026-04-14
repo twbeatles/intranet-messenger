@@ -27,6 +27,7 @@ from app.models import (
     safe_file_delete,
 )
 from app.services.runtime_config import get_max_upload_size
+from app.services.socket_broadcasts import emit_message_deleted
 from app.services.uploads import normalize_stored_path
 from app.upload_scan import get_scan_job
 from app.upload_tokens import issue_upload_token
@@ -249,15 +250,20 @@ def delete_file_route(room_id: int, file_id: int):
         return jsonify({"error": "접근 권한이 없습니다."}), 403
 
     is_admin = is_room_admin(room_id, session["user_id"])
-    success, file_path = delete_room_file(file_id, session["user_id"], room_id=room_id, is_admin=is_admin)
+    success, deleted_info = delete_room_file(file_id, session["user_id"], room_id=room_id, is_admin=is_admin)
     if not success:
         return jsonify({"error": "파일 삭제 권한이 없습니다."}), 403
+    if not isinstance(deleted_info, dict):
+        deleted_info = {"file_path": None, "message_id": None}
 
     if is_admin:
         log_admin_action(
             room_id=room_id,
             actor_user_id=session["user_id"],
             action="delete_file",
-            metadata={"file_id": file_id, "file_path": file_path},
+            metadata={"file_id": file_id, "file_path": deleted_info.get("file_path")},
         )
+    message_id = deleted_info.get("message_id")
+    if isinstance(message_id, int) and message_id > 0:
+        emit_message_deleted(room_id, message_id)
     return jsonify({"success": True})

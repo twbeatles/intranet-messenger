@@ -2,9 +2,10 @@
 
 내부망 전용 메신저 서버(Flask + Socket.IO)입니다.
 
-- 기준일: 2026-03-18
+- 기준일: 2026-04-14
 - 기준 브랜치: `main`
-- 최신 검증: `pyright app gui` -> `0 errors, 0 warnings`, `pytest -q` -> `89 passed`
+- 최신 검증: `pytest -q` -> `97 passed`
+- 참고: `pyright app gui`는 현재 작업 환경에서 Flask/PyQt/PyCryptodome 계열 패키지/타입 정보 미설치로 import resolution 실패
 
 ## 1. 프로젝트 상태
 
@@ -24,6 +25,7 @@
 
 - 실시간 채팅: Socket.IO 이벤트 기반 메시지 전송
 - 1:1/그룹 방, 읽음 상태, 리액션, 고정 메시지, 투표
+- 방 멤버십 실시간 동기화: `room_list_updated`, `room_access_revoked`
 - 파일 업로드 및 다운로드 권한 제어
 - 세션 토큰 검증(HTTP + Socket) 기반 세션 무효화
 - 레이트리밋(로그인/가입/업로드/고급검색/소켓 전송)
@@ -143,6 +145,20 @@ python server.py --cli
 
 - `GET /api/rooms/<room_id>/admin-audit-logs?format=json|csv`
 
+### 7.6 소켓/프로필/Pin 계약
+
+- 사용자 대상 소켓 이벤트
+  - `room_list_updated`: `{ reason }`
+  - `room_access_revoked`: `{ room_id, reason }`
+- `user_profile_updated`
+  - `status_message`를 포함한다
+- `POST /api/rooms/<room_id>/pins`
+  - 다른 room 소속 `message_id`를 보내면 `400`
+  - 오류 코드: `invalid_pin_message`
+- 파일 저장소 삭제
+  - `DELETE /api/rooms/<room_id>/files/<file_id>`
+  - linked attachment message가 있으면 기존 `message_deleted` 소켓 계약으로 타임라인에서도 제거된다
+
 ## 8. 레이트리밋 정책
 
 - `POST /api/login`: `10/min`
@@ -205,7 +221,7 @@ pytest -q
 
 현재 기준선:
 
-- `89 passed` (2026-03-18)
+- `97 passed` (2026-04-14)
 - 스모크 누락 방지 테스트 포함:
   - `tests/test_route_map_smoke.py`
   - `tests/test_template_assets_smoke.py`
@@ -235,6 +251,7 @@ pyinstaller messenger.spec --clean
 
 - 신규 모듈 hidden import 추가:
   - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
+  - `app.services.runtime_paths`, `app.services.text_hygiene`
 - 구조 분할 패키지 hidden import 추가:
   - `app.bootstrap.*`, `app.http.*`, `app.socket_events.*`, `app.services.*`
   - `gui.services.*`, `gui.styles.*`, `gui.widgets.*`, `gui.window.*`

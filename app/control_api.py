@@ -10,6 +10,8 @@ import secrets
 from collections import deque
 from flask import Blueprint, jsonify, request
 
+from app.services.runtime_paths import get_base_dir, get_control_token_path
+
 # 로그 버퍼 (최근 100개 로그 저장)
 _log_buffer = deque(maxlen=100)
 _shutdown_requested = False
@@ -18,22 +20,12 @@ control_bp = Blueprint('control', __name__, url_prefix='/control')
 logger = logging.getLogger(__name__)
 
 
-def _get_base_dir():
-    try:
-        from config import BASE_DIR
-        return BASE_DIR
-    except Exception:
-        # Fallback: 프로젝트 루트(소스 실행 가정)
-        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
 def get_or_create_control_token(base_dir: str | None = None) -> str:
     """Control API 인증 토큰 생성/로딩.
 
     토큰은 {BASE_DIR}/.control_token에 저장됩니다.
     """
-    base_dir = base_dir or _get_base_dir()
-    token_path = os.path.join(base_dir, '.control_token')
+    token_path = get_control_token_path(base_dir or get_base_dir())
 
     try:
         if os.path.exists(token_path):
@@ -46,6 +38,7 @@ def get_or_create_control_token(base_dir: str | None = None) -> str:
 
     token = secrets.token_hex(32)
     try:
+        os.makedirs(os.path.dirname(token_path), exist_ok=True)
         with open(token_path, 'w', encoding='utf-8') as f:
             f.write(token)
         try:

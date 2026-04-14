@@ -10,7 +10,8 @@ from flask_wtf.csrf import generate_csrf
 
 from app.extensions import csrf, limiter
 from app.http.common import parse_json_payload, require_login
-from app.models import authenticate_user, change_password, create_user, delete_user, log_access
+from app.models import authenticate_user, change_password, create_user, delete_user, get_db, get_room_members, log_access
+from app.services.socket_broadcasts import emit_room_access_revoked, emit_room_list_updated, emit_room_members_updated, sync_user_room_membership
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -122,11 +123,24 @@ def delete_account():
     if not password:
         return jsonify({"error": "비밀번호를 입력해 주세요."}), 400
 
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT room_id FROM room_members WHERE user_id = ?", (session["user_id"],))
+    affected_room_ids = [row["room_id"] for row in cursor.fetchall()]
+
     success, error = delete_user(session["user_id"], password)
     if not success:
         return jsonify({"error": error}), 400
 
+    deleted_user_id = session["user_id"]
+    for room_id in affected_room_ids:
+        sync_user_room_membership(room_id, deleted_user_id, joined=False)
+        emit_room_access_revoked(deleted_user_id, room_id, "deleted")
+        emit_room_members_updated(room_id)
+        remaining_user_ids = [member["id"] for member in get_room_members(room_id)]
+        if remaining_user_ids:
+            emit_room_list_updated(remaining_user_ids, "membership_changed")
+
     log_access(session["user_id"], "delete_account", request.remote_addr, request.user_agent.string)
     session.clear()
     return jsonify({"success": True})
-

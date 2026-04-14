@@ -28,51 +28,118 @@ sys.path.insert(0, PROJECT_ROOT)
 from config import APP_NAME, VERSION, DEFAULT_PORT, CONTROL_PORT, BASE_DIR, USE_HTTPS, SSL_CERT_PATH, SSL_KEY_PATH, SSL_DIR
 
 
-def kill_process_on_port(port: int) -> bool:
-    """
-    [v4.3] 특정 포트를 사용 중인 프로세스 강제 종료
-    서버 재시작 시 WinError 10048 (포트 충돌) 방지
-    
-    Returns:
-        bool: 프로세스가 종료되었으면 True, 아니면 False
-    """
+def _create_no_window_flag() -> int:
+    return subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+
+
+def _find_listening_pid(port: int) -> str | None:
     if sys.platform != 'win32':
-        return False
-    
+        return None
+
     try:
-        # netstat로 포트 사용 중인 프로세스 PID 찾기
         result = subprocess.run(
             ['netstat', '-ano'],
             capture_output=True,
             text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=_create_no_window_flag()
         )
-        
-        target_pid = None
+
         for line in result.stdout.split('\n'):
-            # LISTENING 상태이면서 해당 포트를 사용하는 프로세스 찾기
-            if f':{port}' in line and 'LISTENING' in line:
-                parts = line.split()
-                if len(parts) >= 5:
-                    target_pid = parts[-1]
-                    break
-        
-        if target_pid and target_pid.isdigit():
-            # taskkill로 프로세스 종료
-            subprocess.run(
-                ['taskkill', '/F', '/PID', target_pid],
-                capture_output=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            # 포트 해제 대기
-            import time
-            time.sleep(1)
-            return True
-            
+            parts = line.split()
+            if len(parts) < 5 or parts[3] != 'LISTENING':
+                continue
+            local_address = parts[1]
+            if local_address.rsplit(':', 1)[-1] == str(port):
+                pid = parts[-1]
+                if pid.isdigit():
+                    return pid
     except Exception:
         pass
-    
+
+    return None
+
+
+def _get_process_details(pid: str) -> dict:
+    if sys.platform != 'win32' or not pid.isdigit():
+        return {}
+
+    ps_command = (
+        "$p = Get-CimInstance Win32_Process -Filter \"ProcessId = "
+        + pid
+        + "\"; if ($p) { $p | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress }"
+    )
+    try:
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-Command', ps_command],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            creationflags=_create_no_window_flag(),
+        )
+        output = (result.stdout or '').strip()
+        if not output:
+            return {}
+        data = json.loads(output)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _is_messenger_server_process(process_info: dict) -> bool:
+    name = str(process_info.get('Name') or '').lower()
+    command_line = str(process_info.get('CommandLine') or '').lower()
+    launcher_hint = os.path.join('app', 'server_launcher.py').replace('\\', '/').lower()
+
+    if launcher_hint in command_line.replace('\\', '/'):
+        return True
+
+    exe_name = os.path.basename(sys.executable).lower()
+    if getattr(sys, 'frozen', False):
+        return bool(exe_name and exe_name in name and '--worker' in command_line)
+
+    if name.startswith('python') and 'server_launcher.py' in command_line:
+        return True
     return False
+
+
+def release_port_if_messenger_process(port: int) -> dict:
+    if sys.platform != 'win32':
+        return {'status': 'free'}
+
+    target_pid = _find_listening_pid(port)
+    if not target_pid:
+        return {'status': 'free'}
+
+    process_info = _get_process_details(target_pid)
+    if not _is_messenger_server_process(process_info):
+        return {'status': 'blocked', 'pid': target_pid, 'process': process_info}
+
+    try:
+        taskkill = subprocess.run(
+            ['taskkill', '/F', '/PID', target_pid],
+            capture_output=True,
+            creationflags=_create_no_window_flag(),
+            check=False,
+        )
+        if taskkill.returncode != 0:
+            return {
+                'status': 'error',
+                'pid': target_pid,
+                'process': process_info,
+                'error': (taskkill.stderr or taskkill.stdout or 'taskkill failed').strip(),
+            }
+        import time
+
+        time.sleep(1)
+        return {'status': 'killed', 'pid': target_pid, 'process': process_info}
+    except Exception as exc:
+        return {'status': 'error', 'pid': target_pid, 'process': process_info, 'error': str(exc)}
+
+
+def kill_process_on_port(port: int) -> bool:
+    result = release_port_if_messenger_process(port)
+    return result.get('status') == 'killed'
 
 
 class ServerThread(QThread):
@@ -99,11 +166,6 @@ class ServerThread(QThread):
         candidates = []
         try:
             candidates.append(os.path.join(BASE_DIR, '.control_token'))
-        except Exception:
-            pass
-
-        try:
-            candidates.append(os.path.join(os.path.dirname(sys.executable), '.control_token'))
         except Exception:
             pass
 
@@ -154,13 +216,22 @@ class ServerThread(QThread):
         
     def run(self):
         try:
-            # [v4.3] 기존 서버가 점유한 포트를 먼저 정리한다. (WinError 10048 방지)
-            if kill_process_on_port(self.port):
-                self.log_signal.emit(f"Port {self.port} process terminated")
-
-            # Control API 포트도 동일하게 정리한다. (WinError 10048 방지)
-            if kill_process_on_port(self.control_port):
-                self.log_signal.emit(f"Port {self.control_port} process terminated")
+            for port in (self.port, self.control_port):
+                port_result = release_port_if_messenger_process(port)
+                status = port_result.get('status')
+                if status == 'killed':
+                    self.log_signal.emit(f"Port {port} messenger process terminated")
+                    continue
+                if status == 'blocked':
+                    process = port_result.get('process') or {}
+                    process_name = process.get('Name') or 'unknown'
+                    self.log_signal.emit(
+                        f"Port {port} in use by PID {port_result.get('pid')} ({process_name}); 포트 사용 중, 자동 종료 안 함"
+                    )
+                    return
+                if status == 'error':
+                    self.log_signal.emit(f"Port {port} cleanup failed: {port_result.get('error') or 'unknown error'}")
+                    return
 
             # [v4.5] 실행 환경 확인 (PyInstaller vs Source)
             if getattr(sys, 'frozen', False):

@@ -1,9 +1,9 @@
 import os
 import sys
-import tempfile
 import shutil
 import pytest
-from unittest.mock import patch
+
+from tests._temp_paths import make_temp_dir, make_temp_file
 
 # Add project root to sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -11,18 +11,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # [v4.5] 테스트 DB 분리 개선
 @pytest.fixture
 def app():
-    # Create a temporary database file
-    db_fd, db_path = tempfile.mkstemp(suffix='.db')
-    
-    # 임시 업로드 폴더
-    upload_dir = tempfile.mkdtemp()
+    base_dir = make_temp_dir(prefix='base-')
+    upload_dir = os.path.join(base_dir, 'uploads')
+    quarantine_dir = os.path.join(upload_dir, 'quarantine')
+    os.makedirs(upload_dir, exist_ok=True)
+    os.makedirs(quarantine_dir, exist_ok=True)
+    db_fd, db_path = make_temp_file(prefix='db-', suffix='.db')
     
     # config 모듈의 DATABASE_PATH를 패치
     import config
     original_db_path = config.DATABASE_PATH
+    original_base_dir = config.BASE_DIR
     original_upload_folder = config.UPLOAD_FOLDER
+    original_upload_quarantine_folder = getattr(config, 'UPLOAD_QUARANTINE_FOLDER', None)
+    config.BASE_DIR = base_dir
     config.DATABASE_PATH = db_path
     config.UPLOAD_FOLDER = upload_dir
+    config.UPLOAD_QUARANTINE_FOLDER = quarantine_dir
     
     # models 모듈 재로드하여 새 DB 경로 적용
     import importlib
@@ -53,7 +58,10 @@ def app():
     
     # 원래 config 복원
     config.DATABASE_PATH = original_db_path
+    config.BASE_DIR = original_base_dir
     config.UPLOAD_FOLDER = original_upload_folder
+    if original_upload_quarantine_folder is not None:
+        config.UPLOAD_QUARANTINE_FOLDER = original_upload_quarantine_folder
     
     # Cleanup
     os.close(db_fd)
@@ -65,6 +73,10 @@ def app():
     # [v4.8] 임시 업로드 폴더 정리
     try:
         shutil.rmtree(upload_dir)
+    except Exception:
+        pass
+    try:
+        shutil.rmtree(base_dir)
     except Exception:
         pass
 

@@ -37,12 +37,21 @@ from app.models import (
     update_room_name,
     create_room,
 )
-from app.services.socket_broadcasts import emit_room_members_updated
+from app.services.socket_broadcasts import (
+    emit_room_access_revoked,
+    emit_room_list_updated,
+    emit_room_members_updated,
+    sync_user_room_membership,
+)
 from app.utils import sanitize_input
 
 logger = logging.getLogger(__name__)
 
 rooms_bp = Blueprint("rooms", __name__)
+
+
+def _room_member_ids(room_id: int) -> list[int]:
+    return [member["id"] for member in get_room_members(room_id)]
 
 
 @rooms_bp.get("/api/users")
@@ -112,7 +121,16 @@ def create_room_route():
     name = data.get("name", "")
 
     try:
-        room_id = create_room(name, room_type, session["user_id"], member_ids)
+        created_room_id = create_room(name, room_type, session["user_id"], member_ids)
+        if not created_room_id:
+            raise RuntimeError("room_id missing after create_room")
+        room_id = int(created_room_id)
+        for member_id in member_ids:
+            sync_user_room_membership(room_id, member_id, joined=True)
+        emit_room_list_updated([session["user_id"]], "room_created")
+        invited_user_ids = [member_id for member_id in member_ids if member_id != session["user_id"]]
+        if invited_user_ids:
+            emit_room_list_updated(invited_user_ids, "room_invited")
         return jsonify({"success": True, "room_id": room_id})
     except Exception as exc:
         logger.error(f"Room creation failed: {exc}")
@@ -138,12 +156,20 @@ def invite_member(room_id: int):
 
     valid_user_ids = [uid for uid in user_ids if get_user_by_id(uid)]
     added = 0
+    added_user_ids: list[int] = []
     for uid in valid_user_ids:
         if add_room_member(room_id, uid):
             added += 1
+            added_user_ids.append(uid)
 
     if added > 0:
+        for user_id_to_join in added_user_ids:
+            sync_user_room_membership(room_id, user_id_to_join, joined=True)
         emit_room_members_updated(room_id)
+        emit_room_list_updated(added_user_ids, "room_invited")
+        remaining_user_ids = [user_id for user_id in _room_member_ids(room_id) if user_id not in added_user_ids]
+        if remaining_user_ids:
+            emit_room_list_updated(remaining_user_ids, "membership_changed")
         return jsonify({"success": True, "added_count": added})
     return jsonify({"error": "이미 참여 중인 사용자입니다."}), 400
 
@@ -159,7 +185,13 @@ def leave_room_route(room_id: int):
         return jsonify({"success": True, "left": False, "already_left": True})
 
     leave_room_db(room_id, user_id)
+    sync_user_room_membership(room_id, user_id, joined=False)
+    emit_room_access_revoked(user_id, room_id, "left")
+    emit_room_list_updated([user_id], "room_left")
     emit_room_members_updated(room_id)
+    remaining_user_ids = _room_member_ids(room_id)
+    if remaining_user_ids:
+        emit_room_list_updated(remaining_user_ids, "membership_changed")
     return jsonify({"success": True, "left": True, "already_left": False})
 
 
@@ -178,7 +210,13 @@ def kick_member(room_id: int, target_user_id: int):
         return jsonify({"error": "해당 사용자는 대화방 멤버가 아닙니다."}), 400
 
     kick_member_db(room_id, target_user_id)
+    sync_user_room_membership(room_id, target_user_id, joined=False)
+    emit_room_access_revoked(target_user_id, room_id, "kicked")
+    emit_room_list_updated([target_user_id], "room_kicked")
     emit_room_members_updated(room_id)
+    remaining_user_ids = _room_member_ids(room_id)
+    if remaining_user_ids:
+        emit_room_list_updated(remaining_user_ids, "membership_changed")
     log_admin_action(
         room_id=room_id,
         actor_user_id=session["user_id"],

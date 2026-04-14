@@ -6,37 +6,15 @@ Shared Socket.IO helper functions.
 from __future__ import annotations
 
 import logging
-import re
 
 from flask import current_app, request, session
 from flask_socketio import disconnect, emit
 
+from app.services.text_hygiene import sanitize_client_message
 from app.services.session_tokens import is_session_token_valid
 from app.state_store import state_store
 
 logger = logging.getLogger(__name__)
-
-_MOJIBAKE_HINT_TOKENS = (
-    "濡쒓렇", "꾩슂", "뺤옣", "먯꽌", "룞", "몄씠", "⑸땲", "뒿", "媛뺥",
-    "앹꽦", "怨듭", "뚯씪", "紐낆쓽", "쒖냼", "먮룞", "쒕쾭", "곗씠",
-)
-_MOJIBAKE_LATIN_RE = re.compile(r"[Ã-ÿ]{2,}")
-
-
-def looks_like_mojibake(text: str) -> bool:
-    if not isinstance(text, str) or not text:
-        return False
-    if any(token in text for token in _MOJIBAKE_HINT_TOKENS):
-        return True
-    if _MOJIBAKE_LATIN_RE.search(text):
-        return True
-    if text.count("?") >= 2 and any(ord(ch) > 127 for ch in text):
-        return True
-    return False
-
-
-def sanitize_client_message(message: str, fallback: str = "요청 처리 중 오류가 발생했습니다.") -> str:
-    return fallback if looks_like_mojibake(message) else message
 
 
 def emit_error(message: str, fallback: str = "요청 처리 중 오류가 발생했습니다."):
@@ -80,4 +58,3 @@ def check_event_rate_limit(event: str, user_id: int, per_minute: int) -> bool:
 
 def request_sid() -> str:
     return getattr(request, "sid")
-

@@ -12,6 +12,16 @@ from datetime import timedelta
 from flask import Flask
 from flask_session import Session
 
+from app.services.runtime_paths import (
+    get_base_dir,
+    get_secret_key_path,
+    get_security_salt_path,
+    get_session_dir,
+    get_static_folder,
+    get_template_folder,
+    get_upload_folder,
+    get_upload_quarantine_folder,
+)
 from app.state_store import state_store
 
 try:
@@ -27,7 +37,6 @@ try:
         AV_CLAMD_PORT,
         AV_SCAN_TIMEOUT_SECONDS,
         AV_SCANNER,
-        BASE_DIR,
         FEATURE_AV_SCAN_ENABLED,
         FEATURE_OIDC_ENABLED,
         FEATURE_REDIS_ENABLED,
@@ -54,10 +63,6 @@ try:
         SOCKET_PIN_UPDATED_PER_MINUTE,
         SOCKET_SEND_MESSAGE_PER_MINUTE,
         STATE_STORE_REDIS_URL,
-        STATIC_FOLDER,
-        TEMPLATE_FOLDER,
-        UPLOAD_FOLDER,
-        UPLOAD_QUARANTINE_FOLDER,
         USE_HTTPS,
     )
 except ImportError:
@@ -65,6 +70,7 @@ except ImportError:
 
 
 def _load_or_create_secret(file_path: str, byte_length: int) -> str:
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8", errors="replace") as handle:
             return handle.read().strip()
@@ -75,22 +81,26 @@ def _load_or_create_secret(file_path: str, byte_length: int) -> str:
 
 
 def build_flask_app():
-    static_folder = STATIC_FOLDER
-    template_folder = TEMPLATE_FOLDER
+    base_dir = get_base_dir()
+    static_folder = get_static_folder()
+    template_folder = get_template_folder()
+    upload_folder = get_upload_folder()
+    upload_quarantine_folder = get_upload_quarantine_folder()
 
     if not os.path.exists(static_folder):
         os.makedirs(static_folder, exist_ok=True)
     if not os.path.exists(template_folder):
         os.makedirs(template_folder, exist_ok=True)
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    os.makedirs(os.path.join(UPLOAD_FOLDER, "profiles"), exist_ok=True)
-    os.makedirs(UPLOAD_QUARANTINE_FOLDER, exist_ok=True)
+    os.makedirs(base_dir, exist_ok=True)
+    os.makedirs(upload_folder, exist_ok=True)
+    os.makedirs(os.path.join(upload_folder, "profiles"), exist_ok=True)
+    os.makedirs(upload_quarantine_folder, exist_ok=True)
 
     app = Flask(__name__, static_folder=static_folder, static_url_path="/static", template_folder=template_folder)
 
-    app.config["SECRET_KEY"] = _load_or_create_secret(os.path.join(BASE_DIR, ".secret_key"), 32)
-    app.config["PASSWORD_SALT"] = _load_or_create_secret(os.path.join(BASE_DIR, ".security_salt"), 16)
-    app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+    app.config["SECRET_KEY"] = _load_or_create_secret(get_secret_key_path(), 32)
+    app.config["PASSWORD_SALT"] = _load_or_create_secret(get_security_salt_path(), 16)
+    app.config["UPLOAD_FOLDER"] = upload_folder
     app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
     app.config["SESSION_COOKIE_SECURE"] = USE_HTTPS
     app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -118,7 +128,7 @@ def build_flask_app():
     app.config["AV_CLAMD_HOST"] = AV_CLAMD_HOST
     app.config["AV_CLAMD_PORT"] = AV_CLAMD_PORT
     app.config["AV_SCAN_TIMEOUT_SECONDS"] = AV_SCAN_TIMEOUT_SECONDS
-    app.config["UPLOAD_QUARANTINE_FOLDER"] = UPLOAD_QUARANTINE_FOLDER
+    app.config["UPLOAD_QUARANTINE_FOLDER"] = upload_quarantine_folder
     app.config["SOCKET_SEND_MESSAGE_PER_MINUTE"] = SOCKET_SEND_MESSAGE_PER_MINUTE
     app.config["SOCKET_PIN_UPDATED_PER_MINUTE"] = SOCKET_PIN_UPDATED_PER_MINUTE
     app.config["APP_NAME"] = APP_NAME
@@ -134,7 +144,7 @@ def build_flask_app():
         except Exception:
             app.config["RATELIMIT_STORAGE_URI"] = "memory://"
 
-    session_dir = os.path.join(BASE_DIR, "flask_session")
+    session_dir = get_session_dir()
     os.makedirs(session_dir, exist_ok=True)
     app.config["SESSION_PERMANENT"] = True
     if FileSystemCache is not None:
@@ -147,4 +157,3 @@ def build_flask_app():
 
     state_store.init_app(redis_url=app.config.get("STATE_STORE_REDIS_URL") or None)
     return app
-

@@ -1,7 +1,7 @@
 # GEMINI.md
 
 프로젝트: `intranet-messenger-main`  
-최종 업데이트: 2026-03-18
+최종 업데이트: 2026-04-14
 
 ## 1) 문서 목표
 
@@ -19,10 +19,10 @@
 ## 3) 현재 상태 스냅샷
 
 - 테스트 기준선:
-  - `pytest tests -q` => `89 passed`
-  - `pytest --maxfail=1` => `89 passed`
+  - `pytest tests -q` => `97 passed`
+  - `pytest --maxfail=1` => `97 passed`
 - 타입 기준선:
-  - `pyright app gui` => `0 errors, 0 warnings`
+  - 현재 작업 환경에서는 Flask/PyQt/PyCryptodome 계열 import/type 정보 미설치 시 `pyright app gui` import resolution 실패 가능
 - 테스트 수집 안정화 완료:
   - `pytest.ini` (`testpaths = tests`, `norecursedirs = backup dist build`)
 - 보안/계약 핵심 반영 완료:
@@ -35,6 +35,12 @@
   - Python runtime: `app/factory.py`, `app/bootstrap/*`, `app/http/*`, `app/socket_events/*`, `app/services/*`
   - Web/GUI: `templates/partials/*`, `static/js/{core,services,features,bootstrap}/*`, `static/css/*.css`, `gui/window/main_window.py`
   - shim 유지: `app/routes.py`, `app/sockets.py`, `gui/server_window.py`
+- 2026-04-14 계약 동기화:
+  - `room_list_updated`, `room_access_revoked` 소켓 이벤트 추가
+  - `send_message` 클라이언트 허용 타입은 `text|file|image`
+  - `reply_to`, pin `message_id`, `message_read.message_id`는 room-bound 검증
+  - `user_profile_updated`와 login/session/profile 응답은 `status_message` 포함
+  - 파일 저장소 삭제 시 linked attachment message는 `message_deleted` 흐름으로 정리
 
 ## 4) 절대 보존해야 할 계약
 
@@ -65,12 +71,21 @@
 
 - `create_poll` 반환은 `poll_id`
 - pin 삭제는 `(success, error)` 구조분해로만 성공 판정
+- pin 생성은 `message_id`가 현재 room 소속인지 검증
+- 불일치 시 `400`, `code=invalid_pin_message`
 
 ## 4.5 탈퇴 처리
 
 - `polls.created_by`를 NULL로 두지 않음
 - 재할당 우선순위: 관리자 > 일반 멤버
 - 재할당 대상 없으면 poll 삭제
+
+## 4.6 실시간 멤버십/프로필
+
+- 사용자 전용 소켓 room(`user_<id>`) 사용
+- `room_list_updated`는 초대/방 생성/멤버십 변경 시 room list reload 트리거
+- `room_access_revoked`는 강퇴/나가기/탈퇴 시 현재 room을 닫는 신호
+- `user_profile_updated` payload는 `nickname`, `profile_image`, `status_message`를 포함
 
 ## 5) 보안 규칙
 
@@ -185,3 +200,23 @@ Then report changed files and test results.
 - 최신 기준선
   - `pytest -q` => `89 passed`
   - `pyright app gui` => `0 errors, 0 warnings`
+
+## 14) 2026-04-14 기능 정합성 개선 메모
+
+- 테스트/런타임 기준선 복구
+  - 동적 경로 해석: `app/services/runtime_paths.py`
+  - mojibake 공용 검사: `app/services/text_hygiene.py`
+  - 테스트 temp는 workspace-local `.pytest_tmp/` 사용
+- 실시간 멤버십 정합성
+  - `user_<id>` room join
+  - `room_list_updated`, `room_access_revoked` 추가
+  - 강퇴/나가기/탈퇴 시 서버측 room leave 동기화
+- authoritative/room-bound 검증
+  - `type=system` 클라이언트 송신 차단
+  - `reply_to`, pin `message_id`, `message_read.message_id` room 검증
+- 프런트 계약 수정
+  - poll UI는 `closed`, `created_by` 기준
+  - `status_message` round-trip 및 clear
+  - 첨부 삭제 시 linked message를 `message_deleted`로 정리
+- 최신 기준선
+  - `pytest -q` => `97 passed`

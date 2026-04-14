@@ -1,13 +1,14 @@
-import tempfile
-
 from flask import Flask
+
+from tests._temp_paths import make_temp_dir
 
 
 def test_control_api_requires_token_and_localhost():
     import config
     from app.control_api import control_bp, get_or_create_control_token
 
-    with tempfile.TemporaryDirectory() as d:
+    d = make_temp_dir(prefix="control-")
+    try:
         # Ensure token is created in a temp base dir (do not touch repo root)
         old_base_dir = getattr(config, "BASE_DIR", None)
         config.BASE_DIR = d
@@ -43,3 +44,7 @@ def test_control_api_requires_token_and_localhost():
             # Restore for other tests
             if old_base_dir is not None:
                 config.BASE_DIR = old_base_dir
+    finally:
+        import shutil
+
+        shutil.rmtree(d, ignore_errors=True)

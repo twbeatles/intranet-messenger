@@ -45,6 +45,11 @@ def register_connection_events(socketio):
             user_sids.setdefault(user_id, []).append(sid)
         was_offline = state_store.incr(f"presence:user:{user_id}") == 1
 
+        try:
+            join_room(f"user_{user_id}")
+        except Exception:
+            pass
+
         room_ids = get_user_room_ids(user_id)
         for room_id in room_ids:
             try:
@@ -160,4 +165,3 @@ def register_connection_events(socketio):
                     invalidate_user_cache(session["user_id"])
         except Exception as exc:
             logger.error(f"Leave room error: {exc}")
-

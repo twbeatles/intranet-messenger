@@ -5,6 +5,7 @@ __pycache__/
 
 # Python tooling caches
 .pytest_cache/
+.pytest_tmp/
 .mypy_cache/
 .ruff_cache/
 .pyright/

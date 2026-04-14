@@ -7,13 +7,7 @@ import logging
 import os
 
 from app.models.base import get_db, safe_file_delete
-
-try:
-    from config import UPLOAD_FOLDER
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    from config import UPLOAD_FOLDER
+from app.services.runtime_paths import get_upload_folder
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +73,7 @@ def delete_room_file(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT uploaded_by, file_path, room_id FROM room_files WHERE id = ?', (file_id,))
+        cursor.execute('SELECT uploaded_by, file_path, room_id, message_id FROM room_files WHERE id = ?', (file_id,))
         file = cursor.fetchone()
         if not file:
             return False, None
@@ -94,15 +88,30 @@ def delete_room_file(
             return False, None
         
         file_path = file['file_path']
+        message_id = file['message_id']
         cursor.execute('DELETE FROM room_files WHERE id = ?', (file_id,))
+        if message_id:
+            cursor.execute('DELETE FROM pinned_messages WHERE message_id = ?', (message_id,))
+            cursor.execute(
+                "UPDATE messages SET content = '[삭제된 메시지]', encrypted = 0, file_path = NULL, file_name = NULL WHERE id = ?",
+                (message_id,),
+            )
         conn.commit()
         
         # 실제 파일 삭제
-        full_path = os.path.join(UPLOAD_FOLDER, file_path)
+        full_path = os.path.join(get_upload_folder(), file_path)
         if safe_file_delete(full_path):
             logger.debug(f"File deleted from disk: {file_path}")
         
-        return True, file_path
+        return True, {
+            'file_path': file_path,
+            'room_id': file['room_id'],
+            'message_id': message_id,
+        }
     except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         logger.error(f"Delete room file error: {e}")
         return False, None

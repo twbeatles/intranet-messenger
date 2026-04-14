@@ -55,6 +55,14 @@ function initSocket() {
         updateConnectionStatus('reconnecting');
     });
 
+    socket.on('error', function (data) {
+        var message = data && data.message ? data.message : '실시간 요청 처리에 실패했습니다.';
+        console.warn('Socket error:', message);
+        if (typeof showToast === 'function') {
+            showToast(message, 'error');
+        }
+    });
+
     socket.on('reconnect_attempt', function (attemptNumber) {
         reconnectAttempts = attemptNumber;
         updateConnectionStatus('reconnecting');
@@ -183,6 +191,29 @@ function initSocket() {
         if (typeof handleRoomMembersUpdated === 'function') {
             handleRoomMembersUpdated(data);
         }
+    });
+
+    socket.on('room_list_updated', function (data) {
+        if (_dedupEvent('room_list:' + ((data && data.reason) || 'membership_changed'), 800)) return;
+        if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
+    });
+
+    socket.on('room_access_revoked', function (data) {
+        if (!data || !data.room_id) return;
+
+        if (currentRoom && currentRoom.id === data.room_id) {
+            if (typeof resetActiveRoomState === 'function') {
+                resetActiveRoomState(data.room_id);
+            }
+            if (typeof showToast === 'function') {
+                var reason = data.reason === 'kicked'
+                    ? '대화방에서 강퇴되었습니다.'
+                    : (data.reason === 'deleted' ? '대화방 접근 권한이 제거되었습니다.' : '대화방에서 나갔습니다.');
+                showToast(reason, 'info');
+            }
+        }
+
+        if (typeof throttledLoadRooms === 'function') throttledLoadRooms(); else if (typeof loadRooms === 'function') loadRooms();
     });
 
     socket.on('room_updated', function (data) {
