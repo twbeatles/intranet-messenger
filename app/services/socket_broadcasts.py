@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from app.models import create_message
+from app.models import create_message, get_room_security_bundle
 from app.socket_events.state import get_active_user_sids, invalidate_user_cache
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,45 @@ def emit_room_access_revoked(user_id: int, room_id: int, reason: str) -> None:
     _emit_to_user_rooms("room_access_revoked", [user_id], {"room_id": room_id, "reason": reason})
 
 
+def emit_room_security_updated(room_id: int, user_ids: list[int] | tuple[int, ...] | set[int]) -> None:
+    socketio_instance = get_socketio()
+    if not socketio_instance:
+        return
+    for user_id in {int(uid) for uid in user_ids if isinstance(uid, int) and uid > 0}:
+        try:
+            payload = get_room_security_bundle(room_id, user_id)
+            if not payload:
+                continue
+            invalidate_user_cache(user_id)
+            socketio_instance.emit("room_security_updated", payload, to=f"user_{user_id}")
+        except Exception as exc:
+            logger.warning(f"room_security_updated emit failed: room_id={room_id}, user_id={user_id}, error={exc}")
+
+
+def emit_room_name_updated(room_id: int, name: str) -> None:
+    socketio_instance = get_socketio()
+    if not socketio_instance:
+        return
+    try:
+        socketio_instance.emit("room_name_updated", {"room_id": room_id, "name": name}, to=f"room_{room_id}")
+    except Exception as exc:
+        logger.warning(f"room_name_updated emit failed: room_id={room_id}, error={exc}")
+
+
+def emit_admin_updated(room_id: int, user_id: int, is_admin: bool) -> None:
+    socketio_instance = get_socketio()
+    if not socketio_instance:
+        return
+    try:
+        socketio_instance.emit(
+            "admin_updated",
+            {"room_id": room_id, "user_id": user_id, "is_admin": bool(is_admin)},
+            to=f"room_{room_id}",
+        )
+    except Exception as exc:
+        logger.warning(f"admin_updated emit failed: room_id={room_id}, user_id={user_id}, error={exc}")
+
+
 def sync_user_room_membership(room_id: int, user_id: int, *, joined: bool) -> None:
     socketio_instance = get_socketio()
     if not socketio_instance:
@@ -100,7 +139,7 @@ def emit_pin_updated(room_id: int) -> None:
 def emit_pin_system_message(room_id: int, actor_user_id: int, content: str) -> None:
     socketio_instance = get_socketio()
     try:
-        sys_msg = create_message(room_id, actor_user_id, content, "system")
+        sys_msg = create_message(room_id, actor_user_id, content, "system", encrypted=False)
         if sys_msg and socketio_instance:
             socketio_instance.emit("new_message", sys_msg, to=f"room_{room_id}")
     except Exception as exc:

@@ -1,0 +1,20 @@
+{
+  "name": "intranet-messenger",
+  "private": true,
+  "version": "4.36.3",
+  "description": "Frontend lint and typecheck tooling for intranet-messenger.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint:js": "eslint --max-warnings=0 \"static/js/**/*.js\"",
+    "typecheck:js": "tsc -p jsconfig.json --noEmit",
+    "check:js": "npm run lint:js && npm run typecheck:js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.1",
+    "eslint": "^9.25.1",
+    "globals": "^15.15.0",
+    "typescript": "^5.8.3"
+  }
+}

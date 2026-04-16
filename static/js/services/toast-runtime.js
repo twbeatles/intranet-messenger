@@ -29,9 +29,7 @@ function initToast() {
  * @param {string} title - 제목 (선택)
  * @returns {HTMLElement} 생성된 토스트 요소
  */
-function showToast(message, type, duration, title) {
-    type = type || 'info';
-    duration = duration || 4000;
+function showToast(message, type = 'info', duration = 4000, title = null) {
 
     initToast();
 

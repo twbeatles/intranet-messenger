@@ -27,7 +27,7 @@ from app.models import (
     safe_file_delete,
 )
 from app.services.runtime_config import get_max_upload_size
-from app.services.socket_broadcasts import emit_message_deleted
+from app.services.socket_broadcasts import emit_message_deleted, emit_pin_updated
 from app.services.uploads import normalize_stored_path
 from app.upload_scan import get_scan_job
 from app.upload_tokens import issue_upload_token
@@ -266,4 +266,6 @@ def delete_file_route(room_id: int, file_id: int):
     message_id = deleted_info.get("message_id")
     if isinstance(message_id, int) and message_id > 0:
         emit_message_deleted(room_id, message_id)
+    if deleted_info.get("pin_removed"):
+        emit_pin_updated(room_id)
     return jsonify({"success": True})

@@ -1,9 +1,11 @@
 (function (global) {
+    /** @type {any} */
     var app = global.MessengerApp = global.MessengerApp || {};
     var store = app.state = app.state || {
         currentUser: null,
         currentRoom: null,
         currentRoomKey: null,
+        currentRoomKeys: null,
         rooms: [],
         socket: null
     };
@@ -21,6 +23,6 @@
         });
     }
 
-    ['currentUser', 'currentRoom', 'currentRoomKey', 'rooms', 'socket'].forEach(bindStateProperty);
+    ['currentUser', 'currentRoom', 'currentRoomKey', 'currentRoomKeys', 'rooms', 'socket'].forEach(bindStateProperty);
 })(window);
 

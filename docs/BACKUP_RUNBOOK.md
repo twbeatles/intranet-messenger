@@ -1,100 +1,110 @@
 # BACKUP_RUNBOOK
 
-작성일: 2026-02-25
-최종 업데이트: 2026-04-14
-범위: 로컬 환경 수동 백업/복구/검증
+Created: 2026-02-25
+Last updated: 2026-04-16
+Scope: local backup, restore, and post-restore verification
 
-## 1. 목적
-- 운영 중 장애/실수에 대비해 `messenger.db`와 `uploads/`를 일관성 있게 백업한다.
-- 복구 후 무결성(`sqlite integrity_check`)과 핵심 테이블 존재 여부를 자동 확인한다.
+## Purpose
 
-## 2. 전제
-- 이 문서는 로컬 대상만 다룬다.
-- 백업/복구는 **수동 실행** 기준이다.
-- 복구 전에는 앱/서버 프로세스를 중지해야 한다.
+- Back up `messenger.db` and `uploads/` together before risky changes or release work.
+- Verify both database integrity and the presence of required application tables after a restore.
+- Confirm that current room-security and upload-cleanup behaviors still work after recovery.
 
-## 3. 백업 실행
-명령:
+## Backup
+
 ```bash
 python scripts/backup_local.py --label before_release
 ```
 
-옵션:
-- `--output-root backup/manual` (기본값)
+Useful options:
+
+- `--output-root backup/manual`
 - `--db-path <sqlite_path>`
 - `--uploads-dir <uploads_path>`
-- `--label <임의태그>`
+- `--label <custom_label>`
 
-산출물:
+Expected output:
+
 - `backup/manual/backup_<UTC_TIMESTAMP>_<label>/db/messenger.db`
 - `backup/manual/backup_<UTC_TIMESTAMP>_<label>/uploads/...`
 - `backup/manual/backup_<UTC_TIMESTAMP>_<label>/manifest.json`
 
-## 4. 복구 실행
-복구는 실제 데이터 덮어쓰기이므로 서버 중지 상태에서 수행한다.
+## Restore
 
-미리보기(실행 안 함):
+Preview:
+
 ```bash
 python scripts/restore_local.py backup/manual/backup_20260225T120000Z_before_release
 ```
 
-실행:
+Apply:
+
 ```bash
 python scripts/restore_local.py backup/manual/backup_20260225T120000Z_before_release --yes
 ```
 
-복구 동작:
-- 현재 DB/업로드를 `pre_restore_snapshot_<UTC_TIMESTAMP>`로 안전 복사
-- 백업본 DB/업로드를 대상 경로로 복원
+Restore behavior:
 
-## 5. 복구 검증
-명령:
+- The current database and uploads directory are snapshotted as `pre_restore_snapshot_<UTC_TIMESTAMP>`.
+- The selected backup content is copied back into the configured runtime paths.
+
+## Database Verification
+
 ```bash
 python scripts/verify_restore.py
 ```
 
-검증 항목:
+Verify at least:
+
 - SQLite `integrity_check == ok`
-- 필수 테이블 존재 여부
-  - `users`, `rooms`, `room_members`, `messages`, `polls`, `poll_options`, `poll_votes`, `room_files`
-  - `sso_identities`, `upload_scan_jobs`, `admin_audit_logs`
-- 기본 개수 통계 출력(사용자/방/메시지/업로드 파일)
+- Required tables exist:
+  - `users`
+  - `rooms`
+  - `room_members`
+  - `room_keys`
+  - `messages`
+  - `polls`
+  - `poll_options`
+  - `poll_votes`
+  - `room_files`
+  - `sso_identities`
+  - `upload_scan_jobs`
+  - `admin_audit_logs`
 
-## 6. 장애 대응
-1. 백업 실패: 디스크 여유 공간 확인, DB/업로드 경로 확인, 권한 확인
-2. 복구 실패: 앱 완전 중지 여부 확인, 경로 잠금/권한 확인
-3. 검증 실패:
-   - `integrity_check` 실패 시 즉시 이전 `pre_restore_snapshot_*`로 롤백
-   - 필수 테이블 누락 시 잘못된 백업본 사용 여부 점검
+## Post-Restore Smoke Checks
 
-## 7. 권장 운영 절차
-1. 배포 전: `backup_local.py`
-2. 배포 후: 스모크 테스트
-3. 장애 시: `restore_local.py --yes`
-4. 복구 직후: `verify_restore.py`
-5. 검증 성공 후 서비스 재기동
+### Runtime startup
 
-## 8. 복구 후 권장 스모크 체크
-
-복구 검증 스크립트 통과 후에는 아래 확인을 권장한다.
-
-1. 앱 기동 확인
 ```bash
 python server.py --cli
 ```
-2. 최소 기능 회귀 확인
+
+### Python regression checks
+
 ```bash
-pytest -q
+pytest tests -q
+pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q
 ```
-3. 구조 스모크 테스트 확인
+
+### Frontend regression checks
+
 ```bash
-pytest -q tests/test_route_map_smoke.py tests/test_template_assets_smoke.py tests/test_gui_import_smoke.py
+npm install
+npm run check:js
 ```
-4. 런타임 설정 엔드포인트 확인
-   - `GET /api/config`
-5. 업로드 디렉터리 및 DB 경로가 기대 경로를 가리키는지 확인
-   - 현재 런타임은 `BASE_DIR`, `UPLOAD_FOLDER`, `UPLOAD_QUARANTINE_FOLDER`, `flask_session/`을 동적으로 해석하므로 복구 대상 경로와 실제 실행 경로가 같은지 함께 확인
-6. 패키징/번들 리소스 이슈 의심 시 확인
-   - `templates/partials/*`
-   - `static/css/*.css`
-   - `static/js/{core,services,features,bootstrap}/*`
+
+### Manual contract checks
+
+- Confirm `GET /api/rooms/<room_id>/messages` still returns `encryption_key`, `encryption_keys`, `key_version`, and `member_key_version`.
+- Confirm an invited user cannot read pre-invite messages.
+- Confirm deleting a pinned file emits both `message_deleted` and `pin_updated`.
+- Confirm expired orphan upload files can still be cleaned without touching referenced uploads.
+
+## Recovery Notes
+
+1. If backup creation fails, verify disk space, database path, uploads path, and filesystem permissions.
+2. If restore fails, stop the running server first and verify locks or permission issues on the target paths.
+3. If database verification fails:
+   - roll back to the latest `pre_restore_snapshot_*`
+   - inspect whether the chosen backup is incomplete or stale
+4. If room history visibility or upload cleanup behaves differently after restore, compare the restored schema against the current application baseline before accepting the restore.

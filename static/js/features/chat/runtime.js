@@ -566,9 +566,6 @@ async function toggleAdmin(userId, makeAdmin) {
         if (result.success) {
             showToast(makeAdmin ? '관리자로 지정되었습니다.' : '관리자 권한이 해제되었습니다.', 'success');
             loadAdminMemberList();
-            if (typeof socket !== 'undefined' && socket && socket.connected) {
-                safeSocketEmit('admin_updated', { room_id: currentRoom.id });
-            }
         }
     } catch (e) {
         showToast('관리자 설정에 실패했습니다.', 'error');

@@ -364,6 +364,7 @@ def delete_user(user_id, password):
     import os
 
     from app.models.base import safe_file_delete
+    from app.models.rooms import rotate_room_key
     upload_folder = get_upload_folder()
     
     conn = get_db()
@@ -386,6 +387,9 @@ def delete_user(user_id, password):
                 logger.warning(f"Profile image deletion failed: {e}")
         
         # created_by 재할당: 대체 멤버(관리자 우선) 지정, 없으면 방 정리
+        cursor.execute("SELECT room_id FROM room_members WHERE user_id = ?", (user_id,))
+        affected_membership_rooms = [row['room_id'] for row in cursor.fetchall()]
+
         cursor.execute("SELECT id FROM rooms WHERE created_by = ?", (user_id,))
         owned_rooms = [row['id'] for row in cursor.fetchall()]
         for room_id in owned_rooms:
@@ -465,6 +469,13 @@ def delete_user(user_id, password):
         cursor.execute("DELETE FROM message_reactions WHERE user_id = ?", (user_id,))
         cursor.execute("DELETE FROM pinned_messages WHERE pinned_by = ?", (user_id,))
         cursor.execute("DELETE FROM room_members WHERE user_id = ?", (user_id,))
+        for room_id in affected_membership_rooms:
+            cursor.execute("SELECT 1 FROM rooms WHERE id = ?", (room_id,))
+            if not cursor.fetchone():
+                continue
+            cursor.execute("SELECT COUNT(*) FROM room_members WHERE room_id = ?", (room_id,))
+            if cursor.fetchone()[0] > 0:
+                rotate_room_key(room_id, conn=conn)
         cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
         
         conn.commit()

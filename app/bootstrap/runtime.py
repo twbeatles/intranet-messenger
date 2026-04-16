@@ -10,7 +10,11 @@ import secrets
 from datetime import timedelta
 
 from flask import Flask
-from flask_session import Session
+
+try:
+    from flask_session import Session as FlaskSession
+except Exception:
+    FlaskSession = None
 
 from app.services.runtime_paths import (
     get_base_dir,
@@ -153,7 +157,10 @@ def build_flask_app():
     else:
         app.config["SESSION_TYPE"] = "filesystem"
         app.config["SESSION_FILE_DIR"] = session_dir
-    Session(app)
+    if FlaskSession is not None:
+        FlaskSession(app)
+    else:
+        app.logger.warning("flask_session import unavailable; continuing with Flask's signed cookie session backend")
 
     state_store.init_app(redis_url=app.config.get("STATE_STORE_REDIS_URL") or None)
     return app

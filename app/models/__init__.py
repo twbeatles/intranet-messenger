@@ -46,11 +46,15 @@ from app.models.users import (
 from app.models.rooms import (
     create_room,
     get_room_key,
+    get_room_keyring,
+    get_room_member_key_version,
+    get_room_security_bundle,
     get_user_rooms,
     get_room_members,
     is_room_member,
     add_room_member,
     leave_room_db,
+    rotate_room_key,
     update_room_name,
     get_room_by_id,
     pin_room,
@@ -122,8 +126,9 @@ __all__ = [
     'invalidate_user_cache', 'get_all_users', 'update_user_status', 'update_user_profile',
     'get_online_users', 'log_access', 'change_password', 'get_user_session_token', 'get_or_create_oidc_user', 'delete_user',
     # Rooms
-    'create_room', 'get_room_key', 'get_user_rooms', 'get_room_members',
-    'is_room_member', 'add_room_member', 'leave_room_db', 'update_room_name',
+    'create_room', 'get_room_key', 'get_room_keyring', 'get_room_member_key_version', 'get_room_security_bundle',
+    'get_user_rooms', 'get_room_members',
+    'is_room_member', 'add_room_member', 'leave_room_db', 'rotate_room_key', 'update_room_name',
     'get_room_by_id', 'pin_room', 'mute_room', 'kick_member',
     'set_room_admin', 'is_room_admin', 'get_room_admins',
     # Messages

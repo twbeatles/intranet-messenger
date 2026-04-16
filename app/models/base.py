@@ -177,6 +177,7 @@ def init_db():
                 type TEXT CHECK(type IN ('direct', 'group')),
                 created_by INTEGER,
                 encryption_key TEXT,
+                key_version INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (created_by) REFERENCES users(id)
             )
@@ -191,6 +192,7 @@ def init_db():
                 last_read_message_id INTEGER DEFAULT 0,
                 pinned INTEGER DEFAULT 0,
                 muted INTEGER DEFAULT 0,
+                joined_key_version INTEGER DEFAULT 1,
                 PRIMARY KEY (room_id, user_id),
                 FOREIGN KEY (room_id) REFERENCES rooms(id),
                 FOREIGN KEY (user_id) REFERENCES users(id)
@@ -209,6 +211,7 @@ def init_db():
                 file_path TEXT,
                 file_name TEXT,
                 reply_to INTEGER,
+                key_version INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (room_id) REFERENCES rooms(id),
                 FOREIGN KEY (sender_id) REFERENCES users(id),
@@ -303,6 +306,17 @@ def init_db():
                 FOREIGN KEY (uploaded_by) REFERENCES users(id)
             )
         ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS room_keys (
+                room_id INTEGER NOT NULL,
+                version INTEGER NOT NULL,
+                encryption_key TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (room_id, version),
+                FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
+            )
+        ''')
         
         # 메시지 리액션 테이블
         cursor.execute('''
@@ -371,6 +385,9 @@ def init_db():
         
         # Auto-migration
         required_columns = {
+            'rooms': {
+                'key_version': 'INTEGER DEFAULT 1'
+            },
             'users': {
                 'status_message': 'TEXT',
                 'session_token': 'TEXT'
@@ -379,10 +396,12 @@ def init_db():
                 'role': 'TEXT DEFAULT "member"',
                 'pinned': 'INTEGER DEFAULT 0',
                 'muted': 'INTEGER DEFAULT 0',
-                'last_read_message_id': 'INTEGER DEFAULT 0'
+                'last_read_message_id': 'INTEGER DEFAULT 0',
+                'joined_key_version': 'INTEGER DEFAULT 1'
             },
             'messages': {
-                'reply_to': 'INTEGER'
+                'reply_to': 'INTEGER',
+                'key_version': 'INTEGER DEFAULT 1'
             }
         }
 
@@ -397,6 +416,19 @@ def init_db():
                         cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
         except Exception as e:
             logger.error(f"Migration failed: {e}")
+
+        try:
+            cursor.execute("UPDATE rooms SET key_version = 1 WHERE key_version IS NULL OR key_version < 1")
+            cursor.execute("UPDATE room_members SET joined_key_version = 1 WHERE joined_key_version IS NULL OR joined_key_version < 1")
+            cursor.execute("UPDATE messages SET key_version = 1 WHERE key_version IS NULL OR key_version < 1")
+            cursor.execute('''
+                INSERT OR IGNORE INTO room_keys (room_id, version, encryption_key)
+                SELECT id, COALESCE(key_version, 1), encryption_key
+                FROM rooms
+                WHERE encryption_key IS NOT NULL
+            ''')
+        except Exception as e:
+            logger.error(f"Key version backfill failed: {e}")
         
         # 인덱스 생성
         try:
@@ -408,8 +440,10 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_room_id_desc ON messages(room_id, id DESC)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_members_room_user ON room_members(room_id, user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_room_version_id ON messages(room_id, key_version, id DESC)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_user ON poll_votes(poll_id, user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_files_file_path ON room_files(file_path)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_room_keys_room_version ON room_keys(room_id, version)')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_session_token ON users(session_token)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sso_provider_subject ON sso_identities(provider, subject)")

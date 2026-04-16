@@ -245,6 +245,7 @@ function resetActiveRoomState(roomId) {
 
     currentRoom = null;
     currentRoomKey = null;
+    currentRoomKeys = null;
 
     var chatContent = document.getElementById('chatContent');
     var emptyState = document.getElementById('emptyState');
@@ -368,6 +369,8 @@ async function openRoom(room) {
             }
 
             currentRoomKey = result.encryption_key;
+            currentRoomKeys = result.encryption_keys || {};
+            currentRoom.key_version = result.key_version || currentRoom.key_version;
 
             currentRoom.members = result.members || [];
             if (typeof seedReadReceiptProgress === 'function') {

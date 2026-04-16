@@ -187,6 +187,12 @@ function initSocket() {
         }
     });
 
+    socket.on('room_security_updated', function (data) {
+        if (typeof handleRoomSecurityUpdated === 'function') {
+            handleRoomSecurityUpdated(data);
+        }
+    });
+
     socket.on('room_members_updated', function (data) {
         if (typeof handleRoomMembersUpdated === 'function') {
             handleRoomMembersUpdated(data);
@@ -819,6 +825,7 @@ window.updateUnreadCounts = updateUnreadCounts;
 window.handleUserTyping = handleUserTyping;
 window.handleUserStatus = handleUserStatus;
 window.handleRoomNameUpdated = handleRoomNameUpdated;
+window.handleRoomSecurityUpdated = handleRoomSecurityUpdated;
 window.handleRoomMembersUpdated = handleRoomMembersUpdated;
 window.handleUserProfileUpdated = handleUserProfileUpdated;
 window.handleReactionUpdated = handleReactionUpdated;
@@ -833,3 +840,12 @@ window.resetReadReceiptCache = resetReadReceiptCache;
 window.rebuildReadReceiptIndex = rebuildReadReceiptIndex;
 window.indexSentMessageEl = indexSentMessageEl;
 window.seedReadReceiptProgress = seedReadReceiptProgress;
+
+function handleRoomSecurityUpdated(data) {
+    if (!data || !data.room_id) return;
+    if (currentRoom && currentRoom.id === data.room_id) {
+        currentRoomKey = data.encryption_key || currentRoomKey;
+        currentRoomKeys = data.encryption_keys || currentRoomKeys || {};
+        currentRoom.key_version = data.key_version || currentRoom.key_version;
+    }
+}

@@ -19,10 +19,10 @@ from app.models import (
     edit_message,
     get_message_reactions,
     get_message_room_id,
-    get_room_key,
     get_room_last_reads,
     get_room_members,
     get_room_messages,
+    get_room_security_bundle,
     is_room_member,
     toggle_reaction,
 )
@@ -38,7 +38,7 @@ def get_messages(room_id: int):
     if login_error:
         return login_error
     if not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
 
     try:
         before_id = request.args.get("before_id", type=int)
@@ -46,24 +46,23 @@ def get_messages(room_id: int):
         limit = max(1, min(limit, 200))
         include_meta = str(request.args.get("include_meta", "1")).lower() in ("1", "true", "yes")
 
-        messages = get_room_messages(room_id, before_id=before_id, limit=limit)
+        messages = get_room_messages(room_id, viewer_user_id=session["user_id"], before_id=before_id, limit=limit)
         members = get_room_members(room_id) if include_meta else None
-        encryption_key = get_room_key(room_id) if include_meta else None
+        security = get_room_security_bundle(room_id, session["user_id"]) if include_meta else None
 
         if messages:
             if include_meta and members:
-                user_last_read = {}
-                last_read_ids = []
-                for member in members:
-                    try:
-                        uid = member.get("id")
-                        value = member.get("last_read_message_id") or 0
-                    except Exception:
-                        continue
-                    if uid is None:
-                        continue
-                    user_last_read[uid] = value
-                    last_read_ids.append(value)
+                for message in messages:
+                    message_version = int(message.get("key_version") or 1)
+                    unread = 0
+                    for member in members:
+                        if int(member.get("joined_key_version") or 1) > message_version:
+                            continue
+                        if member.get("id") == message["sender_id"]:
+                            continue
+                        if (member.get("last_read_message_id") or 0) < message["id"]:
+                            unread += 1
+                    message["unread_count"] = unread
             else:
                 user_last_read = {}
                 last_read_ids = []
@@ -72,20 +71,23 @@ def get_messages(room_id: int):
                     user_last_read[uid] = value
                     last_read_ids.append(value)
 
-            last_read_ids.sort()
-            for message in messages:
-                sender_id = message["sender_id"]
-                message_id = message["id"]
-                unread = bisect_left(last_read_ids, message_id)
-                sender_last_read = user_last_read.get(sender_id, 0)
-                if sender_last_read < message_id:
-                    unread -= 1
-                message["unread_count"] = max(unread, 0)
+                last_read_ids.sort()
+                for message in messages:
+                    sender_id = message["sender_id"]
+                    message_id = message["id"]
+                    unread = bisect_left(last_read_ids, message_id)
+                    sender_last_read = user_last_read.get(sender_id, 0)
+                    if sender_last_read < message_id:
+                        unread -= 1
+                    message["unread_count"] = max(unread, 0)
 
         response: dict[str, object] = {"messages": messages}
         if include_meta:
             response["members"] = members
-            response["encryption_key"] = encryption_key
+            response["encryption_key"] = security.get("encryption_key") if security else None
+            response["encryption_keys"] = security.get("encryption_keys") if security else {}
+            response["key_version"] = security.get("key_version") if security else 1
+            response["member_key_version"] = security.get("member_key_version") if security else 1
         return jsonify(response)
     except Exception as exc:
         logger.error(f"메시지 로드 오류: {exc}")
@@ -116,9 +118,9 @@ def edit_message_route(message_id: int):
     if not new_content:
         return jsonify({"error": "메시지 내용을 입력해 주세요."}), 400
 
-    success, error, room_id = edit_message(message_id, session["user_id"], new_content)
+    success, error, room_id, key_version = edit_message(message_id, session["user_id"], new_content)
     if success:
-        return jsonify({"success": True, "room_id": room_id})
+        return jsonify({"success": True, "room_id": room_id, "key_version": key_version})
     return jsonify({"error": error}), 403
 
 
@@ -168,7 +170,7 @@ def get_reactions(message_id: int):
 
     room_id = get_message_room_id(message_id)
     if room_id is None or not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
     return jsonify(get_message_reactions(message_id))
 
 
@@ -180,7 +182,7 @@ def add_reaction_route(message_id: int):
 
     room_id = get_message_room_id(message_id)
     if room_id is None or not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
 
     data, error_response = parse_json_payload()
     if error_response:

@@ -3,6 +3,11 @@
 Socket event package.
 """
 
-from app.socket_events.register import register_socket_events
+
+def register_socket_events(socketio):
+    from app.socket_events.register import register_socket_events as _register_socket_events
+
+    return _register_socket_events(socketio)
+
 
 __all__ = ["register_socket_events"]

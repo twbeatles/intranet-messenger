@@ -14,16 +14,13 @@ from flask import Blueprint, jsonify, make_response, request, session
 from app.http.common import parse_json_payload, require_login, truthy_param
 from app.models import (
     add_room_member,
+    create_room,
     get_admin_audit_logs,
     get_all_users,
     get_online_users,
     get_room_admins,
     get_room_by_id,
-    get_room_key,
     get_room_members,
-    get_room_messages,
-    get_room_last_reads,
-    get_unread_count,
     get_user_by_id,
     get_user_rooms,
     is_room_admin,
@@ -33,14 +30,17 @@ from app.models import (
     log_admin_action,
     mute_room,
     pin_room,
+    rotate_room_key,
     set_room_admin,
     update_room_name,
-    create_room,
 )
 from app.services.socket_broadcasts import (
+    emit_admin_updated,
     emit_room_access_revoked,
     emit_room_list_updated,
     emit_room_members_updated,
+    emit_room_name_updated,
+    emit_room_security_updated,
     sync_user_room_membership,
 )
 from app.utils import sanitize_input
@@ -54,13 +54,23 @@ def _room_member_ids(room_id: int) -> list[int]:
     return [member["id"] for member in get_room_members(room_id)]
 
 
+def _rotate_and_emit_room_security(room_id: int, user_ids: list[int]) -> None:
+    if not user_ids:
+        return
+    rotation = rotate_room_key(room_id)
+    if not rotation:
+        logger.warning(f"Failed to rotate room key after membership change: room_id={room_id}")
+        return
+    emit_room_security_updated(room_id, user_ids)
+
+
 @rooms_bp.get("/api/users")
 def get_users():
     login_error = require_login()
     if login_error:
         return login_error
     users = get_all_users()
-    return jsonify([u for u in users if u["id"] != session["user_id"]])
+    return jsonify([user for user in users if user["id"] != session["user_id"]])
 
 
 @rooms_bp.get("/api/rooms")
@@ -69,8 +79,7 @@ def get_rooms():
     if login_error:
         return login_error
     include_members = truthy_param(request.args.get("include_members"))
-    rooms = get_user_rooms(session["user_id"], include_members=include_members)
-    return jsonify(rooms)
+    return jsonify(get_user_rooms(session["user_id"], include_members=include_members))
 
 
 @rooms_bp.post("/api/rooms")
@@ -83,15 +92,7 @@ def create_room_route():
     if error_response:
         return error_response
 
-    has_members = "members" in data
-    has_member_ids = "member_ids" in data
-    if has_members:
-        raw_members = data.get("members")
-        if has_member_ids:
-            logger.warning("Both members and member_ids were provided; members will be used.")
-    else:
-        raw_members = data.get("member_ids", [])
-
+    raw_members = data.get("members") if "members" in data else data.get("member_ids", [])
     if raw_members is None:
         raw_members = []
     if not isinstance(raw_members, list):
@@ -134,7 +135,7 @@ def create_room_route():
         return jsonify({"success": True, "room_id": room_id})
     except Exception as exc:
         logger.error(f"Room creation failed: {exc}")
-        return jsonify({"error": "대화방 생성에 실패했습니다."}), 500
+        return jsonify({"error": "방 생성에 실패했습니다."}), 500
 
 
 @rooms_bp.post("/api/rooms/<int:room_id>/members")
@@ -143,7 +144,7 @@ def invite_member(room_id: int):
     if login_error:
         return login_error
     if not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
 
     data, error_response = parse_json_payload()
     if error_response:
@@ -154,24 +155,47 @@ def invite_member(room_id: int):
     if user_id:
         user_ids = [user_id]
 
-    valid_user_ids = [uid for uid in user_ids if get_user_by_id(uid)]
-    added = 0
-    added_user_ids: list[int] = []
-    for uid in valid_user_ids:
-        if add_room_member(room_id, uid):
-            added += 1
-            added_user_ids.append(uid)
+    candidate_user_ids = []
+    seen = set()
+    for uid in user_ids or []:
+        try:
+            candidate = int(uid)
+        except (TypeError, ValueError):
+            continue
+        if candidate in seen or candidate <= 0:
+            continue
+        seen.add(candidate)
+        if get_user_by_id(candidate) and not is_room_member(room_id, candidate):
+            candidate_user_ids.append(candidate)
 
-    if added > 0:
-        for user_id_to_join in added_user_ids:
-            sync_user_room_membership(room_id, user_id_to_join, joined=True)
-        emit_room_members_updated(room_id)
-        emit_room_list_updated(added_user_ids, "room_invited")
-        remaining_user_ids = [user_id for user_id in _room_member_ids(room_id) if user_id not in added_user_ids]
-        if remaining_user_ids:
-            emit_room_list_updated(remaining_user_ids, "membership_changed")
-        return jsonify({"success": True, "added_count": added})
-    return jsonify({"error": "이미 참여 중인 사용자입니다."}), 400
+    if not candidate_user_ids:
+        return jsonify({"error": "이미 참여 중인 사용자입니다."}), 400
+
+    rotation = rotate_room_key(room_id)
+    if not rotation:
+        return jsonify({"error": "방 보안 갱신에 실패했습니다."}), 500
+
+    added_user_ids: list[int] = []
+    for invitee_id in candidate_user_ids:
+        if add_room_member(room_id, invitee_id, joined_key_version=rotation["key_version"]):
+            added_user_ids.append(invitee_id)
+
+    if not added_user_ids:
+        current_member_ids = _room_member_ids(room_id)
+        if current_member_ids:
+            emit_room_security_updated(room_id, current_member_ids)
+        return jsonify({"error": "이미 참여 중인 사용자입니다."}), 400
+
+    for invitee_id in added_user_ids:
+        sync_user_room_membership(room_id, invitee_id, joined=True)
+    emit_room_members_updated(room_id)
+    current_member_ids = _room_member_ids(room_id)
+    emit_room_security_updated(room_id, current_member_ids)
+    emit_room_list_updated(added_user_ids, "room_invited")
+    remaining_user_ids = [uid for uid in current_member_ids if uid not in added_user_ids]
+    if remaining_user_ids:
+        emit_room_list_updated(remaining_user_ids, "membership_changed")
+    return jsonify({"success": True, "added_count": len(added_user_ids)})
 
 
 @rooms_bp.post("/api/rooms/<int:room_id>/leave")
@@ -184,13 +208,16 @@ def leave_room_route(room_id: int):
     if not is_room_member(room_id, user_id):
         return jsonify({"success": True, "left": False, "already_left": True})
 
-    leave_room_db(room_id, user_id)
+    if not leave_room_db(room_id, user_id):
+        return jsonify({"error": "방 나가기에 실패했습니다."}), 500
+
     sync_user_room_membership(room_id, user_id, joined=False)
     emit_room_access_revoked(user_id, room_id, "left")
     emit_room_list_updated([user_id], "room_left")
     emit_room_members_updated(room_id)
     remaining_user_ids = _room_member_ids(room_id)
     if remaining_user_ids:
+        _rotate_and_emit_room_security(room_id, remaining_user_ids)
         emit_room_list_updated(remaining_user_ids, "membership_changed")
     return jsonify({"success": True, "left": True, "already_left": False})
 
@@ -207,15 +234,18 @@ def kick_member(room_id: int, target_user_id: int):
     if is_room_admin(room_id, target_user_id):
         return jsonify({"error": "관리자는 강퇴할 수 없습니다."}), 403
     if not is_room_member(room_id, target_user_id):
-        return jsonify({"error": "해당 사용자는 대화방 멤버가 아닙니다."}), 400
+        return jsonify({"error": "해당 사용자는 방 멤버가 아닙니다."}), 400
 
-    kick_member_db(room_id, target_user_id)
+    if not kick_member_db(room_id, target_user_id):
+        return jsonify({"error": "멤버 강퇴에 실패했습니다."}), 500
+
     sync_user_room_membership(room_id, target_user_id, joined=False)
     emit_room_access_revoked(target_user_id, room_id, "kicked")
     emit_room_list_updated([target_user_id], "room_kicked")
     emit_room_members_updated(room_id)
     remaining_user_ids = _room_member_ids(room_id)
     if remaining_user_ids:
+        _rotate_and_emit_room_security(room_id, remaining_user_ids)
         emit_room_list_updated(remaining_user_ids, "membership_changed")
     log_admin_action(
         room_id=room_id,
@@ -233,18 +263,20 @@ def update_room_name_route(room_id: int):
     if login_error:
         return login_error
     if not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
     if not is_room_admin(room_id, session["user_id"]):
-        return jsonify({"error": "관리자만 대화방 이름을 변경할 수 있습니다."}), 403
+        return jsonify({"error": "관리자만 방 이름을 변경할 수 있습니다."}), 403
 
     data, error_response = parse_json_payload()
     if error_response:
         return error_response
     new_name = sanitize_input(data.get("name", ""), max_length=50)
     if not new_name:
-        return jsonify({"error": "대화방 이름을 입력해 주세요."}), 400
+        return jsonify({"error": "방 이름을 입력해 주세요."}), 400
 
-    update_room_name(room_id, new_name)
+    if not update_room_name(room_id, new_name):
+        return jsonify({"error": "방 이름 변경에 실패했습니다."}), 500
+    emit_room_name_updated(room_id, new_name)
     return jsonify({"success": True})
 
 
@@ -255,7 +287,7 @@ def pin_room_route(room_id: int):
     if login_error:
         return login_error
     if not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
 
     data, error_response = parse_json_payload()
     if error_response:
@@ -272,7 +304,7 @@ def mute_room_route(room_id: int):
     if login_error:
         return login_error
     if not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
 
     data, error_response = parse_json_payload()
     if error_response:
@@ -289,7 +321,7 @@ def get_online_users_route():
     if login_error:
         return login_error
     users = get_online_users()
-    return jsonify([u for u in users if u["id"] != session["user_id"]])
+    return jsonify([user for user in users if user["id"] != session["user_id"]])
 
 
 @rooms_bp.get("/api/rooms/<int:room_id>/info")
@@ -298,14 +330,13 @@ def get_room_info(room_id: int):
     if login_error:
         return login_error
     if not is_room_member(room_id, session["user_id"]):
-        return jsonify({"error": "대화방 접근 권한이 없습니다."}), 403
+        return jsonify({"error": "방 접근 권한이 없습니다."}), 403
 
     room = get_room_by_id(room_id)
     if not room:
-        return jsonify({"error": "대화방을 찾을 수 없습니다."}), 404
+        return jsonify({"error": "방을 찾을 수 없습니다."}), 404
 
-    members = get_room_members(room_id)
-    room["members"] = members
+    room["members"] = get_room_members(room_id)
     room.pop("encryption_key", None)
     return jsonify(room)
 
@@ -333,7 +364,7 @@ def set_admin_route(room_id: int):
         return error_response
 
     target_user_id = data.get("user_id")
-    is_admin = data.get("is_admin", True)
+    is_admin = bool(data.get("is_admin", True))
     if not target_user_id:
         return jsonify({"error": "사용자를 선택해 주세요."}), 400
 
@@ -348,6 +379,7 @@ def set_admin_route(room_id: int):
             action="set_admin" if is_admin else "unset_admin",
             metadata={"source": "api"},
         )
+        emit_admin_updated(room_id, int(target_user_id), is_admin)
         return jsonify({"success": True})
     return jsonify({"error": "관리자 설정에 실패했습니다."}), 500
 

@@ -1,67 +1,103 @@
 # -*- coding: utf-8 -*-
 """
-대화방 관리 모듈
+Room management models.
 """
 
-import sqlite3
+from __future__ import annotations
+
 import logging
+import sqlite3
 
 from app.models.base import get_db
 from app.utils import E2ECrypto
 
 logger = logging.getLogger(__name__)
 
+_HIDDEN_DELETED_ATTACHMENT_WHERE = "NOT (m.message_type IN ('file', 'image') AND m.file_path IS NULL AND m.content = '[삭제된 메시지]')"
+
+
+def _encrypt_room_key(raw_key: str) -> str:
+    try:
+        from app.crypto_manager import CryptoManager
+
+        return CryptoManager.encrypt_room_key(raw_key)
+    except Exception as exc:
+        logger.warning(f"Key encryption failed, storing raw: {exc}")
+        return raw_key
+
+
+def _decrypt_room_key(encrypted_key: str | None) -> str | None:
+    if not encrypted_key:
+        return None
+    try:
+        from app.crypto_manager import CryptoManager
+
+        return CryptoManager.decrypt_room_key(encrypted_key)
+    except Exception as exc:
+        logger.debug(f"Key decryption failed, returning as-is: {exc}")
+        return encrypted_key
+
+
+def _generate_room_key() -> tuple[str, str]:
+    raw_key = E2ECrypto.generate_room_key()
+    return raw_key, _encrypt_room_key(raw_key)
+
+
+def _get_room_key_version(cursor, room_id: int) -> int:
+    cursor.execute('SELECT COALESCE(key_version, 1) AS key_version FROM rooms WHERE id = ?', (room_id,))
+    row = cursor.fetchone()
+    return int((row['key_version'] if row else 1) or 1)
+
 
 def create_room(name, room_type, created_by, member_ids):
-    """대화방 생성"""
+    """Create a room and seed key version 1."""
     conn = get_db()
     cursor = conn.cursor()
-    
+
     try:
-        # 1:1 대화방인 경우 기존 대화방 확인
         if room_type == 'direct' and len(member_ids) == 2:
-            cursor.execute('''
-                SELECT r.id FROM rooms r
-                JOIN room_members rm1 ON r.id = rm1.room_id
-                JOIN room_members rm2 ON r.id = rm2.room_id
-                WHERE r.type = 'direct' AND rm1.user_id = ? AND rm2.user_id = ?
-            ''', (member_ids[0], member_ids[1]))
+            cursor.execute(
+                '''
+                    SELECT r.id
+                    FROM rooms r
+                    JOIN room_members rm1 ON r.id = rm1.room_id
+                    JOIN room_members rm2 ON r.id = rm2.room_id
+                    WHERE r.type = 'direct' AND rm1.user_id = ? AND rm2.user_id = ?
+                ''',
+                (member_ids[0], member_ids[1]),
+            )
             existing = cursor.fetchone()
             if existing:
                 return existing[0]
-        
-        # 대화방별 암호화 키 생성
-        raw_key = E2ECrypto.generate_room_key()
-        try:
-            from app.crypto_manager import CryptoManager
-            encryption_key = CryptoManager.encrypt_room_key(raw_key)
-        except Exception as e:
-            logger.warning(f"Key encryption failed, storing raw: {e}")
-            encryption_key = raw_key
-        
+
+        _, encryption_key = _generate_room_key()
         cursor.execute(
-            'INSERT INTO rooms (name, type, created_by, encryption_key) VALUES (?, ?, ?, ?)',
-            (name, room_type, created_by, encryption_key)
+            'INSERT INTO rooms (name, type, created_by, encryption_key, key_version) VALUES (?, ?, ?, ?, 1)',
+            (name, room_type, created_by, encryption_key),
         )
         room_id = cursor.lastrowid
-        
+        cursor.execute(
+            'INSERT INTO room_keys (room_id, version, encryption_key) VALUES (?, 1, ?)',
+            (room_id, encryption_key),
+        )
+
         for user_id in member_ids:
             role = 'admin' if user_id == created_by else 'member'
             cursor.execute(
-                'INSERT INTO room_members (room_id, user_id, role) VALUES (?, ?, ?)',
-                (room_id, user_id, role)
+                'INSERT INTO room_members (room_id, user_id, role, joined_key_version) VALUES (?, ?, ?, 1)',
+                (room_id, user_id, role),
             )
-        
+
         conn.commit()
         return room_id
-    except Exception as e:
+    except Exception as exc:
         conn.rollback()
-        logger.error(f"Create room error: {e}")
+        logger.error(f"Create room error: {exc}")
         raise
 
 
 def get_room_key(room_id):
-    """대화방 암호화 키 조회"""
+    """Return the latest room key in plaintext."""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -69,27 +105,146 @@ def get_room_key(room_id):
         result = cursor.fetchone()
         if not result:
             return None
-        
-        encrypted_key = result['encryption_key']
-        try:
-            from app.crypto_manager import CryptoManager
-            return CryptoManager.decrypt_room_key(encrypted_key)
-        except Exception as e:
-            logger.debug(f"Key decryption failed, returning as-is: {e}")
-            return encrypted_key
-    except Exception as e:
-        logger.error(f"Get room key error: {e}")
+        return _decrypt_room_key(result['encryption_key'])
+    except Exception as exc:
+        logger.error(f"Get room key error: {exc}")
+        return None
+
+
+def get_room_member_key_version(room_id: int, user_id: int) -> int | None:
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            '''
+                SELECT COALESCE(joined_key_version, 1) AS joined_key_version
+                FROM room_members
+                WHERE room_id = ? AND user_id = ?
+            ''',
+            (room_id, user_id),
+        )
+        row = cursor.fetchone()
+        return int(row['joined_key_version']) if row else None
+    except Exception as exc:
+        logger.error(f"Get room member key version error: {exc}")
+        return None
+
+
+def get_room_keyring(room_id: int, user_id: int | None = None):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        min_version = 1
+        if user_id is not None:
+            member_version = get_room_member_key_version(room_id, user_id)
+            if member_version is None:
+                return {}
+            min_version = max(1, member_version)
+
+        cursor.execute(
+            '''
+                SELECT version, encryption_key
+                FROM room_keys
+                WHERE room_id = ? AND version >= ?
+                ORDER BY version ASC
+            ''',
+            (room_id, min_version),
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            cursor.execute(
+                'SELECT COALESCE(key_version, 1) AS version, encryption_key FROM rooms WHERE id = ?',
+                (room_id,),
+            )
+            row = cursor.fetchone()
+            if not row or not row['encryption_key']:
+                return {}
+            rows = [row]
+
+        keyring = {}
+        for row in rows:
+            raw_key = _decrypt_room_key(row['encryption_key'])
+            if raw_key:
+                keyring[str(int(row['version']))] = raw_key
+        return keyring
+    except Exception as exc:
+        logger.error(f"Get room keyring error: {exc}")
+        return {}
+
+
+def get_room_security_bundle(room_id: int, user_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('SELECT COALESCE(key_version, 1) AS key_version FROM rooms WHERE id = ?', (room_id,))
+        room = cursor.fetchone()
+        if not room:
+            return None
+
+        keyring = get_room_keyring(room_id, user_id=user_id)
+        current_version = int(room['key_version'] or 1)
+        current_key = keyring.get(str(current_version))
+        if not current_key:
+            current_key = get_room_key(room_id)
+            if current_key:
+                keyring[str(current_version)] = current_key
+
+        member_key_version = get_room_member_key_version(room_id, user_id)
+        return {
+            'room_id': room_id,
+            'key_version': current_version,
+            'member_key_version': member_key_version or current_version,
+            'encryption_key': current_key,
+            'encryption_keys': keyring,
+        }
+    except Exception as exc:
+        logger.error(f"Get room security bundle error: {exc}")
+        return None
+
+
+def rotate_room_key(room_id: int, conn=None):
+    own_conn = conn is None
+    conn = conn or get_db()
+    cursor = conn.cursor()
+    try:
+        current_version = _get_room_key_version(cursor, room_id)
+        raw_key, encrypted_key = _generate_room_key()
+        next_version = current_version + 1
+        cursor.execute(
+            'UPDATE rooms SET encryption_key = ?, key_version = ? WHERE id = ?',
+            (encrypted_key, next_version, room_id),
+        )
+        if cursor.rowcount < 1:
+            if own_conn:
+                conn.rollback()
+            return None
+        cursor.execute(
+            'INSERT OR REPLACE INTO room_keys (room_id, version, encryption_key) VALUES (?, ?, ?)',
+            (room_id, next_version, encrypted_key),
+        )
+        if own_conn:
+            conn.commit()
+        return {'room_id': room_id, 'key_version': next_version, 'encryption_key': raw_key}
+    except Exception as exc:
+        if own_conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logger.error(f"Rotate room key error: {exc}")
         return None
 
 
 def get_user_rooms(user_id, include_members=False):
-    """사용자의 대화방 목록 (성능 최적화 버전)"""
+    """Return the user's rooms with only currently visible messages."""
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('''
+        cursor.execute(
+            '''
             WITH my_rooms AS (
-                SELECT r.*, rm.last_read_message_id, rm.pinned, rm.muted
+                SELECT r.*, rm.last_read_message_id, rm.pinned, rm.muted,
+                       COALESCE(rm.joined_key_version, 1) AS joined_key_version
                 FROM rooms r
                 JOIN room_members rm ON r.id = rm.room_id
                 WHERE rm.user_id = ?
@@ -104,6 +259,8 @@ def get_user_rooms(user_id, include_members=False):
                 SELECT m.room_id, MAX(m.id) AS last_message_id
                 FROM messages m
                 JOIN my_rooms mr ON mr.id = m.room_id
+                WHERE COALESCE(m.key_version, 1) >= mr.joined_key_version
+                  AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
                 GROUP BY m.room_id
             ),
             last_msg_data AS (
@@ -120,8 +277,10 @@ def get_user_rooms(user_id, include_members=False):
                 SELECT m.room_id, COUNT(*) AS unread_count
                 FROM messages m
                 JOIN my_rooms mr ON mr.id = m.room_id
-                JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = ?
-                WHERE m.id > COALESCE(rm.last_read_message_id, 0) AND m.sender_id != ?
+                WHERE m.id > COALESCE(mr.last_read_message_id, 0)
+                  AND m.sender_id != ?
+                  AND COALESCE(m.key_version, 1) >= mr.joined_key_version
+                  AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
                 GROUP BY m.room_id
             )
             SELECT mr.*,
@@ -139,41 +298,38 @@ def get_user_rooms(user_id, include_members=False):
             ORDER BY mr.pinned DESC,
                      (lmd.last_message_time IS NULL) ASC,
                      lmd.last_message_time DESC
-        ''' , (user_id, user_id, user_id))
+            ''',
+            (user_id, user_id),
+        )
         rooms = [dict(r) for r in cursor.fetchall()]
-
         if not rooms:
             return []
 
-        # UI에서 last_message_preview와 content를 함께 사용할 수 있게 정규화
         for room in rooms:
             last_type = room.get('last_message_type') or 'text'
             last_message = room.get('last_message')
             last_encrypted = bool(room.get('last_message_encrypted'))
             file_name = room.get('last_message_file_name')
 
-            preview = '\uc0c8 \ub300\ud654'
+            preview = '새 대화'
             if last_type == 'image':
-                preview = '[\uc0ac\uc9c4]'
+                preview = '[사진]'
             elif last_type == 'file':
-                preview = file_name or '[\ud30c\uc77c]'
+                preview = file_name or '[파일]'
             elif last_type == 'system':
                 if last_message:
                     preview = last_message[:25] + ('...' if len(last_message) > 25 else '')
-            else:
-                if last_message:
-                    if last_encrypted:
-                        preview = '[\uc554\ud638\ud654\ub41c \uba54\uc2dc\uc9c0]'
-                        room['last_message'] = None
-                    else:
-                        preview = last_message[:25] + ('...' if len(last_message) > 25 else '')
+            elif last_message:
+                if last_encrypted:
+                    preview = '[암호화된 메시지]'
+                    room['last_message'] = None
+                else:
+                    preview = last_message[:25] + ('...' if len(last_message) > 25 else '')
 
             room['last_message_preview'] = preview
 
-        # direct 방은 partner 정보를, group 방은 member 정보를 채운다.
         direct_room_ids = [r['id'] for r in rooms if r.get('type') == 'direct']
         group_room_ids = [r['id'] for r in rooms if r.get('type') != 'direct']
-
         member_room_ids = list(direct_room_ids)
         if include_members:
             member_room_ids.extend(group_room_ids)
@@ -181,204 +337,235 @@ def get_user_rooms(user_id, include_members=False):
         members_by_room = {}
         if member_room_ids:
             placeholders = ','.join('?' * len(member_room_ids))
-            cursor.execute(f'''
-                SELECT rm.room_id, u.id, u.nickname, u.profile_image, u.status
-                FROM users u
-                JOIN room_members rm ON u.id = rm.user_id
-                WHERE rm.room_id IN ({placeholders})
-            ''', member_room_ids)
-            for m in cursor.fetchall():
-                rid = m['room_id']
-                members_by_room.setdefault(rid, []).append(dict(m))
+            cursor.execute(
+                f'''
+                    SELECT rm.room_id, u.id, u.nickname, u.profile_image, u.status,
+                           COALESCE(rm.joined_key_version, 1) AS joined_key_version,
+                           COALESCE(rm.role, 'member') AS role
+                    FROM users u
+                    JOIN room_members rm ON u.id = rm.user_id
+                    WHERE rm.room_id IN ({placeholders})
+                ''',
+                member_room_ids,
+            )
+            for member in cursor.fetchall():
+                members_by_room.setdefault(member['room_id'], []).append(dict(member))
 
         result = []
         for room in rooms:
             rid = room['id']
             room_members = members_by_room.get(rid, [])
-
             if room.get('type') == 'direct':
                 partner = next((m for m in room_members if m['id'] != user_id), None)
                 if partner:
                     room['partner'] = partner
                     room['name'] = partner.get('nickname') or room.get('name')
-            else:
-                if include_members:
-                    room['members'] = room_members
-
+            elif include_members:
+                room['members'] = room_members
             result.append(room)
-
         return result
-    except Exception as e:
-        logger.error(f"Get user rooms error: {e}")
+    except Exception as exc:
+        logger.error(f"Get user rooms error: {exc}")
         return []
+
+
 def get_room_members(room_id):
-    """대화방 멤버 조회"""
-    conn = get_db()
-    cursor = conn.cursor()
-    try:
-        cursor.execute('''
-            SELECT u.id, u.nickname, u.profile_image, u.status, rm.last_read_message_id, rm.pinned, rm.muted
-            FROM users u
-            JOIN room_members rm ON u.id = rm.user_id
-            WHERE rm.room_id = ?
-        ''', (room_id,))
-        members = cursor.fetchall()
-        return [dict(m) for m in members]
-    except Exception as e:
-        logger.error(f"Get room members error: {e}")
-        return []
-
-
-def is_room_member(room_id, user_id):
-    """대화방 멤버 확인"""
     conn = get_db()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            'SELECT 1 FROM room_members WHERE room_id = ? AND user_id = ?',
-            (room_id, user_id)
+            '''
+                SELECT u.id, u.nickname, u.profile_image, u.status,
+                       rm.last_read_message_id, rm.pinned, rm.muted,
+                       COALESCE(rm.joined_key_version, 1) AS joined_key_version,
+                       COALESCE(rm.role, 'member') AS role
+                FROM users u
+                JOIN room_members rm ON u.id = rm.user_id
+                WHERE rm.room_id = ?
+            ''',
+            (room_id,),
         )
-        return cursor.fetchone() is not None
-    except Exception as e:
-        logger.error(f"Check room membership error: {e}")
-        return False
+        return [dict(member) for member in cursor.fetchall()]
+    except Exception as exc:
+        logger.error(f"Get room members error: {exc}")
+        return []
 
 
-def add_room_member(room_id, user_id):
-    """대화방 멤버 추가"""
+def is_room_member(room_id, user_id):
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('INSERT INTO room_members (room_id, user_id) VALUES (?, ?)', (room_id, user_id))
-        conn.commit()
+        cursor.execute('SELECT 1 FROM room_members WHERE room_id = ? AND user_id = ?', (room_id, user_id))
+        return cursor.fetchone() is not None
+    except Exception as exc:
+        logger.error(f"Check room membership error: {exc}")
+        return False
+
+
+def add_room_member(room_id, user_id, joined_key_version: int | None = None, conn=None):
+    own_conn = conn is None
+    conn = conn or get_db()
+    cursor = conn.cursor()
+    try:
+        version = joined_key_version or _get_room_key_version(cursor, room_id)
+        cursor.execute(
+            'INSERT INTO room_members (room_id, user_id, joined_key_version) VALUES (?, ?, ?)',
+            (room_id, user_id, version),
+        )
+        if own_conn:
+            conn.commit()
         return True
     except sqlite3.IntegrityError:
+        if own_conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False
+    except Exception as exc:
+        if own_conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logger.error(f"Add room member error: {exc}")
         return False
 
 
 def leave_room_db(room_id, user_id):
-    """대화방 나가기"""
     conn = get_db()
     try:
         conn.execute("BEGIN IMMEDIATE")
     except Exception:
         pass
-        
+
     cursor = conn.cursor()
     try:
         if is_room_admin(room_id, user_id):
-            cursor.execute('''
-                SELECT u.id FROM users u
-                JOIN room_members rm ON u.id = rm.user_id
-                WHERE rm.room_id = ? AND (rm.role = 'admin' OR u.id = (SELECT created_by FROM rooms WHERE id = ?))
-            ''', (room_id, room_id))
+            cursor.execute(
+                '''
+                    SELECT u.id
+                    FROM users u
+                    JOIN room_members rm ON u.id = rm.user_id
+                    WHERE rm.room_id = ? AND (rm.role = 'admin' OR u.id = (SELECT created_by FROM rooms WHERE id = ?))
+                ''',
+                (room_id, room_id),
+            )
             admin_ids = [row['id'] for row in cursor.fetchall()]
-            
             if len(admin_ids) == 1 and admin_ids[0] == user_id:
-                members = get_room_members(room_id)
-                for member in members:
-                    if member['id'] != user_id:
-                        cursor.execute('UPDATE room_members SET role = ? WHERE room_id = ? AND user_id = ?',
-                                       ('admin', room_id, member['id']))
-                        logger.info(f"Admin auto-delegated: room {room_id}")
-                        break
-        
+                cursor.execute(
+                    '''
+                        SELECT user_id
+                        FROM room_members
+                        WHERE room_id = ? AND user_id != ?
+                        ORDER BY CASE WHEN COALESCE(role, 'member') = 'admin' THEN 0 ELSE 1 END, user_id ASC
+                        LIMIT 1
+                    ''',
+                    (room_id, user_id),
+                )
+                replacement = cursor.fetchone()
+                if replacement:
+                    cursor.execute(
+                        'UPDATE room_members SET role = ? WHERE room_id = ? AND user_id = ?',
+                        ('admin', room_id, replacement['user_id']),
+                    )
+                    logger.info(f"Admin auto-delegated: room {room_id}")
+
         cursor.execute('DELETE FROM room_members WHERE room_id = ? AND user_id = ?', (room_id, user_id))
         conn.commit()
-    except Exception as e:
-        logger.error(f"Leave room error: {e}")
+        return cursor.rowcount > 0
+    except Exception as exc:
+        logger.error(f"Leave room error: {exc}")
         try:
             conn.rollback()
         except Exception:
             pass
+        return False
 
 
 def update_room_name(room_id, new_name):
-    """대화방 이름 변경"""
     conn = get_db()
     cursor = conn.cursor()
     try:
         cursor.execute('UPDATE rooms SET name = ? WHERE id = ?', (new_name, room_id))
         conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Update room name error: {e}")
+        return cursor.rowcount > 0
+    except Exception as exc:
+        logger.error(f"Update room name error: {exc}")
         return False
 
 
 def get_room_by_id(room_id):
-    """대화방 정보 조회"""
     conn = get_db()
     cursor = conn.cursor()
     try:
         cursor.execute('SELECT * FROM rooms WHERE id = ?', (room_id,))
         room = cursor.fetchone()
         return dict(room) if room else None
-    except Exception as e:
-        logger.error(f"Get room error: {e}")
+    except Exception as exc:
+        logger.error(f"Get room error: {exc}")
         return None
 
 
 def pin_room(user_id, room_id, pinned):
-    """대화방 상단 고정"""
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('UPDATE room_members SET pinned = ? WHERE user_id = ? AND room_id = ?', 
-                      (1 if pinned else 0, user_id, room_id))
+        cursor.execute(
+            'UPDATE room_members SET pinned = ? WHERE user_id = ? AND room_id = ?',
+            (1 if pinned else 0, user_id, room_id),
+        )
         conn.commit()
         return True
-    except Exception as e:
-        logger.error(f"Pin room error: {e}")
+    except Exception as exc:
+        logger.error(f"Pin room error: {exc}")
         return False
 
 
 def mute_room(user_id, room_id, muted):
-    """대화방 알림 끄기"""
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('UPDATE room_members SET muted = ? WHERE user_id = ? AND room_id = ?', 
-                      (1 if muted else 0, user_id, room_id))
+        cursor.execute(
+            'UPDATE room_members SET muted = ? WHERE user_id = ? AND room_id = ?',
+            (1 if muted else 0, user_id, room_id),
+        )
         conn.commit()
         return True
-    except Exception as e:
-        logger.error(f"Mute room error: {e}")
+    except Exception as exc:
+        logger.error(f"Mute room error: {exc}")
         return False
 
 
 def kick_member(room_id, target_user_id):
-    """멤버 강제 퇴장"""
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('DELETE FROM room_members WHERE room_id = ? AND user_id = ?', 
-                      (room_id, target_user_id))
+        cursor.execute('DELETE FROM room_members WHERE room_id = ? AND user_id = ?', (room_id, target_user_id))
         conn.commit()
         return cursor.rowcount > 0
-    except Exception as e:
-        logger.error(f"Kick member error: {e}")
+    except Exception as exc:
+        logger.error(f"Kick member error: {exc}")
         return False
 
 
-# 관리자 관련 함수
 def set_room_admin(room_id: int, user_id: int, is_admin: bool = True):
-    """관리자 권한 설정"""
     conn = get_db()
     cursor = conn.cursor()
     try:
         role = 'admin' if is_admin else 'member'
-        cursor.execute('UPDATE room_members SET role = ? WHERE room_id = ? AND user_id = ?', 
-                      (role, room_id, user_id))
+        cursor.execute(
+            'UPDATE room_members SET role = ? WHERE room_id = ? AND user_id = ?',
+            (role, room_id, user_id),
+        )
         conn.commit()
         return cursor.rowcount > 0
-    except Exception as e:
-        logger.error(f"Set room admin error: {e}")
+    except Exception as exc:
+        logger.error(f"Set room admin error: {exc}")
         return False
 
 
 def is_room_admin(room_id: int, user_id: int):
-    """관리자 여부 확인"""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -386,27 +573,29 @@ def is_room_admin(room_id: int, user_id: int):
         room = cursor.fetchone()
         if room and room['created_by'] == user_id:
             return True
-        
+
         cursor.execute('SELECT role FROM room_members WHERE room_id = ? AND user_id = ?', (room_id, user_id))
         member = cursor.fetchone()
-        return member and member['role'] == 'admin'
-    except Exception as e:
-        logger.error(f"Check room admin error: {e}")
+        return bool(member and member['role'] == 'admin')
+    except Exception as exc:
+        logger.error(f"Check room admin error: {exc}")
         return False
 
 
 def get_room_admins(room_id: int):
-    """대화방 관리자 목록"""
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('''
-            SELECT u.id, u.nickname, u.profile_image, rm.role
-            FROM users u
-            JOIN room_members rm ON u.id = rm.user_id
-            WHERE rm.room_id = ? AND (rm.role = 'admin' OR u.id = (SELECT created_by FROM rooms WHERE id = ?))
-        ''', (room_id, room_id))
-        return [dict(a) for a in cursor.fetchall()]
-    except Exception as e:
-        logger.error(f"Get room admins error: {e}")
+        cursor.execute(
+            '''
+                SELECT u.id, u.nickname, u.profile_image, rm.role
+                FROM users u
+                JOIN room_members rm ON u.id = rm.user_id
+                WHERE rm.room_id = ? AND (rm.role = 'admin' OR u.id = (SELECT created_by FROM rooms WHERE id = ?))
+            ''',
+            (room_id, room_id),
+        )
+        return [dict(admin) for admin in cursor.fetchall()]
+    except Exception as exc:
+        logger.error(f"Get room admins error: {exc}")
         return []

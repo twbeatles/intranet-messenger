@@ -11,7 +11,13 @@ from flask_wtf.csrf import generate_csrf
 from app.extensions import csrf, limiter
 from app.http.common import parse_json_payload, require_login
 from app.models import authenticate_user, change_password, create_user, delete_user, get_db, get_room_members, log_access
-from app.services.socket_broadcasts import emit_room_access_revoked, emit_room_list_updated, emit_room_members_updated, sync_user_room_membership
+from app.services.socket_broadcasts import (
+    emit_room_access_revoked,
+    emit_room_list_updated,
+    emit_room_members_updated,
+    emit_room_security_updated,
+    sync_user_room_membership,
+)
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -139,6 +145,7 @@ def delete_account():
         emit_room_members_updated(room_id)
         remaining_user_ids = [member["id"] for member in get_room_members(room_id)]
         if remaining_user_ids:
+            emit_room_security_updated(room_id, remaining_user_ids)
             emit_room_list_updated(remaining_user_ids, "membership_changed")
 
     log_access(session["user_id"], "delete_account", request.remote_addr, request.user_agent.string)

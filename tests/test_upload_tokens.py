@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 import time
 
 
@@ -40,3 +41,32 @@ def test_upload_token_expires(monkeypatch):
     )
     time.sleep(0.01)
     assert upload_tokens.consume_upload_token(token, user_id=1, room_id=10, expected_type="file") is None
+
+
+def test_purge_expired_upload_tokens_removes_orphan_file(tmp_path, monkeypatch):
+    import app.upload_tokens as upload_tokens
+
+    now = time.time()
+    monkeypatch.setattr(upload_tokens, "TOKEN_TTL_SECONDS", 1)
+
+    class _FakeCursor:
+        def execute(self, _query):
+            return None
+
+        def fetchall(self):
+            return []
+
+    class _FakeConn:
+        def cursor(self):
+            return _FakeCursor()
+
+    monkeypatch.setattr(upload_tokens, "get_db", lambda: _FakeConn())
+
+    orphan_path = os.path.join(str(tmp_path), "orphan.txt")
+    with open(orphan_path, "wb") as handle:
+        handle.write(b"orphan")
+    os.utime(orphan_path, (now - 10, now - 10))
+
+    removed = upload_tokens.purge_expired_upload_tokens(upload_folder=str(tmp_path), now=now)
+    assert removed == 1
+    assert not os.path.exists(orphan_path)

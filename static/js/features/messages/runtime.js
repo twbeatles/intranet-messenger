@@ -21,6 +21,22 @@ var lazyDecryptQueue = [];
 var lazyDecryptScheduled = false;
 var lazyDecryptQueuedIds = new Set();
 
+function getRoomKeyForVersion(version) {
+    if (currentRoomKeys && typeof currentRoomKeys === 'object') {
+        var key = currentRoomKeys[String(version)];
+        if (key) return key;
+    }
+    return currentRoomKey;
+}
+
+function getMessageKey(msg) {
+    return getRoomKeyForVersion(msg && msg.key_version);
+}
+
+function getReplyKey(msg) {
+    return getRoomKeyForVersion(msg && msg.reply_key_version);
+}
+
 function cleanupLazyDecryptObserver() {
     try {
         if (lazyDecryptObserver) lazyDecryptObserver.disconnect();
@@ -32,12 +48,14 @@ function cleanupLazyDecryptObserver() {
 }
 
 function decryptPendingInMessageEl(msgEl) {
-    if (!msgEl || !msgEl._messageData || !currentRoomKey || !window.E2E) return;
+    if (!msgEl || !msgEl._messageData || !window.E2E) return;
     var msg = msgEl._messageData;
+    var messageKey = getMessageKey(msg);
+    var replyKey = getReplyKey(msg);
 
     var bubble = msgEl.querySelector('.message-bubble[data-decrypt-pending="1"]');
-    if (bubble && msg.encrypted) {
-        var decrypted = E2E.decrypt(msg.content, currentRoomKey);
+    if (bubble && msg.encrypted && messageKey) {
+        var decrypted = E2E.decrypt(msg.content, messageKey);
         if (!decrypted) decrypted = '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
         var parsed = parseCodeBlocks(parseMentions(escapeHtml(decrypted)));
         bubble.innerHTML = parsed;
@@ -45,8 +63,8 @@ function decryptPendingInMessageEl(msgEl) {
     }
 
     var replyText = msgEl.querySelector('.reply-text[data-reply-decrypt-pending="1"]');
-    if (replyText && msg.reply_content) {
-        var decryptedReply = E2E.decrypt(msg.reply_content, currentRoomKey);
+    if (replyText && msg.reply_content && replyKey) {
+        var decryptedReply = E2E.decrypt(msg.reply_content, replyKey);
         if (!decryptedReply) decryptedReply = '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
         replyText.textContent = decryptedReply;
         replyText.removeAttribute('data-reply-decrypt-pending');
@@ -380,7 +398,7 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
                     : '') +
                 '</div>';
         } else {
-            if (msg.encrypted && currentRoomKey) {
+            if (msg.encrypted && getMessageKey(msg)) {
                 content = '<div class="message-bubble" data-decrypt-pending="1">[\uBCF5\uD638\uD654 \uC911...]</div>';
             } else {
                 var decrypted = msg.encrypted ? '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]' : msg.content;
@@ -412,11 +430,11 @@ function createMessageElement(msg, isGrouped, isFirstInGroup, isLastInGroup) {
             var replyText = msg.reply_content;
             var replyPending = false;
             
-            if (currentRoomKey && typeof msg.reply_content === 'string' && msg.reply_content.indexOf('v2:') === 0) {
+            if (getReplyKey(msg) && typeof msg.reply_content === 'string' && msg.reply_content.indexOf('v2:') === 0) {
                 replyText = '[\uBCF5\uD638\uD654 \uC911...]';
                 replyPending = true;
-            } else if (currentRoomKey) {
-                replyText = E2E.decrypt(msg.reply_content, currentRoomKey) || '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
+            } else if (getReplyKey(msg)) {
+                replyText = E2E.decrypt(msg.reply_content, getReplyKey(msg)) || '[\uC554\uD638\uD654\uB41C \uBA54\uC2DC\uC9C0]';
             }
             
             var replyTextHtml = replyPending
@@ -600,7 +618,8 @@ function editMessage(messageId) {
     }
 
     var msg = msgEl._messageData;
-    var currentContent = currentRoomKey && msg.encrypted ? (E2E.decrypt(msg.content, currentRoomKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : msg.content;
+    var messageKey = getMessageKey(msg);
+    var currentContent = messageKey && msg.encrypted ? (E2E.decrypt(msg.content, messageKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : msg.content;
 
     var newContent = prompt('메시지 수정:', currentContent);
     if (newContent === null || newContent.trim() === '' || newContent === currentContent) return;
@@ -694,8 +713,10 @@ function handleMessageEdited(data) {
     if (msgEl && msgEl._messageData) {
         msgEl._messageData.content = data.content;
         msgEl._messageData.encrypted = data.encrypted;
+        msgEl._messageData.key_version = data.key_version || msgEl._messageData.key_version;
 
-        var decrypted = currentRoomKey && data.encrypted ? (E2E.decrypt(data.content, currentRoomKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : data.content;
+        var messageKey = getMessageKey(msgEl._messageData);
+        var decrypted = messageKey && data.encrypted ? (E2E.decrypt(data.content, messageKey) || '[\xec\x95\x94\xed\x98\xb8\xed\x99\x94\xeb\x90\x9c \xeb\xa9\x94\xec\x8b\x9c\xec\xa7\x80]') : data.content;
 
         var bubble = msgEl.querySelector('.message-bubble');
         if (bubble) {
@@ -1333,8 +1354,9 @@ function handleContextMenuAction(action, msgData, messageEl) {
             if (typeof pinCurrentMessage === 'function') {
                 // 메시지 내용 복호화
                 var content = msgData.content;
-                if (typeof currentRoomKey !== 'undefined' && currentRoomKey && msgData.encrypted) {
-                    content = E2E.decrypt(msgData.content, currentRoomKey) || msgData.content;
+                var messageKey = getMessageKey(msgData);
+                if (messageKey && msgData.encrypted) {
+                    content = E2E.decrypt(msgData.content, messageKey) || msgData.content;
                 }
                 pinCurrentMessage(msgData.id, content);
             }

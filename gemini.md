@@ -1,222 +1,91 @@
 # GEMINI.md
 
-프로젝트: `intranet-messenger-main`  
-최종 업데이트: 2026-04-14
+Project: `intranet-messenger`
+Last updated: 2026-04-16
 
-## 1) 문서 목표
+## Session Bootstrap
 
-새 세션에서 Gemini가 즉시 작업 가능한 수준으로 프로젝트 컨텍스트를 제공한다.  
-특히 보안 계약, API 호환성, 테스트 기준선이 깨지지 않도록 가이드한다.
+Read these files before changing code:
 
-## 2) 시작 절차 (Session Bootstrap)
+1. `README.md`
+2. `claude.md`
+3. `feature_risk_review_2026-04-16.md`
+4. `docs/BACKUP_RUNBOOK.md`
+5. `pyrightconfig.json`
+6. `jsconfig.json`
+7. `eslint.config.mjs`
 
-1. `README.md` 읽기  
-2. `pyrightconfig.json` 읽기  
-3. `docs/BACKUP_RUNBOOK.md` 읽기  
-4. 본 문서(`gemini.md`) 기준으로 작업 계획 수립  
-5. 변경 전 영향 파일/테스트 명시
+## Must-Keep Contracts
 
-## 3) 현재 상태 스냅샷
+### Room security
 
-- 테스트 기준선:
-  - `pytest tests -q` => `97 passed`
-  - `pytest --maxfail=1` => `97 passed`
-- 타입 기준선:
-  - 현재 작업 환경에서는 Flask/PyQt/PyCryptodome 계열 import/type 정보 미설치 시 `pyright app gui` import resolution 실패 가능
-- 테스트 수집 안정화 완료:
-  - `pytest.ini` (`testpaths = tests`, `norecursedirs = backup dist build`)
-- 보안/계약 핵심 반영 완료:
-  - `upload_token` 플로우 도입
-  - `members` 표준 + `member_ids` 호환
-  - `/api/search` limit/offset clamp
-  - `/uploads` 인증 캐시 정책 강화
-  - UTF-8/BOM 정리 + encoding hygiene 테스트 추가
-- 구조 분할 기준선:
-  - Python runtime: `app/factory.py`, `app/bootstrap/*`, `app/http/*`, `app/socket_events/*`, `app/services/*`
-  - Web/GUI: `templates/partials/*`, `static/js/{core,services,features,bootstrap}/*`, `static/css/*.css`, `gui/window/main_window.py`
-  - shim 유지: `app/routes.py`, `app/sockets.py`, `gui/server_window.py`
-- 2026-04-14 계약 동기화:
-  - `room_list_updated`, `room_access_revoked` 소켓 이벤트 추가
-  - `send_message` 클라이언트 허용 타입은 `text|file|image`
-  - `reply_to`, pin `message_id`, `message_read.message_id`는 room-bound 검증
-  - `user_profile_updated`와 login/session/profile 응답은 `status_message` 포함
-  - 파일 저장소 삭제 시 linked attachment message는 `message_deleted` 흐름으로 정리
+- Membership changes rotate room keys.
+- Message visibility depends on `key_version` and `joined_key_version`.
+- `GET /api/rooms/<room_id>/messages` is expected to return room key metadata for the active member.
+- `room_security_updated` is the authoritative realtime refresh path.
 
-## 4) 절대 보존해야 할 계약
+### Room metadata
 
-## 4.1 `POST /api/rooms`
+- Server emits canonical `room_name_updated`.
+- Server emits canonical `admin_updated`.
+- Frontend should not simulate these events locally.
 
-- 표준: `members`
-- 호환: `member_ids`
-- 둘 다 전달 시 `members` 우선
-- 멤버 ID는 정수/중복 제거/자기 자신 포함
+### File lifecycle
 
-## 4.2 파일 업로드/전송
+- Uploads must flow through `upload_token`.
+- File deletion removes the linked attachment message.
+- Pin state must refresh when a pinned file is deleted.
+- Expired, unused upload-token files must be purged by maintenance code.
 
-- `POST /api/upload`:
-  - `room_id` 필수
-  - 응답: `upload_token` 포함
-- `send_message` 소켓:
-  - `file`/`image`는 `upload_token` 필수
-  - 토큰 검증 실패 시 메시지 저장 금지 + 에러 emit
-  - 클라이언트 `file_path`, `file_name` 신뢰 금지
+### Search behavior
 
-## 4.3 검색
+- Hidden/deleted attachment messages stay out of search.
+- Search results must respect per-member history visibility.
 
-- `GET /api/search`
-  - `limit`는 `1..200`으로 강제
-  - `offset`은 `0` 미만 금지
+## Frontend Tooling Expectations
 
-## 4.4 Poll/Pin
+- `npm run lint:js` checks first-party frontend scripts.
+- `npm run typecheck:js` runs `checkJs`-style validation for the shared frontend bridge/state files.
+- Vendor/minified assets are excluded.
+- Experimental ES module files are not part of the `checkJs` pass unless that scope is intentionally expanded.
 
-- `create_poll` 반환은 `poll_id`
-- pin 삭제는 `(success, error)` 구조분해로만 성공 판정
-- pin 생성은 `message_id`가 현재 room 소속인지 검증
-- 불일치 시 `400`, `code=invalid_pin_message`
+## Change Routine
 
-## 4.5 탈퇴 처리
+1. State the change scope and affected contracts.
+2. Update code.
+3. Update tests.
+4. Update docs if runtime, API, packaging, or recovery guidance changed.
+5. Run verification:
+   - `npm run check:js`
+   - `pytest tests -q`
+   - `pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q`
+   - `pyright app gui`
+6. Record exact blockers if the environment is missing dependencies.
 
-- `polls.created_by`를 NULL로 두지 않음
-- 재할당 우선순위: 관리자 > 일반 멤버
-- 재할당 대상 없으면 poll 삭제
+## Files Worth Checking First
 
-## 4.6 실시간 멤버십/프로필
+- `app/models/rooms.py`
+- `app/models/messages.py`
+- `app/http/rooms.py`
+- `app/http/messages.py`
+- `app/http/uploads.py`
+- `app/services/socket_broadcasts.py`
+- `app/upload_tokens.py`
+- `static/js/features/rooms/runtime.js`
+- `static/js/features/messages/runtime.js`
+- `static/js/services/socket/runtime.js`
+- `templates/partials/scripts.html`
+- `messenger.spec`
 
-- 사용자 전용 소켓 room(`user_<id>`) 사용
-- `room_list_updated`는 초대/방 생성/멤버십 변경 시 room list reload 트리거
-- `room_access_revoked`는 강퇴/나가기/탈퇴 시 현재 room을 닫는 신호
-- `user_profile_updated` payload는 `nickname`, `profile_image`, `status_message`를 포함
+## Prompt Template
 
-## 5) 보안 규칙
-
-1. 권한 없는 경로 접근 방지 로직 제거 금지
-2. 인증 리소스 캐시 완화 금지
-   - 일반 파일: `private, no-store`
-   - 프로필: `private, max-age=3600`
-3. 업로드 토큰 우회 가능 코드(path 직접 신뢰) 재도입 금지
-
-## 6) 구현 작업 포맷 (권장)
-
-작업 시 항상 아래 순서 유지:
-
-1. 변경 이유/영향 범위 명시
-2. 파일 수정
-3. 테스트 실행
-4. 결과 요약(실패 시 원인 분리: 코드/테스트/문서)
-5. README/감사문서 동기화 여부 확인
-6. shim 유지 여부와 smoke test 누락 여부 확인
-
-## 7) 권장 테스트 세트
-
-- 전체:
-  - `pytest tests -q`
-  - `pytest --maxfail=1`
-  - `pyright app gui`
-- 보안 회귀 우선:
-  - `tests/test_socket_upload_token.py`
-  - `tests/test_upload_tokens.py`
-  - `tests/test_uploads_authz.py`
-  - `tests/test_pins_delete_api.py`
-  - `tests/test_search_limit_clamp.py`
-  - `tests/test_rooms_member_ids_compat.py`
-- 구조 회귀 우선:
-  - `tests/test_route_map_smoke.py`
-  - `tests/test_template_assets_smoke.py`
-  - `tests/test_gui_import_smoke.py`
-
-## 8) 문서 동기화 원칙
-
-- 코드 계약 바뀌면 최소 다음 문서를 같이 수정:
-  - `README.md`
-  - `claude.md`
-  - `gemini.md`
-  - `docs/BACKUP_RUNBOOK.md` (운영 절차 영향 시)
-  - `pyrightconfig.json` / `tests/test_encoding_hygiene.py` (타입/인코딩 영향 시)
-- 기존 내용 삭제 대신, "업데이트 섹션"을 추가해 이력 보존.
-
-## 9) Gemini 세션 프롬프트 템플릿(권장)
-
-새 세션 시작 시:
-
-```
-Read `gemini.md`, `claude.md`, `README.md`, `pyrightconfig.json`, and `docs/BACKUP_RUNBOOK.md`.
-Keep current security/API contracts intact.
-When changing code, update docs and run:
-1) pyright
+```text
+Read README.md, claude.md, feature_risk_review_2026-04-16.md, docs/BACKUP_RUNBOOK.md, pyrightconfig.json, jsconfig.json, and eslint.config.mjs.
+Keep room-security rotation, authoritative socket events, upload-token cleanup, and search-visibility rules intact.
+When you change code, update tests and docs in the same patch set and run:
+1) npm run check:js
 2) pytest tests -q
-3) pytest --maxfail=1
-Then report changed files and test results.
+3) pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q
+4) pyright app gui
+Then summarize file changes, test results, and any remaining environment issues.
 ```
-
-## 10) 2026-02-25 정합성 동기화 메모
-
-- README/API/구조 분석 문서 기준선 동기화 완료
-- 테스트 기준선: `pytest -q` -> `71 passed`
-- `.spec` 보강 반영:
-  - 신규 모듈 hidden import: `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
-  - Redis 동적 import: `redis`, `redis.asyncio`
-  - 런북 데이터 포함: `docs/BACKUP_RUNBOOK.md`
-
-## 11) 2026-02-27 구조 리스크 개선 메모
-
-- 실행 기준 경로: `server.py` 단일화, `messenger_server.py`는 deprecated shim
-- 프론트 업로드 분리: `static/js/message-upload.js` 추가
-- 세션 저장소: Flask-Session `cachelib` 백엔드 사용
-- 인코딩 안정성: 서버 진입점 UTF-8 stdio 설정 적용
-
-## 12) 2026-03-15 Pylance/문서 정합성 메모
-
-- `pyrightconfig.json` 추가로 로컬 Pylance/Pyright 기준선을 고정
-- `pyright` 기준 `0 errors, 0 warnings`
-- `pytest -q` 기준 `86 passed`
-- UTF-8 BOM 제거와 깨진 한글 복구 반영
-- `tests/test_encoding_hygiene.py` 추가
-  - tracked text files의 BOM 검사
-  - mojibake 탐지
-  - intentional detector token allowlist 유지
-- 활성 문서 세트는 `README.md`, `claude.md`, `gemini.md`, `docs/BACKUP_RUNBOOK.md` 기준으로 맞춘다
-
-## 13) 2026-03-18 구조 분할 리팩토링 메모
-
-- Python runtime 분리
-  - `app/factory.py`
-  - `app/bootstrap/*`
-  - `app/http/*`
-  - `app/socket_events/*`
-  - `app/services/*`
-- Web/GUI 분리
-  - `templates/index.html` + `templates/partials/*`
-  - `static/js/core/*`, `static/js/services/*`, `static/js/features/*`, `static/js/bootstrap/*`
-  - `static/css/style.css` + 분할 stylesheet
-  - `gui/services/*`, `gui/widgets/*`, `gui/styles/*`, `gui/window/main_window.py`
-- 호환 shim
-  - `app/routes.py`
-  - `app/sockets.py`
-  - `gui/server_window.py`
-- 누락 방지 테스트
-  - `tests/test_route_map_smoke.py`
-  - `tests/test_template_assets_smoke.py`
-  - `tests/test_gui_import_smoke.py`
-- 최신 기준선
-  - `pytest -q` => `89 passed`
-  - `pyright app gui` => `0 errors, 0 warnings`
-
-## 14) 2026-04-14 기능 정합성 개선 메모
-
-- 테스트/런타임 기준선 복구
-  - 동적 경로 해석: `app/services/runtime_paths.py`
-  - mojibake 공용 검사: `app/services/text_hygiene.py`
-  - 테스트 temp는 workspace-local `.pytest_tmp/` 사용
-- 실시간 멤버십 정합성
-  - `user_<id>` room join
-  - `room_list_updated`, `room_access_revoked` 추가
-  - 강퇴/나가기/탈퇴 시 서버측 room leave 동기화
-- authoritative/room-bound 검증
-  - `type=system` 클라이언트 송신 차단
-  - `reply_to`, pin `message_id`, `message_read.message_id` room 검증
-- 프런트 계약 수정
-  - poll UI는 `closed`, `created_by` 기준
-  - `status_message` round-trip 및 clear
-  - 첨부 삭제 시 linked message를 `message_deleted`로 정리
-- 최신 기준선
-  - `pytest -q` => `97 passed`

@@ -5,6 +5,10 @@
 
 import importlib.util
 
+# Reviewed on 2026-04-16 for room-key rotation, upload-token cleanup, and
+# frontend/doc tooling sync. The current hiddenimports and packaged data list
+# already cover the active runtime-split modules used by this baseline.
+
 block_cipher = None
 
 

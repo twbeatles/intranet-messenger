@@ -1,340 +1,131 @@
 # Intranet Messenger
 
-내부망 전용 메신저 서버(Flask + Socket.IO)입니다.
+Updated: 2026-04-16
 
-- 기준일: 2026-04-14
-- 기준 브랜치: `main`
-- 최신 검증: `pytest -q` -> `97 passed`
-- 참고: `pyright app gui`는 현재 작업 환경에서 Flask/PyQt/PyCryptodome 계열 패키지/타입 정보 미설치로 import resolution 실패
+Intranet Messenger is a Flask + Socket.IO chat application with a web UI, optional desktop packaging via PyInstaller, end-to-end message encryption support, and room/file/poll collaboration features.
 
-## 1. 프로젝트 상태
+## What Changed In The Current Baseline
 
-이번 주기에서 보안/구조 개선 항목을 반영했습니다.
+- Room membership changes now rotate room encryption keys.
+- Message visibility is scoped by the member's joined key version.
+- Room name/admin updates are emitted as server-authoritative socket events.
+- Deleting a pinned file now also refreshes the pin banner state.
+- Deleted attachment messages are hidden from search results.
+- Expired and unreferenced upload-token files are purged by maintenance workers.
+- Frontend JavaScript now has repo-local lint and typecheck commands.
 
-- R-01 ~ R-11 대응 코드 반영
-- OIDC(옵션), AV 스캔 파이프라인(옵션), Redis state store(옵션) 반영
-- 관리자 감사로그 API 반영
-- `/api/config` 기반 프론트-서버 계약 단일화
-- Python runtime 분리 반영: `app/factory.py`, `app/bootstrap/`, `app/http/`, `app/socket_events/`, `app/services/`
-- Web/GUI presentation 분리 반영: `templates/partials/`, `static/js/{core,services,features,bootstrap}`, `static/css/*.css`, `gui/{services,widgets,styles,window}`
-- 로컬 수동 백업/복구/검증 스크립트 + 런북 추가
-- Pylance/Pyright 타입 정리 완료
-- UTF-8/BOM 정리 및 인코딩 hygiene 회귀 테스트 추가
+## Repository Layout
 
-## 2. 핵심 기능
+- `server.py`: runtime entry point for local server execution.
+- `messenger_server.py`: compatibility shim only; do not add new runtime logic here.
+- `app/factory.py`: Flask app factory.
+- `app/bootstrap/`: runtime/bootstrap wiring.
+- `app/http/`: HTTP routes and API handlers.
+- `app/socket_events/`: Socket.IO event handlers.
+- `app/services/`: shared runtime services and broadcast helpers.
+- `app/models/`: database access and domain logic.
+- `static/js/core/`, `static/js/services/`, `static/js/features/`, `static/js/bootstrap/`: primary frontend sources.
+- `static/js/*.js`: compatibility exports for the runtime-split frontend.
+- `templates/partials/`: HTML partials loaded by `templates/index.html`.
+- `docs/BACKUP_RUNBOOK.md`: backup, restore, and recovery checks.
+- `feature_risk_review_2026-04-16.md`: implementation-focused follow-up for the April 16 risk review.
 
-- 실시간 채팅: Socket.IO 이벤트 기반 메시지 전송
-- 1:1/그룹 방, 읽음 상태, 리액션, 고정 메시지, 투표
-- 방 멤버십 실시간 동기화: `room_list_updated`, `room_access_revoked`
-- 파일 업로드 및 다운로드 권한 제어
-- 세션 토큰 검증(HTTP + Socket) 기반 세션 무효화
-- 레이트리밋(로그인/가입/업로드/고급검색/소켓 전송)
-- 관리자 감사로그(JSON/CSV 조회)
+## Current Security And API Contracts
 
-## 3. 시스템 구성
+### 1. Membership-scoped room encryption
 
-- 백엔드: Flask, Flask-SocketIO, SQLite
-- 프론트: Vanilla JS
-- 활성 구조:
-  - 앱 팩토리/부트스트랩: `app/factory.py`, `app/bootstrap/*`
-  - HTTP 블루프린트: `app/http/*`
-  - Socket.IO 이벤트: `app/socket_events/*`
-  - 서비스 계층: `app/services/*`
-  - 호환 shim: `app/routes.py`, `app/sockets.py`, `gui/server_window.py`
-  - 템플릿 분할: `templates/index.html` + `templates/partials/*`
-  - 프런트 런타임: `static/js/core/*`, `static/js/services/*`, `static/js/features/*`, `static/js/bootstrap/*`
-  - GUI 조립: `gui/window/main_window.py`
-- 옵션 백엔드:
-  - Redis: 레이트리밋 저장소 + 상태 저장소
-  - OIDC: 사내 SSO 연동
-  - ClamAV: 업로드 파일 비동기 스캔
+- `POST /api/rooms/<room_id>/members`, `POST /api/rooms/<room_id>/leave`, kick flows, and account deletion flows rotate the room key for surviving members.
+- `GET /api/rooms/<room_id>/messages` now returns:
+  - `encryption_key`
+  - `encryption_keys`
+  - `key_version`
+  - `member_key_version`
+- The `room_security_updated` socket event is the canonical frontend trigger for key refresh.
+- Newly invited members must not see messages older than their `joined_key_version`.
 
-## 4. 요구사항
+### 2. Authoritative room metadata updates
 
-- Python 3.9+
-- 권장: Python 3.11+
-- 설치:
+- Room name changes emit `room_name_updated` from the server.
+- Admin changes emit `admin_updated` from the server.
+- Frontend code should not forge these events optimistically.
+
+### 3. File upload and deletion safety
+
+- `POST /api/upload` issues one-time `upload_token` values.
+- File and image messages must be sent through the validated upload-token path.
+- `DELETE /api/rooms/<room_id>/files/<file_id>` removes the linked attachment message and emits the same deletion flow the chat UI already understands.
+- If the deleted file was pinned, the server also emits `pin_updated`.
+
+### 4. Search visibility rules
+
+- Deleted attachment messages must not reappear in basic or advanced search.
+- Search responses must also respect membership visibility rules tied to `key_version`.
+
+## Local Setup
+
+### Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 5. 실행
+### Frontend tooling dependencies
 
-개발/로컬 실행:
+```bash
+npm install
+```
+
+### Run the app
 
 ```bash
 python server.py --cli
 ```
 
-실행 기준 경로:
-
-- 표준 진입점: `server.py`
-- 레거시 호환 파일: `messenger_server.py` (deprecated shim, 신규 로직 추가 금지)
-
-브라우저 접속:
+Default local URL:
 
 - `http://localhost:5000`
 
-## 6. 주요 설정값
+## Verification Commands
 
-`config.py` 및 환경변수로 제어합니다.
-
-- 서버
-  - `DEFAULT_PORT` (기본 5000)
-  - `SESSION_TIMEOUT_HOURS` (기본 72)
-- 업로드
-  - `MAX_CONTENT_LENGTH` (기본 16MB)
-  - `UPLOAD_FOLDER`
-- 레이트리밋/상태 저장
-  - `RATE_LIMIT_STORAGE_URI` (기본 `memory://`)
-  - `STATE_STORE_REDIS_URL` (기본 공백)
-  - `SOCKET_SEND_MESSAGE_PER_MINUTE` (기본 100)
-  - `SOCKET_PIN_UPDATED_PER_MINUTE` (기본 30)
-- OIDC(옵션)
-  - `FEATURE_OIDC_ENABLED`
-  - `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` 등
-  - `OIDC_JWKS_URL` (기본 공백, 미설정 시 well-known `jwks_uri` 사용)
-  - `OIDC_JWKS_CACHE_SECONDS` (기본 300)
-- AV 스캔(옵션)
-  - `FEATURE_AV_SCAN_ENABLED`
-  - `AV_CLAMD_HOST`, `AV_CLAMD_PORT`, `AV_SCAN_TIMEOUT_SECONDS`
-- 보존 정책
-  - `RETENTION_DAYS` (기본 0 = 비활성)
-
-## 7. 공개 API 계약(핵심)
-
-### 7.1 런타임 설정
-
-- `GET /api/config`
-- 응답 필드:
-  - `upload.max_size_bytes`
-  - `rate_limits.{login,register,upload,search_advanced,socket_send_message,socket_pin_updated}`
-  - `features.{oidc,av,redis}`
-
-### 7.2 파일 업로드
-
-- `POST /api/upload`
-- 필수: `file`, `room_id`
-- AV 비활성:
-  - `scan_status=clean`
-  - `upload_token`, `file_path`, `file_name`
-- AV 활성:
-  - `scan_status=pending`
-  - `job_id`
-
-- `GET /api/upload/jobs/<job_id>`
-- 상태: `pending|clean|infected|error`
-- `clean` 상태에서만 `upload_token` 반환
-
-### 7.3 투표 무결성
-
-- `POST /api/polls/<poll_id>/vote`
-- `option_id`가 해당 `poll_id` 소속이 아니면 `400`
-- 표준 오류 필드: `error`, `code`
-
-### 7.4 OIDC
-
-- `GET /api/auth/providers`
-- `GET /auth/oidc/login`
-- `GET /auth/oidc/callback`
-- 정책: 첫 로그인 시 로컬 계정 자동 프로비저닝
-- 검증: `id_token` 서명(JWKS), `iss`, `aud`, `exp`, `nonce` 검증 실패 시 로그인 거부
-
-### 7.5 관리자 감사로그
-
-- `GET /api/rooms/<room_id>/admin-audit-logs?format=json|csv`
-
-### 7.6 소켓/프로필/Pin 계약
-
-- 사용자 대상 소켓 이벤트
-  - `room_list_updated`: `{ reason }`
-  - `room_access_revoked`: `{ room_id, reason }`
-- `user_profile_updated`
-  - `status_message`를 포함한다
-- `POST /api/rooms/<room_id>/pins`
-  - 다른 room 소속 `message_id`를 보내면 `400`
-  - 오류 코드: `invalid_pin_message`
-- 파일 저장소 삭제
-  - `DELETE /api/rooms/<room_id>/files/<file_id>`
-  - linked attachment message가 있으면 기존 `message_deleted` 소켓 계약으로 타임라인에서도 제거된다
-
-## 8. 레이트리밋 정책
-
-- `POST /api/login`: `10/min`
-- `POST /api/register`: `5/min`
-- `POST /api/upload`: `10/min`
-- `POST /api/search/advanced`: `30/min`
-- Socket `send_message`: 사용자 기준 `100/min` (기본)
-- Socket `pin_updated`: 사용자 기준 `30/min` (기본)
-
-고급검색 입력 정책:
-- `POST /api/search/advanced`에서 `limit`/`offset`이 정수가 아니면 `400`
-- 오류 코드: `invalid_limit`, `invalid_offset`
-
-방 나가기 API 응답:
-- `POST /api/rooms/<room_id>/leave`
-- 공통: `success: true`
-- 상태 필드:
-  - `left: true`, `already_left: false` (실제 나감)
-  - `left: false`, `already_left: true` (이미 비멤버)
-
-## 9. 보안/운영 메모
-
-- 세션 무효화
-  - 비밀번호 변경 시 DB `session_token` 갱신
-  - HTTP(`before_request`) + Socket(`connect`/핵심 이벤트) 검증
-- 업로드 토큰
-  - 1회성 토큰, TTL 기반 검증
-- 상태 저장소 강등
-  - Redis 장애 시 메모리 저장소로 자동 강등
-
-## 10. 백업/복구/검증
-
-상세 절차는 [docs/BACKUP_RUNBOOK.md](docs/BACKUP_RUNBOOK.md)를 참고합니다.
-
-- 백업
+### Python checks
 
 ```bash
-python scripts/backup_local.py --label before_release
-```
-
-- 복구
-
-```bash
-python scripts/restore_local.py <backup_dir> --yes
-```
-
-- 복구 검증
-
-```bash
-python scripts/verify_restore.py
-```
-
-## 11. 테스트
-
-전체 테스트:
-
-```bash
-pytest -q
-```
-
-현재 기준선:
-
-- `97 passed` (2026-04-14)
-- 스모크 누락 방지 테스트 포함:
-  - `tests/test_route_map_smoke.py`
-  - `tests/test_template_assets_smoke.py`
-  - `tests/test_gui_import_smoke.py`
-
-타입/인코딩 검증:
-
-```bash
+pytest tests -q
+pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q
 pyright app gui
-pytest tests/test_encoding_hygiene.py -q
 ```
 
-관련 파일:
+### Frontend checks
 
-- `pyrightconfig.json`
-- `tests/test_encoding_hygiene.py`
+```bash
+npm run lint:js
+npm run typecheck:js
+npm run check:js
+```
 
-## 12. PyInstaller 빌드
+Notes:
 
-`messenger.spec` 기준으로 빌드합니다.
+- `jsconfig.json` covers the shared frontend bridge/state files that are most sensitive to load-order and global exposure regressions.
+- Vendor/minified assets are excluded from lint/typecheck.
+- Experimental ES module files under `static/js/experimental/` are linted but excluded from the TypeScript-style `checkJs` pass.
+
+## Packaging
+
+Build with PyInstaller:
 
 ```bash
 pyinstaller messenger.spec --clean
 ```
 
-이번 갱신에서 `.spec`에 아래 누락 위험을 반영했습니다.
+The reviewed `messenger.spec` already includes the runtime-split Python packages, socket broadcast helpers, upload-token helpers, and backup documentation needed by the current app layout.
 
-- 신규 모듈 hidden import 추가:
-  - `app.state_store`, `app.upload_scan`, `app.oidc`, `app.models.admin_audit`
-  - `app.services.runtime_paths`, `app.services.text_hygiene`
-- 구조 분할 패키지 hidden import 추가:
-  - `app.bootstrap.*`, `app.http.*`, `app.socket_events.*`, `app.services.*`
-  - `gui.services.*`, `gui.styles.*`, `gui.widgets.*`, `gui.window.*`
-- Redis 동적 import 반영:
-  - `redis`, `redis.asyncio`는 설치된 경우에만 optional hidden import로 포함
-- 선택 비동기 런타임 반영:
-  - `eventlet`, `engineio.async_drivers.eventlet`
-- OIDC/JWKS 검증 경로 반영:
-  - `jwt`, `jwt.algorithms`, `jwt.api_jwk`, `jwt.jwks_client`, `jwt.exceptions`
-- 인증서 생성 경로 반영:
-  - `certs.generate_cert`
-  - `cryptography.x509`, `cryptography.x509.oid`
-  - `cryptography.hazmat.backends`, `cryptography.hazmat.primitives`, `cryptography.hazmat.primitives.asymmetric`
-- 런북 파일 포함:
-  - `docs/BACKUP_RUNBOOK.md`
+## Documentation Index
 
-## 13. 관련 문서
-
-- [claude.md](claude.md)
-- [gemini.md](gemini.md)
-- [docs/BACKUP_RUNBOOK.md](docs/BACKUP_RUNBOOK.md)
-- [pyrightconfig.json](pyrightconfig.json)
-
-## 14. 2026-02-25 변경 요약
-
-- 리스크 R-01~R-11 대응 구현 반영
-- 추가 기능 7개(옵션 기반) 구현 반영
-- 테스트/문서/운영 런북 동기화 완료
-
-## 15. 2026-02-27 정합성 업데이트
-
-- 구조 리스크 개선 반영:
-  - `messenger_server.py` deprecated shim 전환(실행 기준 `server.py` 단일화)
-  - 파일 업로드 책임 분리(`static/js/message-upload.js`)
-  - 서버 진입점 UTF-8 stdio 고정 + 소켓 오류 메시지 정규화
-  - Flask-Session deprecation 대응(`cachelib` 백엔드 전환)
-- `.spec` 점검 결과:
-  - `static` 디렉터리 포함으로 신규 프론트 파일(`message-upload.js`)은 추가 설정 없이 패키징 포함
-  - `cachelib.file` hidden import 이미 반영됨(유지)
-
-## 16. 2026-02-28 기능 리스크 반영 업데이트
-
-- 서버 authoritative 소켓 계약 강화:
-  - `room_members_updated`: room 정수/멤버십 검증 필수
-  - `profile_updated`, `reaction_updated`, `poll_created`, `poll_updated`: 클라이언트 payload 위조값 무시, DB canonical 데이터 기준 브로드캐스트
-  - `pin_updated`: 시스템 메시지 생성 제거, 멤버십 검증 + rate limit 적용, room 신호만 브로드캐스트
-- 핀 생성/삭제 경로 정리:
-  - 시스템 메시지 생성은 `/api/rooms/<room_id>/pins` 생성/삭제 성공 경로에서만 수행
-  - 서버가 `new_message`, `pin_updated`를 직접 emit
-- HTTP 하드닝:
-  - `/api/search/advanced`의 `limit`, `offset` 타입 오류를 `400 + code`로 표준화
-  - `/uploads/<path>` 경로 검증을 `os.path.commonpath` 기반으로 강화
-  - `/api/rooms/<room_id>/leave` idempotent 응답 필드(`left`, `already_left`) 추가
-- OIDC strict 검증:
-  - `id_token` 필수
-  - JWKS 서명 검증 + `iss`, `aud`, `exp`, `nonce` 검증
-  - callback에서 `state`, `nonce` one-time pop 처리
-
-## 17. 2026-03-15 Pylance/인코딩 정합성 업데이트
-
-- `pyrightconfig.json` 추가로 리포지토리 로컬 타입체크 기준선 고정
-- `pyright` 기준 `0 errors, 0 warnings` 달성
-- `pytest -q` 기준 `86 passed`
-- UTF-8 BOM 제거 및 깨진 한글 복구
-- `tests/test_encoding_hygiene.py` 추가
-  - tracked text files의 UTF-8 without BOM 검사
-  - mojibake 탐지
-  - 의도적 detector token은 `app/__init__.py`, `app/sockets.py`만 allowlist
-
-## 18. 2026-03-18 단계형 코드 분할 리팩토링 업데이트
-
-- Python runtime을 `factory/bootstrap/http/socket_events/services` 계층으로 분리하고, 기존 공개 import는 shim으로 유지했다
-- `app/routes.py`, `app/sockets.py`, `gui/server_window.py`는 외부 계약 유지를 위한 facade 역할만 맡긴다
-- `templates/index.html`을 shell + partial 구조로 분리하고, `static/js`를 `core/services/features/bootstrap` 구조로 재배치했다
-- `static/css/style.css`는 manifest로 유지하면서 `tokens/base/layout/components/features/responsive/themes` 파일로 분리했다
-- GUI는 `process_control`, `settings_service`, `toast`, `qss`, `main_window`로 분할했다
-- baseline 정리:
-  - 인코딩 hygiene 테스트의 stray control char 정리
-  - AV 업로드 pending 경로의 Windows cross-drive 처리 보강
-- 회귀 방지 테스트 추가:
-  - `tests/test_route_map_smoke.py`
-  - `tests/test_template_assets_smoke.py`
-  - `tests/test_gui_import_smoke.py`
-- 최신 기준선:
-  - `pytest -q` => `89 passed`
-  - `pyright app gui` => `0 errors, 0 warnings`
+- `README.md`
+- `claude.md`
+- `gemini.md`
+- `docs/BACKUP_RUNBOOK.md`
+- `feature_risk_review_2026-04-16.md`
+- `pyrightconfig.json`
+- `jsconfig.json`
+- `eslint.config.mjs`

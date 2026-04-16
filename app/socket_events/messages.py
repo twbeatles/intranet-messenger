@@ -44,7 +44,7 @@ def register_message_events(socketio):
 
             room_id = data.get("room_id")
             if not isinstance(room_id, int) or room_id <= 0:
-                emit_error("잘못된 대화방 ID입니다.")
+                emit_error("잘못된 방 ID입니다.")
                 return
 
             content = data.get("content", "")
@@ -66,20 +66,30 @@ def register_message_events(socketio):
 
             user_rooms = get_user_room_ids(user_id)
             if room_id not in user_rooms and not is_room_member(room_id, user_id):
-                emit_error("대화방 접근 권한이 없습니다.")
+                emit_error("방 접근 권한이 없습니다.")
                 return
             if reply_to is not None and get_message_room_id(reply_to) != room_id:
-                emit_error("답장 대상 메시지가 현재 대화방에 없습니다.")
+                emit_error("답장 대상 메시지가 현재 방에 없습니다.")
                 return
 
             if message_type in ("file", "image"):
                 token = data.get("upload_token")
-                reason = get_upload_token_failure_reason(token=token, user_id=user_id, room_id=room_id, expected_type=message_type)
+                reason = get_upload_token_failure_reason(
+                    token=token,
+                    user_id=user_id,
+                    room_id=room_id,
+                    expected_type=message_type,
+                )
                 if reason:
                     emit_error(reason)
                     return
 
-                token_data = consume_upload_token(token=token, user_id=user_id, room_id=room_id, expected_type=message_type)
+                token_data = consume_upload_token(
+                    token=token,
+                    user_id=user_id,
+                    room_id=room_id,
+                    expected_type=message_type,
+                )
                 if not token_data:
                     emit_error("업로드 토큰이 이미 사용되었거나 만료되었습니다.")
                     return
@@ -113,13 +123,17 @@ def register_message_events(socketio):
             )
             if not message:
                 if message_type in ("file", "image") and file_path:
-                    logger.warning(f"Potential orphan upload file after message failure: room={room_id}, user={user_id}, path={file_path}")
+                    logger.warning(
+                        "Potential orphan upload file after message failure: room=%s, user=%s, path=%s",
+                        room_id,
+                        user_id,
+                        file_path,
+                    )
                     safe_file_delete(os.path.join(get_upload_folder(), file_path))
                 emit_error("메시지 저장에 실패했습니다.")
                 return
 
             message["unread_count"] = get_unread_count(room_id, message["id"], user_id)
-
             emit("new_message", message, to=f"room_{room_id}")
         except Exception as exc:
             logger.error(f"Send message error: {exc}\n{traceback.format_exc()}")
@@ -137,9 +151,13 @@ def register_message_events(socketio):
                 emit_error("잘못된 요청입니다.")
                 return
 
-            success, error_msg, room_id = edit_message(message_id, session["user_id"], content)
+            success, error_msg, room_id, key_version = edit_message(message_id, session["user_id"], content, encrypted)
             if success:
-                emit("message_edited", {"message_id": message_id, "content": content, "encrypted": encrypted}, to=f"room_{room_id}")
+                emit(
+                    "message_edited",
+                    {"message_id": message_id, "content": content, "encrypted": encrypted, "key_version": key_version},
+                    to=f"room_{room_id}",
+                )
             else:
                 emit_error(error_msg)
         except Exception as exc:
@@ -180,6 +198,10 @@ def register_message_events(socketio):
             if get_message_room_id(message_id) != room_id:
                 emit_error("Invalid request.")
                 return
-            emit("reaction_updated", {"room_id": room_id, "message_id": message_id, "reactions": get_message_reactions(message_id)}, to=f"room_{room_id}")
+            emit(
+                "reaction_updated",
+                {"room_id": room_id, "message_id": message_id, "reactions": get_message_reactions(message_id)},
+                to=f"room_{room_id}",
+            )
         except Exception as exc:
             logger.error(f"Reaction update broadcast error: {exc}")
