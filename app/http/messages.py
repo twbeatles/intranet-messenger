@@ -15,6 +15,7 @@ from app.http.common import parse_json_payload, require_login
 from app.http.route_deps import get_routes_shim
 from app.models import (
     advanced_search,
+    can_user_see_message,
     delete_message,
     edit_message,
     get_message_reactions,
@@ -169,7 +170,7 @@ def get_reactions(message_id: int):
         return login_error
 
     room_id = get_message_room_id(message_id)
-    if room_id is None or not is_room_member(room_id, session["user_id"]):
+    if room_id is None or not is_room_member(room_id, session["user_id"]) or not can_user_see_message(room_id, session["user_id"], message_id):
         return jsonify({"error": "방 접근 권한이 없습니다."}), 403
     return jsonify(get_message_reactions(message_id))
 
@@ -181,7 +182,7 @@ def add_reaction_route(message_id: int):
         return login_error
 
     room_id = get_message_room_id(message_id)
-    if room_id is None or not is_room_member(room_id, session["user_id"]):
+    if room_id is None or not is_room_member(room_id, session["user_id"]) or not can_user_see_message(room_id, session["user_id"], message_id):
         return jsonify({"error": "방 접근 권한이 없습니다."}), 403
 
     data, error_response = parse_json_payload()

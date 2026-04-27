@@ -1,7 +1,7 @@
 # GEMINI.md
 
 Project: `intranet-messenger`
-Last updated: 2026-04-16
+Last updated: 2026-04-27
 
 ## Session Bootstrap
 
@@ -9,7 +9,7 @@ Read these files before changing code:
 
 1. `README.md`
 2. `claude.md`
-3. `feature_risk_review_2026-04-16.md`
+3. `implementation_gap_review_2026-04-27.md`
 4. `docs/BACKUP_RUNBOOK.md`
 5. `pyrightconfig.json`
 6. `jsconfig.json`
@@ -21,6 +21,7 @@ Read these files before changing code:
 
 - Membership changes rotate room keys.
 - Message visibility depends on `key_version` and `joined_key_version`.
+- Message-adjacent APIs for files, pins, reactions, replies, read receipts, downloads, and edit/delete actions must use the same visibility rule.
 - `GET /api/rooms/<room_id>/messages` is expected to return room key metadata for the active member.
 - `room_security_updated` is the authoritative realtime refresh path.
 
@@ -29,6 +30,7 @@ Read these files before changing code:
 - Server emits canonical `room_name_updated`.
 - Server emits canonical `admin_updated`.
 - Frontend should not simulate these events locally.
+- Clients must not mutate room metadata by emitting those notification event names.
 
 ### File lifecycle
 
@@ -76,11 +78,12 @@ Read these files before changing code:
 - `static/js/services/socket/runtime.js`
 - `templates/partials/scripts.html`
 - `messenger.spec`
+- `implementation_gap_review_2026-04-27.md`
 
 ## Prompt Template
 
 ```text
-Read README.md, claude.md, feature_risk_review_2026-04-16.md, docs/BACKUP_RUNBOOK.md, pyrightconfig.json, jsconfig.json, and eslint.config.mjs.
+Read README.md, claude.md, implementation_gap_review_2026-04-27.md, docs/BACKUP_RUNBOOK.md, pyrightconfig.json, jsconfig.json, and eslint.config.mjs.
 Keep room-security rotation, authoritative socket events, upload-token cleanup, and search-visibility rules intact.
 When you change code, update tests and docs in the same patch set and run:
 1) npm run check:js

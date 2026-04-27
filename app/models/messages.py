@@ -264,11 +264,44 @@ def get_message_room_id(message_id: int):
         return None
 
 
+def can_user_see_message(room_id: int, user_id: int, message_id: int) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            '''
+                SELECT 1
+                FROM messages m
+                JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = ?
+                WHERE m.id = ?
+                  AND m.room_id = ?
+                  AND COALESCE(m.key_version, 1) >= COALESCE(rm.joined_key_version, 1)
+                  AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
+                LIMIT 1
+            ''',
+            (user_id, message_id, room_id),
+        )
+        return cursor.fetchone() is not None
+    except Exception as exc:
+        logger.error(f"Check message visibility error: {exc}")
+        return False
+
+
 def delete_message(message_id, user_id):
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT sender_id, room_id, file_path FROM messages WHERE id = ?', (message_id,))
+        cursor.execute(
+            '''
+                SELECT m.sender_id, m.room_id, m.file_path
+                FROM messages m
+                JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = ?
+                WHERE m.id = ?
+                  AND COALESCE(m.key_version, 1) >= COALESCE(rm.joined_key_version, 1)
+                  AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
+            ''',
+            (user_id, message_id),
+        )
         msg = cursor.fetchone()
         if not msg or msg['sender_id'] != user_id:
             return False, "삭제 권한이 없습니다."
@@ -297,8 +330,16 @@ def edit_message(message_id, user_id, new_content, encrypted=None):
     cursor = conn.cursor()
     try:
         cursor.execute(
-            'SELECT sender_id, room_id, COALESCE(encrypted, 0) AS encrypted, COALESCE(key_version, 1) AS key_version FROM messages WHERE id = ?',
-            (message_id,),
+            '''
+                SELECT m.sender_id, m.room_id, COALESCE(m.encrypted, 0) AS encrypted,
+                       COALESCE(m.key_version, 1) AS key_version
+                FROM messages m
+                JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = ?
+                WHERE m.id = ?
+                  AND COALESCE(m.key_version, 1) >= COALESCE(rm.joined_key_version, 1)
+                  AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
+            ''',
+            (user_id, message_id),
         )
         msg = cursor.fetchone()
         if not msg or msg['sender_id'] != user_id:
@@ -699,21 +740,35 @@ def unpin_message(pin_id: int, user_id: int, room_id: int | None = None):
         return False, "공지 해제 중 오류가 발생했습니다."
 
 
-def get_pinned_messages(room_id: int):
+def get_pinned_messages(room_id: int, viewer_user_id: int | None = None):
     conn = get_db()
     cursor = conn.cursor()
     try:
+        joins = [
+            'JOIN users u ON pm.pinned_by = u.id',
+            'LEFT JOIN messages m ON pm.message_id = m.id',
+        ]
+        conditions = ['pm.room_id = ?']
+        join_params: list[object] = []
+        where_params: list[object] = [room_id]
+        if viewer_user_id is not None:
+            joins.append('JOIN room_members rm ON rm.room_id = pm.room_id AND rm.user_id = ?')
+            join_params.append(viewer_user_id)
+            conditions.append(
+                "(pm.message_id IS NULL OR (m.id IS NOT NULL "
+                "AND COALESCE(m.key_version, 1) >= COALESCE(rm.joined_key_version, 1) "
+                "AND " + _HIDDEN_DELETED_ATTACHMENT_WHERE + "))"
+            )
         cursor.execute(
-            '''
+            f'''
                 SELECT pm.*, u.nickname AS pinned_by_name,
                        m.content AS message_content, m.sender_id AS message_sender_id
                 FROM pinned_messages pm
-                JOIN users u ON pm.pinned_by = u.id
-                LEFT JOIN messages m ON pm.message_id = m.id
-                WHERE pm.room_id = ?
+                {' '.join(joins)}
+                WHERE {' AND '.join(conditions)}
                 ORDER BY pm.pinned_at DESC
             ''',
-            (room_id,),
+            join_params + where_params,
         )
         return [dict(pin) for pin in cursor.fetchall()]
     except Exception as exc:

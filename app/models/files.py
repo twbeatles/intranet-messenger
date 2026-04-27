@@ -40,32 +40,42 @@ def add_room_file(
         return None
 
 
-def get_room_files(room_id: int, file_type: str | None = None):
+def get_room_files(room_id: int, file_type: str | None = None, viewer_user_id: int | None = None):
     conn = get_db()
     cursor = conn.cursor()
     try:
+        joins = [
+            'JOIN users u ON rf.uploaded_by = u.id',
+        ]
+        conditions = ['rf.room_id = ?']
+        join_params: list[object] = []
+        where_params: list[object] = [room_id]
+        if viewer_user_id is not None:
+            joins.extend(
+                [
+                    'JOIN room_members rm ON rm.room_id = rf.room_id AND rm.user_id = ?',
+                    'LEFT JOIN messages m ON m.id = rf.message_id',
+                ]
+            )
+            join_params.append(viewer_user_id)
+            conditions.append(
+                "(rf.message_id IS NULL OR (m.id IS NOT NULL "
+                "AND COALESCE(m.key_version, 1) >= COALESCE(rm.joined_key_version, 1) "
+                "AND NOT (m.message_type IN ('file', 'image') AND m.file_path IS NULL AND m.content = '[삭제된 메시지]')))"
+            )
         if file_type:
-            cursor.execute(
-                '''
-                    SELECT rf.*, u.nickname AS uploader_name
-                    FROM room_files rf
-                    JOIN users u ON rf.uploaded_by = u.id
-                    WHERE rf.room_id = ? AND rf.file_type = ?
-                    ORDER BY rf.uploaded_at DESC
-                ''',
-                (room_id, file_type),
-            )
-        else:
-            cursor.execute(
-                '''
-                    SELECT rf.*, u.nickname AS uploader_name
-                    FROM room_files rf
-                    JOIN users u ON rf.uploaded_by = u.id
-                    WHERE rf.room_id = ?
-                    ORDER BY rf.uploaded_at DESC
-                ''',
-                (room_id,),
-            )
+            conditions.append('rf.file_type = ?')
+            where_params.append(file_type)
+        cursor.execute(
+            f'''
+                SELECT rf.*, u.nickname AS uploader_name
+                FROM room_files rf
+                {' '.join(joins)}
+                WHERE {' AND '.join(conditions)}
+                ORDER BY rf.uploaded_at DESC
+            ''',
+            join_params + where_params,
+        )
         return [dict(file_row) for file_row in cursor.fetchall()]
     except Exception as exc:
         logger.error(f"Get room files error: {exc}")

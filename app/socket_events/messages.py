@@ -13,6 +13,7 @@ from flask import session
 from flask_socketio import emit
 
 from app.models import (
+    can_user_see_message,
     create_message,
     delete_message,
     edit_message,
@@ -68,7 +69,9 @@ def register_message_events(socketio):
             if room_id not in user_rooms and not is_room_member(room_id, user_id):
                 emit_error("방 접근 권한이 없습니다.")
                 return
-            if reply_to is not None and get_message_room_id(reply_to) != room_id:
+            if reply_to is not None and (
+                get_message_room_id(reply_to) != room_id or not can_user_see_message(room_id, user_id, reply_to)
+            ):
                 emit_error("답장 대상 메시지가 현재 방에 없습니다.")
                 return
 
@@ -195,7 +198,7 @@ def register_message_events(socketio):
             if not is_room_member(room_id, session["user_id"]):
                 emit_error("Room access denied.")
                 return
-            if get_message_room_id(message_id) != room_id:
+            if get_message_room_id(message_id) != room_id or not can_user_see_message(room_id, session["user_id"], message_id):
                 emit_error("Invalid request.")
                 return
             emit(

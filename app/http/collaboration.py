@@ -13,6 +13,7 @@ from app.extensions import limiter
 from app.http.common import json_error, parse_int_from_json, parse_json_payload, require_login
 from app.http.route_deps import get_routes_shim
 from app.models import (
+    can_user_see_message,
     close_poll,
     create_poll,
     get_pinned_messages,
@@ -39,7 +40,7 @@ def get_room_pins(room_id: int):
         return login_error
     if not is_room_member(room_id, session["user_id"]):
         return jsonify({"error": "접근 권한이 없습니다."}), 403
-    return jsonify(get_pinned_messages(room_id))
+    return jsonify(get_pinned_messages(room_id, viewer_user_id=session["user_id"]))
 
 
 @collaboration_bp.post("/api/rooms/<int:room_id>/pins")
@@ -62,7 +63,7 @@ def create_pin(room_id: int):
             message_id = int(message_id)
         except (TypeError, ValueError):
             return json_error("잘못된 메시지 ID입니다.", 400, "invalid_pin_message")
-        if get_message_room_id(message_id) != room_id:
+        if get_message_room_id(message_id) != room_id or not can_user_see_message(room_id, session["user_id"], message_id):
             return json_error("해당 메시지는 이 대화방에 속하지 않습니다.", 400, "invalid_pin_message")
 
     pin_id = pin_message(room_id, session["user_id"], message_id, content)

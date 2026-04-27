@@ -403,8 +403,10 @@ def room_admin_audit_logs(room_id: int):
         return jsonify({"error": "관리자 권한이 필요합니다."}), 403
 
     output_format = (request.args.get("format") or "json").lower()
-    limit = request.args.get("limit", type=int) or 200
-    offset = request.args.get("offset", type=int) or 0
+    limit = request.args.get("limit", type=int)
+    offset = request.args.get("offset", type=int)
+    limit = min(max(limit if limit is not None else 200, 1), 500)
+    offset = max(offset if offset is not None else 0, 0)
     logs = get_admin_audit_logs(room_id=room_id, limit=limit, offset=offset)
     if output_format != "csv":
         return jsonify({"logs": logs, "limit": limit, "offset": offset})

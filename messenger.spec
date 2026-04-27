@@ -8,6 +8,9 @@ import importlib.util
 # Reviewed on 2026-04-16 for room-key rotation, upload-token cleanup, and
 # frontend/doc tooling sync. The current hiddenimports and packaged data list
 # already cover the active runtime-split modules used by this baseline.
+# Reviewed on 2026-04-27 for message visibility remediation. No new packaged
+# runtime modules or data files were required; app.http.*, app.socket_events.*,
+# app.services.*, app.models.*, and docs/BACKUP_RUNBOOK.md remain covered.
 
 block_cipher = None
 

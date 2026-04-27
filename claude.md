@@ -1,12 +1,12 @@
 # CLAUDE.md
 
 Project: `intranet-messenger`
-Last updated: 2026-04-16
+Last updated: 2026-04-27
 
 ## Read First
 
 1. `README.md`
-2. `feature_risk_review_2026-04-16.md`
+2. `implementation_gap_review_2026-04-27.md`
 3. `docs/BACKUP_RUNBOOK.md`
 4. `pyrightconfig.json`
 5. `jsconfig.json`
@@ -20,6 +20,7 @@ Last updated: 2026-04-16
 - `room_security_updated` is the canonical socket event for frontend key refresh.
 - `room_name_updated` and `admin_updated` must come from the server, not optimistic client emits.
 - Deleted attachment messages must stay hidden from chat history search results.
+- Message-scoped file, pin, reaction, reply, read receipt, download, and edit/delete paths must respect `joined_key_version` visibility.
 - File deletion must keep pin state in sync through `pin_updated`.
 - Upload token cleanup must remove expired, unreferenced files without touching referenced uploads.
 
@@ -60,7 +61,7 @@ When contracts, build steps, or recovery expectations change, update the matchin
 - `claude.md`
 - `gemini.md`
 - `docs/BACKUP_RUNBOOK.md`
-- `feature_risk_review_2026-04-16.md`
+- `implementation_gap_review_2026-04-27.md`
 
 ## Build Spec Checkpoints
 
@@ -73,10 +74,12 @@ Review `messenger.spec` whenever runtime imports or packaged data change. The cu
 - `app.models.*`
 - `docs/BACKUP_RUNBOOK.md`
 
+The April 27 visibility remediation did not add new packaged runtime modules or data files.
+
 ## Working Prompt Template
 
 ```text
-Read README.md, feature_risk_review_2026-04-16.md, docs/BACKUP_RUNBOOK.md, pyrightconfig.json, jsconfig.json, and eslint.config.mjs first.
+Read README.md, implementation_gap_review_2026-04-27.md, docs/BACKUP_RUNBOOK.md, pyrightconfig.json, jsconfig.json, and eslint.config.mjs first.
 Preserve membership-scoped room security, authoritative socket payloads, and upload-token cleanup behavior.
 Update tests and docs in the same change set, then run:
 1) npm run check:js

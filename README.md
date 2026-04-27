@@ -1,6 +1,6 @@
 # Intranet Messenger
 
-Updated: 2026-04-16
+Updated: 2026-04-27
 
 Intranet Messenger is a Flask + Socket.IO chat application with a web UI, optional desktop packaging via PyInstaller, end-to-end message encryption support, and room/file/poll collaboration features.
 
@@ -13,6 +13,8 @@ Intranet Messenger is a Flask + Socket.IO chat application with a web UI, option
 - Deleted attachment messages are hidden from search results.
 - Expired and unreferenced upload-token files are purged by maintenance workers.
 - Frontend JavaScript now has repo-local lint and typecheck commands.
+- Message-scoped APIs now consistently enforce per-member visibility for files, pins, reactions, replies, read receipts, downloads, and edit/delete actions.
+- `room_name_updated` and `admin_updated` are server-emitted notification events only.
 
 ## Repository Layout
 
@@ -28,7 +30,7 @@ Intranet Messenger is a Flask + Socket.IO chat application with a web UI, option
 - `static/js/*.js`: compatibility exports for the runtime-split frontend.
 - `templates/partials/`: HTML partials loaded by `templates/index.html`.
 - `docs/BACKUP_RUNBOOK.md`: backup, restore, and recovery checks.
-- `feature_risk_review_2026-04-16.md`: implementation-focused follow-up for the April 16 risk review.
+- `implementation_gap_review_2026-04-27.md`: implementation-focused follow-up for the April 27 visibility and authority gap review.
 
 ## Current Security And API Contracts
 
@@ -42,12 +44,14 @@ Intranet Messenger is a Flask + Socket.IO chat application with a web UI, option
   - `member_key_version`
 - The `room_security_updated` socket event is the canonical frontend trigger for key refresh.
 - Newly invited members must not see messages older than their `joined_key_version`.
+- The same visibility rule applies to message-adjacent APIs, including room files, downloads, pins, reactions, replies, read receipts, and message edit/delete actions.
 
 ### 2. Authoritative room metadata updates
 
 - Room name changes emit `room_name_updated` from the server.
 - Admin changes emit `admin_updated` from the server.
 - Frontend code should not forge these events optimistically.
+- Socket clients cannot mutate room names or admin roles by emitting those notification event names.
 
 ### 3. File upload and deletion safety
 
@@ -117,7 +121,7 @@ Build with PyInstaller:
 pyinstaller messenger.spec --clean
 ```
 
-The reviewed `messenger.spec` already includes the runtime-split Python packages, socket broadcast helpers, upload-token helpers, and backup documentation needed by the current app layout.
+The reviewed `messenger.spec` already includes the runtime-split Python packages, socket broadcast helpers, upload-token helpers, and backup documentation needed by the current app layout. The April 27 remediation introduced no new packaged runtime modules or data files.
 
 ## Documentation Index
 
@@ -125,7 +129,7 @@ The reviewed `messenger.spec` already includes the runtime-split Python packages
 - `claude.md`
 - `gemini.md`
 - `docs/BACKUP_RUNBOOK.md`
-- `feature_risk_review_2026-04-16.md`
+- `implementation_gap_review_2026-04-27.md`
 - `pyrightconfig.json`
 - `jsconfig.json`
 - `eslint.config.mjs`

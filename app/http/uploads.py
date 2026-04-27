@@ -17,9 +17,9 @@ from app.extensions import limiter
 from app.http.common import require_login
 from app.http.route_deps import get_routes_shim
 from app.models import (
+    can_user_see_message,
     delete_room_file,
     get_db,
-    get_message_room_id,
     get_room_files,
     is_room_admin,
     is_room_member,
@@ -200,7 +200,7 @@ def uploaded_file(filename: str):
             cursor = conn.cursor()
             lookup_path = safe_path.replace("\\", "/")
             cursor.execute(
-                "SELECT room_id, file_name FROM room_files WHERE file_path = ? ORDER BY id DESC LIMIT 1",
+                "SELECT room_id, file_name, message_id FROM room_files WHERE file_path = ? ORDER BY id DESC LIMIT 1",
                 (lookup_path,),
             )
             row = cursor.fetchone()
@@ -213,6 +213,9 @@ def uploaded_file(filename: str):
         room_id = row["room_id"]
         download_name = row["file_name"] or download_name
         if not is_room_member(room_id, session["user_id"]):
+            return jsonify({"error": "접근 권한이 없습니다."}), 403
+        message_id = row["message_id"]
+        if message_id and not can_user_see_message(room_id, session["user_id"], int(message_id)):
             return jsonify({"error": "접근 권한이 없습니다."}), 403
 
     ext = os.path.splitext(safe_filename)[1].lower().lstrip(".")
@@ -238,7 +241,7 @@ def get_files(room_id: int):
         return login_error
     if not is_room_member(room_id, session["user_id"]):
         return jsonify({"error": "접근 권한이 없습니다."}), 403
-    return jsonify(get_room_files(room_id, request.args.get("type")))
+    return jsonify(get_room_files(room_id, request.args.get("type"), viewer_user_id=session["user_id"]))
 
 
 @uploads_bp.delete("/api/rooms/<int:room_id>/files/<int:file_id>")

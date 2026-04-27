@@ -11,7 +11,7 @@ import time
 from flask import session
 from flask_socketio import emit
 
-from app.models import get_message_room_id, get_user_by_id, is_room_member, update_last_read
+from app.models import can_user_see_message, get_message_room_id, get_user_by_id, is_room_member, update_last_read
 from app.socket_events.shared import ensure_session_token
 from app.socket_events.state import TYPING_RATE_LIMIT, typing_last_emit, typing_rate_lock
 
@@ -29,7 +29,7 @@ def register_presence_events(socketio):
             if room_id and message_id:
                 if not is_room_member(room_id, session["user_id"]):
                     return
-                if get_message_room_id(message_id) != room_id:
+                if get_message_room_id(message_id) != room_id or not can_user_see_message(room_id, session["user_id"], message_id):
                     return
                 update_last_read(room_id, session["user_id"], message_id)
                 emit("read_updated", {"room_id": room_id, "user_id": session["user_id"], "message_id": message_id}, to=f"room_{room_id}")

@@ -266,12 +266,6 @@ async function openRoom(room) {
     // 이미 보고 있는 방이면 무시
     if (currentRoom && currentRoom.id === room.id) return;
 
-    // Re-entry guard
-    if (isOpeningRoom) {
-        console.warn('Prevented recursive openRoom call');
-        return;
-    }
-
     isOpeningRoom = true;
     if (window.DEBUG) console.log('Entering openRoom for room:', room.id);
 
