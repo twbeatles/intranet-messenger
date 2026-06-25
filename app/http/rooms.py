@@ -13,8 +13,8 @@ from flask import Blueprint, jsonify, make_response, request, session
 
 from app.http.common import parse_json_payload, require_login, truthy_param
 from app.models import (
-    add_room_member,
     create_room,
+    invite_members_with_key_rotation,
     get_admin_audit_logs,
     get_all_users,
     get_online_users,
@@ -171,20 +171,13 @@ def invite_member(room_id: int):
     if not candidate_user_ids:
         return jsonify({"error": "이미 참여 중인 사용자입니다."}), 400
 
-    rotation = rotate_room_key(room_id)
-    if not rotation:
-        return jsonify({"error": "방 보안 갱신에 실패했습니다."}), 500
-
-    added_user_ids: list[int] = []
-    for invitee_id in candidate_user_ids:
-        if add_room_member(room_id, invitee_id, joined_key_version=rotation["key_version"]):
-            added_user_ids.append(invitee_id)
-
-    if not added_user_ids:
-        current_member_ids = _room_member_ids(room_id)
-        if current_member_ids:
-            emit_room_security_updated(room_id, current_member_ids)
+    rotation, added_user_ids, error_code = invite_members_with_key_rotation(room_id, candidate_user_ids)
+    if error_code == "already_members":
         return jsonify({"error": "이미 참여 중인 사용자입니다."}), 400
+    if error_code == "rotate_failed":
+        return jsonify({"error": "방 보안 갱신에 실패했습니다."}), 500
+    if error_code in ("add_failed", "error") or not rotation or not added_user_ids:
+        return jsonify({"error": "멤버 초대에 실패했습니다."}), 500
 
     for invitee_id in added_user_ids:
         sync_user_room_membership(room_id, invitee_id, joined=True)

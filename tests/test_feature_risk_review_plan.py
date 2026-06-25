@@ -59,11 +59,11 @@ def _oct_jwk(secret: bytes, kid: str):
     }
 
 
-def _write_jwks_file(jwks: dict) -> str:
-    fd, path = make_temp_file(prefix="oidc-jwks-", suffix=".json")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(jwks, f)
-    return "file:///" + path.replace("\\", "/")
+JWKS_HTTP_URL = "https://issuer.example/jwks"
+
+
+def _jwks_http_url() -> str:
+    return JWKS_HTTP_URL
 
 
 def test_advanced_search_rejects_invalid_limit_and_offset(client):
@@ -355,7 +355,6 @@ def test_oidc_exchange_success_with_valid_id_token_and_nonce(app, monkeypatch):
         headers={"kid": kid},
     )
     jwks = {"keys": [_oct_jwk(secret, kid)]}
-    jwks_url = _write_jwks_file(jwks)
 
     def fake_fetch_json(url, timeout=10):
         if url.endswith("/.well-known/openid-configuration"):
@@ -363,8 +362,10 @@ def test_oidc_exchange_success_with_valid_id_token_and_nonce(app, monkeypatch):
                 "authorization_endpoint": "https://issuer.example/auth",
                 "token_endpoint": "https://issuer.example/token",
                 "userinfo_endpoint": "https://issuer.example/userinfo",
-                "jwks_uri": jwks_url,
+                "jwks_uri": JWKS_HTTP_URL,
             }
+        if url == JWKS_HTTP_URL:
+            return jwks
         raise AssertionError(f"unexpected url: {url}")
 
     monkeypatch.setattr(oidc, "_fetch_json", fake_fetch_json)
@@ -403,7 +404,6 @@ def test_oidc_exchange_rejects_nonce_mismatch(app, monkeypatch):
         headers={"kid": kid},
     )
     jwks = {"keys": [_oct_jwk(secret, kid)]}
-    jwks_url = _write_jwks_file(jwks)
 
     def fake_fetch_json(url, timeout=10):
         if url.endswith("/.well-known/openid-configuration"):
@@ -411,8 +411,10 @@ def test_oidc_exchange_rejects_nonce_mismatch(app, monkeypatch):
                 "authorization_endpoint": "https://issuer.example/auth",
                 "token_endpoint": "https://issuer.example/token",
                 "userinfo_endpoint": "https://issuer.example/userinfo",
-                "jwks_uri": jwks_url,
+                "jwks_uri": JWKS_HTTP_URL,
             }
+        if url == JWKS_HTTP_URL:
+            return jwks
         raise AssertionError(f"unexpected url: {url}")
 
     monkeypatch.setattr(oidc, "_fetch_json", fake_fetch_json)
@@ -479,7 +481,6 @@ def test_oidc_exchange_rejects_invalid_signature(app, monkeypatch):
         headers={"kid": kid},
     )
     jwks = {"keys": [_oct_jwk(verify_secret, kid)]}
-    jwks_url = _write_jwks_file(jwks)
 
     def fake_fetch_json(url, timeout=10):
         if url.endswith("/.well-known/openid-configuration"):
@@ -487,8 +488,10 @@ def test_oidc_exchange_rejects_invalid_signature(app, monkeypatch):
                 "authorization_endpoint": "https://issuer.example/auth",
                 "token_endpoint": "https://issuer.example/token",
                 "userinfo_endpoint": "https://issuer.example/userinfo",
-                "jwks_uri": jwks_url,
+                "jwks_uri": JWKS_HTTP_URL,
             }
+        if url == JWKS_HTTP_URL:
+            return jwks
         raise AssertionError(f"unexpected url: {url}")
 
     monkeypatch.setattr(oidc, "_fetch_json", fake_fetch_json)

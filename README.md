@@ -1,11 +1,29 @@
 # Intranet Messenger
 
-Updated: 2026-04-27
+Updated: 2026-06-25
 
-Intranet Messenger is a Flask + Socket.IO chat application with a web UI, optional desktop packaging via PyInstaller, end-to-end message encryption support, and room/file/poll collaboration features.
+Intranet Messenger is a Flask + Socket.IO chat application with a web UI, optional desktop packaging via PyInstaller, server-managed room-key client-side message encryption, and room/file/poll collaboration features.
+
+## Deployment Modes
+
+### Single-process (default)
+
+- `MESSAGE_QUEUE=None` and in-memory `StateStore` are valid for one server process.
+- This matches the default `python server.py --cli` workflow.
+
+### Multi-worker / multi-instance
+
+Configure Redis before running more than one worker or app instance:
+
+- `STATE_STORE_REDIS_URL` (or `REDIS_URL`) for upload tokens, socket rate limits, and presence counters
+- `MESSAGE_QUEUE` for cross-worker Socket.IO broadcasts
+- Optional `REQUIRE_REDIS_STATE=1` to fail fast when Redis is unavailable
+
+Without Redis, upload-token validation, relay rate limits, and Socket.IO fan-out can become inconsistent across processes.
 
 ## What Changed In The Current Baseline
 
+- June 2026 audit remediation: atomic invite key rotation, Redis scaling warnings, socket relay rate limits, and `room_security_updated` decrypt refresh (see `PROJECT_AUDIT.md`).
 - Room membership changes now rotate room encryption keys.
 - Message visibility is scoped by the member's joined key version.
 - Room name/admin updates are emitted as server-authoritative socket events.
@@ -36,7 +54,9 @@ Intranet Messenger is a Flask + Socket.IO chat application with a web UI, option
 
 ### 1. Membership-scoped room encryption
 
-- `POST /api/rooms/<room_id>/members`, `POST /api/rooms/<room_id>/leave`, kick flows, and account deletion flows rotate the room key for surviving members.
+- Room keys are generated and stored server-side; clients receive per-member keyrings over authenticated HTTP/socket payloads. This is transport-protected client encryption, not server-blind end-to-end encryption.
+- `POST /api/rooms/<room_id>/members` runs key rotation and member inserts in one SQLite transaction (`invite_members_with_key_rotation`).
+- `POST /api/rooms/<room_id>/leave`, kick flows, and account deletion rotate the room key for surviving members.
 - `GET /api/rooms/<room_id>/messages` now returns:
   - `encryption_key`
   - `encryption_keys`
@@ -51,7 +71,8 @@ Intranet Messenger is a Flask + Socket.IO chat application with a web UI, option
 - Room name changes emit `room_name_updated` from the server.
 - Admin changes emit `admin_updated` from the server.
 - Frontend code should not forge these events optimistically.
-- Socket clients cannot mutate room names or admin roles by emitting those notification event names.
+- Socket clients cannot mutate room names or admin roles by emitting those notification event names; the server has no handlers that apply client-forged metadata payloads.
+- `pin_updated`, `poll_created`, `poll_updated`, and `room_members_updated` are client-triggered refresh relays with membership checks and per-user rate limits. Authoritative state still comes from HTTP APIs and server emits.
 
 ### 3. File upload and deletion safety
 
@@ -95,7 +116,7 @@ Default local URL:
 
 ```bash
 pytest tests -q
-pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q
+pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py tests/test_project_audit_remediation.py -q
 pyright app gui
 ```
 
@@ -130,6 +151,7 @@ The reviewed `messenger.spec` already includes the runtime-split Python packages
 - `gemini.md`
 - `docs/BACKUP_RUNBOOK.md`
 - `implementation_gap_review_2026-04-27.md`
+- `PROJECT_AUDIT.md`
 - `pyrightconfig.json`
 - `jsconfig.json`
 - `eslint.config.mjs`

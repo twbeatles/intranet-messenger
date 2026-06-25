@@ -53,6 +53,7 @@ from app.models.rooms import (
     get_room_members,
     is_room_member,
     add_room_member,
+    invite_members_with_key_rotation,
     leave_room_db,
     rotate_room_key,
     update_room_name,
@@ -129,7 +130,7 @@ __all__ = [
     # Rooms
     'create_room', 'get_room_key', 'get_room_keyring', 'get_room_member_key_version', 'get_room_security_bundle',
     'get_user_rooms', 'get_room_members',
-    'is_room_member', 'add_room_member', 'leave_room_db', 'rotate_room_key', 'update_room_name',
+    'is_room_member', 'add_room_member', 'invite_members_with_key_rotation', 'leave_room_db', 'rotate_room_key', 'update_room_name',
     'get_room_by_id', 'pin_room', 'mute_room', 'kick_member',
     'set_room_admin', 'is_room_admin', 'get_room_admins',
     # Messages

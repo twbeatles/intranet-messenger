@@ -105,6 +105,13 @@ STATE_STORE_REDIS_URL = os.getenv("STATE_STORE_REDIS_URL", REDIS_URL or "")
 SOCKET_SEND_MESSAGE_PER_MINUTE = int(os.getenv("SOCKET_SEND_MESSAGE_PER_MINUTE", "100"))
 # Socket pin update event rate limit (per-user)
 SOCKET_PIN_UPDATED_PER_MINUTE = int(os.getenv("SOCKET_PIN_UPDATED_PER_MINUTE", "30"))
+# Socket relay event rate limits (per-user)
+SOCKET_ROOM_MEMBERS_UPDATED_PER_MINUTE = int(os.getenv("SOCKET_ROOM_MEMBERS_UPDATED_PER_MINUTE", "30"))
+SOCKET_POLL_CREATED_PER_MINUTE = int(os.getenv("SOCKET_POLL_CREATED_PER_MINUTE", "30"))
+SOCKET_POLL_UPDATED_PER_MINUTE = int(os.getenv("SOCKET_POLL_UPDATED_PER_MINUTE", "60"))
+
+# Fail startup when Redis-backed state is required (multi-worker / multi-instance)
+REQUIRE_REDIS_STATE = _env_bool("REQUIRE_REDIS_STATE", False)
 
 # Feature toggles
 FEATURE_OIDC_ENABLED = _env_bool("FEATURE_OIDC_ENABLED", False)

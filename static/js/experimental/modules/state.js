@@ -25,7 +25,10 @@ export const state = {
     newMessageCount: 0,
 
     // 캐시
-    userCache: {} // {userId: {color: string}}
+    userCache: {}, // {userId: {color: string}}
+
+    // 방 열기 요청 가드 (stale response 무시)
+    currentOpenRequestId: 0
 };
 
 export function setCurrentUser(user) {

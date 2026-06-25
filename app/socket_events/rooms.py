@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import logging
 
-from flask import session
+from flask import current_app, session
 from flask_socketio import emit
 
 from app.models import is_room_member
-from app.socket_events.shared import emit_error, ensure_session_token, parse_positive_int
+from app.socket_events.shared import check_event_rate_limit, emit_error, ensure_session_token, parse_positive_int
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,10 @@ def register_room_events(socketio):
                 return
             if not is_room_member(room_id, session["user_id"]):
                 emit_error("Room access denied.")
+                return
+            per_minute = int(current_app.config.get("SOCKET_ROOM_MEMBERS_UPDATED_PER_MINUTE", 30))
+            if not check_event_rate_limit("room_members_updated", session["user_id"], per_minute):
+                emit_error("Too many requests.")
                 return
             emit("room_members_updated", {"room_id": room_id}, to=f"room_{room_id}")
         except Exception as exc:

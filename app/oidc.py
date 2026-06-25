@@ -15,8 +15,8 @@ from typing import Any
 
 import jwt
 
-_JWKS_CLIENT_CACHE: dict[str, dict[str, Any]] = {}
-_JWKS_CLIENT_CACHE_LOCK = Lock()
+_JWKS_SET_CACHE: dict[str, dict[str, Any]] = {}
+_JWKS_SET_CACHE_LOCK = Lock()
 
 
 def _fetch_json(url: str, timeout: int = 10) -> dict[str, Any]:
@@ -56,17 +56,32 @@ def _resolve_oidc_metadata(app) -> tuple[str, str, str, str, str]:
     return auth, token, userinfo, issuer, jwks
 
 
-def _get_jwks_client(jwks_url: str, cache_seconds: int):
+def _get_jwk_set(jwks_url: str, cache_seconds: int):
     if not jwks_url:
         raise RuntimeError("OIDC JWKS endpoint is not configured")
+    if not jwks_url.startswith(("http://", "https://")):
+        raise RuntimeError("OIDC JWKS URI must use http or https")
+
     now = time.time()
-    with _JWKS_CLIENT_CACHE_LOCK:
-        cached = _JWKS_CLIENT_CACHE.get(jwks_url)
+    with _JWKS_SET_CACHE_LOCK:
+        cached = _JWKS_SET_CACHE.get(jwks_url)
         if cached and (now - float(cached.get("created_at", 0))) < cache_seconds:
-            return cached["client"]
-        client = jwt.PyJWKClient(jwks_url)
-        _JWKS_CLIENT_CACHE[jwks_url] = {"client": client, "created_at": now}
-        return client
+            return cached["jwk_set"]
+
+        jwks_data = _fetch_json(jwks_url)
+        jwk_set = jwt.PyJWKSet.from_dict(jwks_data)
+        _JWKS_SET_CACHE[jwks_url] = {"jwk_set": jwk_set, "created_at": now}
+        return jwk_set
+
+
+def _get_signing_key_from_jwt(jwks_url: str, id_token: str, cache_seconds: int):
+    jwk_set = _get_jwk_set(jwks_url, cache_seconds=cache_seconds)
+    header = jwt.get_unverified_header(id_token)
+    kid = header.get("kid")
+    for key in jwk_set.keys:
+        if kid is None or key.key_id == kid:
+            return key
+    raise RuntimeError("OIDC signing key not found in JWKS")
 
 
 def _verify_id_token(app, id_token: str, expected_nonce: str) -> dict[str, Any]:
@@ -84,8 +99,7 @@ def _verify_id_token(app, id_token: str, expected_nonce: str) -> dict[str, Any]:
         raise RuntimeError("OIDC client_id is not configured")
 
     cache_seconds = int(app.config.get("OIDC_JWKS_CACHE_SECONDS") or 300)
-    jwks_client = _get_jwks_client(jwks_url, cache_seconds=cache_seconds)
-    signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+    signing_key = _get_signing_key_from_jwt(jwks_url, id_token, cache_seconds=cache_seconds)
 
     claims = jwt.decode(
         id_token,

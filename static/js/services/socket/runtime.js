@@ -847,5 +847,8 @@ function handleRoomSecurityUpdated(data) {
         currentRoomKey = data.encryption_key || currentRoomKey;
         currentRoomKeys = data.encryption_keys || currentRoomKeys || {};
         currentRoom.key_version = data.key_version || currentRoom.key_version;
+        if (typeof refreshPendingMessageDecryption === 'function') {
+            refreshPendingMessageDecryption();
+        }
     }
 }

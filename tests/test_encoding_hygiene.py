@@ -27,6 +27,17 @@ TEXT_SUFFIXES = {
 TEXT_FILENAMES = {"Dockerfile", "Makefile", "pytest.ini"}
 MINIFIED_SKIP_SUFFIXES = (".min.js",)
 MOJIBAKE_ALLOWLIST = {"app/__init__.py", "app/sockets.py", "tests/test_encoding_hygiene.py"}
+EXCLUDED_PATH_PARTS = {
+    "node_modules",
+    ".git",
+    ".codegraph",
+    "uploads",
+    "backup",
+    "build",
+    "dist",
+    "__pycache__",
+    ".pytest_cache",
+}
 MOJIBAKE_HINTS = (
     "嚥≪뮄",
     "袁⑹뒄",
@@ -79,16 +90,22 @@ def _tracked_text_files() -> list[Path]:
         )
         names = result.stdout.splitlines()
     except Exception:
-        names = [
-            str(path.relative_to(REPO_ROOT)).replace("\\", "/")
-            for path in REPO_ROOT.rglob("*")
-            if path.is_file()
-        ]
+        names = []
+        for path in REPO_ROOT.rglob("*"):
+            if not path.is_file():
+                continue
+            rel_parts = path.relative_to(REPO_ROOT).parts
+            if any(part in EXCLUDED_PATH_PARTS for part in rel_parts):
+                continue
+            names.append(str(path.relative_to(REPO_ROOT)).replace("\\", "/"))
 
     files: list[Path] = []
     for name in names:
         path = REPO_ROOT / name
         if not path.exists():
+            continue
+        rel_parts = path.relative_to(REPO_ROOT).parts
+        if any(part in EXCLUDED_PATH_PARTS for part in rel_parts):
             continue
         if path.suffix.lower() in TEXT_SUFFIXES or path.name in TEXT_FILENAMES:
             files.append(path)

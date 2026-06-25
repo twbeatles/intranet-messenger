@@ -1,9 +1,20 @@
 # Implementation Gap Review
 
-Date: 2026-04-27
-References: `README.md`, `claude.md`, `gemini.md`
+Date: 2026-04-27 (updated 2026-06-25)
+References: `README.md`, `claude.md`, `gemini.md`, `PROJECT_AUDIT.md`
 
 ## Remediation Status
+
+Implemented on 2026-06-25 (PROJECT_AUDIT follow-up).
+
+- Made invite-time key rotation and member insert atomic via `invite_members_with_key_rotation`.
+- Added Redis scaling warnings / optional `REQUIRE_REDIS_STATE` fail-fast.
+- Added socket relay rate limits for `room_members_updated`, `poll_created`, and `poll_updated`.
+- Refreshed pending message decryption after `room_security_updated`.
+- Aligned experimental `openRoom` stale-request guard with production runtime.
+- Fixed OIDC JWKS loading to use HTTP `_fetch_json` (tests use mock HTTPS JWKS).
+- Tightened encoding hygiene excludes for non-git workspaces.
+- Added `tests/test_project_audit_remediation.py`.
 
 Implemented on 2026-04-27.
 

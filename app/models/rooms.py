@@ -235,6 +235,79 @@ def rotate_room_key(room_id: int, conn=None):
         return None
 
 
+def invite_members_with_key_rotation(room_id: int, user_ids: list[int]):
+    """Atomically rotate the room key and add invitees in one transaction.
+
+    Returns (rotation_payload, added_user_ids, error_code).
+    error_code is empty on success; otherwise one of:
+    already_members, rotate_failed, add_failed, error.
+    """
+    normalized_ids: list[int] = []
+    seen: set[int] = set()
+    for raw_id in user_ids or []:
+        try:
+            user_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in seen:
+            continue
+        seen.add(user_id)
+        normalized_ids.append(user_id)
+
+    if not normalized_ids:
+        return None, [], "already_members"
+
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+    except Exception:
+        pass
+
+    try:
+        cursor = conn.cursor()
+        pending_ids: list[int] = []
+        for user_id in normalized_ids:
+            cursor.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
+            if not cursor.fetchone():
+                continue
+            cursor.execute(
+                "SELECT 1 FROM room_members WHERE room_id = ? AND user_id = ?",
+                (room_id, user_id),
+            )
+            if cursor.fetchone():
+                continue
+            pending_ids.append(user_id)
+
+        if not pending_ids:
+            conn.rollback()
+            return None, [], "already_members"
+
+        rotation = rotate_room_key(room_id, conn=conn)
+        if not rotation:
+            conn.rollback()
+            return None, [], "rotate_failed"
+
+        key_version = int(rotation["key_version"])
+        added_user_ids: list[int] = []
+        for invitee_id in pending_ids:
+            if add_room_member(room_id, invitee_id, joined_key_version=key_version, conn=conn):
+                added_user_ids.append(invitee_id)
+
+        if not added_user_ids:
+            conn.rollback()
+            return None, [], "add_failed"
+
+        conn.commit()
+        return rotation, added_user_ids, ""
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.error(f"Invite members with key rotation error: {exc}")
+        return None, [], "error"
+
+
 def get_user_rooms(user_id, include_members=False):
     """Return the user's rooms with only currently visible messages."""
     conn = get_db()

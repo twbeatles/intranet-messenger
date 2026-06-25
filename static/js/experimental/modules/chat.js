@@ -7,6 +7,10 @@ import * as UI from './ui.js';
 import * as Socket from './socket.js';
 
 export async function openRoom(room) {
+    if (state.currentRoom && state.currentRoom.id === room.id) return;
+
+    const requestId = ++state.currentOpenRequestId;
+
     if (state.currentRoom) {
         state.socket.emit('leave_room', { room_id: state.currentRoom.id });
     }
@@ -41,7 +45,12 @@ export async function openRoom(room) {
 
     try {
         const result = await RoomAPI.getMessages(room.id);
+        if (requestId !== state.currentOpenRequestId) {
+            return;
+        }
+
         state.currentRoomKey = result.encryption_key;
+        state.currentRoomKeys = result.encryption_keys || {};
 
         let lastReadId = 0;
         if (result.members) {
@@ -64,6 +73,9 @@ export async function openRoom(room) {
         }
 
     } catch (err) {
+        if (requestId !== state.currentOpenRequestId) {
+            return;
+        }
         console.error('메시지 로드 실패:', err);
         if (window.MessengerStorage) {
             const cached = await MessengerStorage.getCachedMessages(room.id);

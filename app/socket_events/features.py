@@ -34,6 +34,10 @@ def register_feature_events(socketio):
             if not is_room_member(room_id, session["user_id"]):
                 emit_error("Room access denied.")
                 return
+            per_minute = int(current_app.config.get("SOCKET_POLL_UPDATED_PER_MINUTE", 60))
+            if not check_event_rate_limit("poll_updated", session["user_id"], per_minute):
+                emit_error("Too many requests.")
+                return
             poll = get_poll(poll_id)
             if not poll or int(poll.get("room_id", 0)) != room_id:
                 emit_error("Invalid request.")
@@ -58,6 +62,10 @@ def register_feature_events(socketio):
                 return
             if not is_room_member(room_id, session["user_id"]):
                 emit_error("Room access denied.")
+                return
+            per_minute = int(current_app.config.get("SOCKET_POLL_CREATED_PER_MINUTE", 30))
+            if not check_event_rate_limit("poll_created", session["user_id"], per_minute):
+                emit_error("Too many requests.")
                 return
             poll = get_poll(poll_id)
             if not poll or int(poll.get("room_id", 0)) != room_id:

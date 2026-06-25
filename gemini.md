@@ -1,7 +1,7 @@
 # GEMINI.md
 
 Project: `intranet-messenger`
-Last updated: 2026-04-27
+Last updated: 2026-06-25
 
 ## Session Bootstrap
 
@@ -10,16 +10,19 @@ Read these files before changing code:
 1. `README.md`
 2. `claude.md`
 3. `implementation_gap_review_2026-04-27.md`
-4. `docs/BACKUP_RUNBOOK.md`
-5. `pyrightconfig.json`
-6. `jsconfig.json`
-7. `eslint.config.mjs`
+4. `PROJECT_AUDIT.md`
+5. `docs/BACKUP_RUNBOOK.md`
+6. `pyrightconfig.json`
+7. `jsconfig.json`
+8. `eslint.config.mjs`
 
 ## Must-Keep Contracts
 
 ### Room security
 
+- Room keys are server-managed; clients encrypt with member-scoped keyrings from the server (not server-blind E2E).
 - Membership changes rotate room keys.
+- `invite_members_with_key_rotation` keeps invite-time rotate + member insert atomic.
 - Message visibility depends on `key_version` and `joined_key_version`.
 - Message-adjacent APIs for files, pins, reactions, replies, read receipts, downloads, and edit/delete actions must use the same visibility rule.
 - `GET /api/rooms/<room_id>/messages` is expected to return room key metadata for the active member.
@@ -79,16 +82,17 @@ Read these files before changing code:
 - `templates/partials/scripts.html`
 - `messenger.spec`
 - `implementation_gap_review_2026-04-27.md`
+- `PROJECT_AUDIT.md`
 
 ## Prompt Template
 
 ```text
-Read README.md, claude.md, implementation_gap_review_2026-04-27.md, docs/BACKUP_RUNBOOK.md, pyrightconfig.json, jsconfig.json, and eslint.config.mjs.
-Keep room-security rotation, authoritative socket events, upload-token cleanup, and search-visibility rules intact.
+Read README.md, claude.md, implementation_gap_review_2026-04-27.md, PROJECT_AUDIT.md, docs/BACKUP_RUNBOOK.md, pyrightconfig.json, jsconfig.json, and eslint.config.mjs.
+Keep room-security rotation, invite_members_with_key_rotation atomicity, authoritative socket events, upload-token cleanup, and search-visibility rules intact.
 When you change code, update tests and docs in the same patch set and run:
 1) npm run check:js
 2) pytest tests -q
-3) pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q
+3) pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py tests/test_project_audit_remediation.py -q
 4) pyright app gui
 Then summarize file changes, test results, and any remaining environment issues.
 ```

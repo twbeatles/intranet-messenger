@@ -65,7 +65,11 @@ try:
         SESSION_TIMEOUT_HOURS,
         SOCKETIO_CORS_ALLOWED_ORIGINS,
         SOCKET_PIN_UPDATED_PER_MINUTE,
+        SOCKET_POLL_CREATED_PER_MINUTE,
+        SOCKET_POLL_UPDATED_PER_MINUTE,
+        SOCKET_ROOM_MEMBERS_UPDATED_PER_MINUTE,
         SOCKET_SEND_MESSAGE_PER_MINUTE,
+        REQUIRE_REDIS_STATE,
         STATE_STORE_REDIS_URL,
         USE_HTTPS,
     )
@@ -135,6 +139,10 @@ def build_flask_app():
     app.config["UPLOAD_QUARANTINE_FOLDER"] = upload_quarantine_folder
     app.config["SOCKET_SEND_MESSAGE_PER_MINUTE"] = SOCKET_SEND_MESSAGE_PER_MINUTE
     app.config["SOCKET_PIN_UPDATED_PER_MINUTE"] = SOCKET_PIN_UPDATED_PER_MINUTE
+    app.config["SOCKET_ROOM_MEMBERS_UPDATED_PER_MINUTE"] = SOCKET_ROOM_MEMBERS_UPDATED_PER_MINUTE
+    app.config["SOCKET_POLL_CREATED_PER_MINUTE"] = SOCKET_POLL_CREATED_PER_MINUTE
+    app.config["SOCKET_POLL_UPDATED_PER_MINUTE"] = SOCKET_POLL_UPDATED_PER_MINUTE
+    app.config["REQUIRE_REDIS_STATE"] = REQUIRE_REDIS_STATE
     app.config["APP_NAME"] = APP_NAME
     app.config["ASYNC_MODE"] = ASYNC_MODE
     app.config["PING_TIMEOUT"] = PING_TIMEOUT
@@ -163,4 +171,23 @@ def build_flask_app():
         app.logger.warning("flask_session import unavailable; continuing with Flask's signed cookie session backend")
 
     state_store.init_app(redis_url=app.config.get("STATE_STORE_REDIS_URL") or None)
+
+    if app.config.get("REQUIRE_REDIS_STATE") and not state_store.redis_enabled:
+        raise RuntimeError(
+            "REQUIRE_REDIS_STATE is enabled but StateStore Redis backend is unavailable. "
+            "Set STATE_STORE_REDIS_URL or REDIS_URL before running multiple workers."
+        )
+
+    worker_hint = int(os.getenv("GUNICORN_WORKERS", os.getenv("WEB_CONCURRENCY", "1")) or "1")
+    if worker_hint > 1 and not state_store.redis_enabled:
+        app.logger.warning(
+            "Multiple worker processes detected without Redis StateStore; "
+            "upload tokens, socket rate limits, and presence may be inconsistent."
+        )
+    if worker_hint > 1 and not app.config.get("MESSAGE_QUEUE"):
+        app.logger.warning(
+            "Multiple worker processes detected without MESSAGE_QUEUE; "
+            "Socket.IO broadcasts may not reach clients on other workers."
+        )
+
     return app

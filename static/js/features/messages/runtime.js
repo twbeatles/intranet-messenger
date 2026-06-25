@@ -47,6 +47,27 @@ function cleanupLazyDecryptObserver() {
     lazyDecryptQueuedIds = new Set();
 }
 
+function refreshPendingMessageDecryption() {
+    var container = document.getElementById('messagesContainer');
+    if (!container || !window.E2E) return;
+
+    container.querySelectorAll('.message').forEach(function (msgEl) {
+        if (!msgEl._messageData) return;
+        var msg = msgEl._messageData;
+        if (!msg.encrypted) return;
+
+        var bubble = msgEl.querySelector('.message-bubble');
+        if (bubble) {
+            bubble.setAttribute('data-decrypt-pending', '1');
+        }
+        var replyText = msgEl.querySelector('.reply-text');
+        if (replyText && msg.reply_content) {
+            replyText.setAttribute('data-reply-decrypt-pending', '1');
+        }
+        decryptPendingInMessageEl(msgEl);
+    });
+}
+
 function decryptPendingInMessageEl(msgEl) {
     if (!msgEl || !msgEl._messageData || !window.E2E) return;
     var msg = msgEl._messageData;
@@ -1402,6 +1423,7 @@ function initMessageContextMenu() {
 // 전역 노출
 // ============================================================================
 window.renderMessages = renderMessages;
+window.refreshPendingMessageDecryption = refreshPendingMessageDecryption;
 window.scrollToBottom = scrollToBottom;
 window.createMessageElement = createMessageElement;
 window.appendMessage = appendMessage;
