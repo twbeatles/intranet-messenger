@@ -86,3 +86,20 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# AI / Agent configuration & workspace files
+.agents/
+.claude/
+.codegraph/
+.grok/
+.specify/
+.cursor/
+.windsurf/
+mcps/
+specs/
+AGENTS.md
+GEMINI.md
+gemini.md
+claude.md
+copilot-instructions.md
+
