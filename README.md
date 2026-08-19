@@ -1,157 +1,392 @@
-# Intranet Messenger
+# 💬 사내 메신저 (Intranet Messenger)
 
-Updated: 2026-06-25
+[![Python Version](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)](https://github.com)
+[![Framework](https://img.shields.io/badge/Flask-Socket.IO-000000?logo=flask&logoColor=white)](https://flask-socketio.readthedocs.io/)
+[![UI](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)](https://riverbankcomputing.com/software/pyqt/)
 
-Intranet Messenger is a Flask + Socket.IO chat application with a web UI, optional desktop packaging via PyInstaller, server-managed room-key client-side message encryption, and room/file/poll collaboration features.
+> **사내망 및 폐쇄망 환경을 위한 고성능 실시간 메신저 & 서버 관리 플랫폼**  
+> 전송 구간 암호화 및 방 단위 키 버전 관리, 웹 UI, 파일 저장소, 투표, 공지 배너, PyQt6 서버 GUI 모니터링 기능을 제공합니다.
 
-## Deployment Modes
+---
 
-### Single-process (default)
+## 📑 목차
 
-- `MESSAGE_QUEUE=None` and in-memory `StateStore` are valid for one server process.
-- This matches the default `python server.py --cli` workflow.
+1. [주요 특징](#-주요-특징)
+2. [핵심 기능 안내](#-핵심-기능-안내)
+3. [설치 및 요구 사항](#-설치-및-요구-사항)
+4. [실행 방법 (GUI / CLI)](#-실행-방법)
+5. [사용자 가이드 (메신저 사용법)](#-사용자-가이드)
+6. [서버 관리자 가이드](#-서버-관리자-가이드)
+7. [데이터 백업 및 복원](#-데이터-백업-및-복원)
+8. [고급 환경 설정](#-고급-환경-설정)
+9. [개발 및 검증](#-개발-및-검증)
+10. [프로젝트 구조](#-프로젝트-구조)
 
-### Multi-worker / multi-instance
+---
 
-Configure Redis before running more than one worker or app instance:
+## 🌟 주요 특징
 
-- `STATE_STORE_REDIS_URL` (or `REDIS_URL`) for upload tokens, socket rate limits, and presence counters
-- `MESSAGE_QUEUE` for cross-worker Socket.IO broadcasts
-- Optional `REQUIRE_REDIS_STATE=1` to fail fast when Redis is unavailable
+- **실시간 소통**: Flask + Socket.IO (gevent 비동기 엔진) 기반으로 빠르고 지연 없는 실시간 메시징을 지원합니다.
+- **안전한 보안 & 데이터 격리**:
+  - 사용자/방 단위 암호화 키 관리 및 멤버 초대/퇴장 시 원자적 키 갱신(Key Rotation)을 지원합니다.
+  - 새로 가입한 멤버는 이전 대화 내역에 접근할 수 없도록 권한이 제어됩니다.
+  - HTTPS/SSL 자체 서명 인증서 원클릭 생성 및 적용을 지원합니다.
+- **서버 관리 GUI (PyQt6)**:
+  - Windows 시스템 트레이 상주, 실시간 서버 로그 및 접속자/트래픽 통계 대시보드를 제공합니다.
+  - 원클릭 서버 실행/중지, Windows 부팅 시 자동 시작, 포트 점유 프로세스 자동 정리 기능이 내장되어 있습니다.
+- **풍부한 협업 도구**: 파일/이미지 드래그 앤 드롭 및 붙여넣기, 라이트박스 뷰어, 채팅방 파일 저장소, 실시간 투표, 공지사항 상단 고정, @멘션, 이모지 리액션, 메시지 답장/수정/삭제를 지원합니다.
+- **테마 & 개인화**: 다크/라이트/시스템 모드, 10가지 액센트 컬러 팔레트, 4가지 채팅 배경 패턴을 지원합니다.
+- **간편한 배포 & 백업**: 별도 외부 DB 없이 SQLite 파일과 로컬 디렉토리 기반으로 동작하며, 단일 실행 파일(PyInstaller) 패키징 및 원클릭 백업/복원 스크립트를 제공합니다.
 
-Without Redis, upload-token validation, relay rate limits, and Socket.IO fan-out can become inconsistent across processes.
+---
 
-## What Changed In The Current Baseline
+## 🚀 핵심 기능 안내
 
-- June 2026 audit remediation: atomic invite key rotation, Redis scaling warnings, socket relay rate limits, and `room_security_updated` decrypt refresh (see `PROJECT_AUDIT.md`).
-- Room membership changes now rotate room encryption keys.
-- Message visibility is scoped by the member's joined key version.
-- Room name/admin updates are emitted as server-authoritative socket events.
-- Deleting a pinned file now also refreshes the pin banner state.
-- Deleted attachment messages are hidden from search results.
-- Expired and unreferenced upload-token files are purged by maintenance workers.
-- Frontend JavaScript now has repo-local lint and typecheck commands.
-- Message-scoped APIs now consistently enforce per-member visibility for files, pins, reactions, replies, read receipts, downloads, and edit/delete actions.
-- `room_name_updated` and `admin_updated` are server-emitted notification events only.
+### 1. 대화 및 협업 기능
+- **1:1 대화 및 그룹 대화방**: 대화방 이름 설정, 실시간 멤버 초대 및 퇴장/내보내기, 방장 권한 위임
+- **메시지 액션**:
+  - **스레드 답장**: 특정 메시지에 인용 답장 (원문 클릭 시 해당 메시지로 스크롤 이동)
+  - **이모지 리액션**: 메시지에 다양한 이모지 반응 남기기 및 참여자 목록 확인
+  - **수정 / 삭제**: 내가 작성한 메시지 수정 및 실시간 반영, 메시지 삭제
+  - **@멘션 자동완성**: `@` 입력 시 대화방 참여자 목록 팝업 및 호출
+  - **코드 블록 하이라이트**: ` ```코드``` ` 형식 자동 서식 지정
+- **읽음 확인 & 구분선**:
+  - 상대방의 수신 여부 확인 (✓ 1명 안 읽음 / ✓✓ 모두 읽음)
+  - '여기서부터 읽지 않음' 구분선 및 날짜별 구분선 자동 표시
+  - 상대방이 메시지를 작성 중일 때 표시되는 타이핑 인디케이터
 
-## Repository Layout
+### 2. 미디어 및 파일 공유
+- **드래그 앤 드롭 & 클립보드 붙여넣기**: 채팅창에 드래그하거나 `Ctrl + V`로 캡처 이미지 즉시 전송
+- **이미지 라이트박스 뷰어**: 채팅창 내 이미지 클릭 시 전체화면 뷰어 오픈, 이전(◀)/다음(▶) 탐색 및 ESC 종료
+- **채팅방 파일 저장소**: 채팅방 우측 상단 메뉴에서 해당 방에 공유된 파일/이미지만 모아보고 유형별(전체/사진/문서) 필터 및 다운로드
 
-- `server.py`: runtime entry point for local server execution.
-- `messenger_server.py`: compatibility shim only; do not add new runtime logic here.
-- `app/factory.py`: Flask app factory.
-- `app/bootstrap/`: runtime/bootstrap wiring.
-- `app/http/`: HTTP routes and API handlers.
-- `app/socket_events/`: Socket.IO event handlers.
-- `app/services/`: shared runtime services and broadcast helpers.
-- `app/models/`: database access and domain logic.
-- `static/js/core/`, `static/js/services/`, `static/js/features/`, `static/js/bootstrap/`: primary frontend sources.
-- `static/js/*.js`: compatibility exports for the runtime-split frontend.
-- `templates/partials/`: HTML partials loaded by `templates/index.html`.
-- `docs/BACKUP_RUNBOOK.md`: backup, restore, and recovery checks.
-- `implementation_gap_review_2026-04-27.md`: implementation-focused follow-up for the April 27 visibility and authority gap review.
+### 3. 업무 편의 기능
+- **실시간 투표 (Polls)**:
+  - 단일 선택 / 복수 선택 가능
+  - 익명 투표 옵션 지원
+  - 실시간 득표율 및 투표자 현황 시각화
+- **공지사항 / 핀 고정 (Pins)**:
+  - 중요 메시지나 파일을 채팅방 상단 배너로 고정
+  - 클릭 시 즉시 해당 공지 확인 및 닫기
+- **강력한 검색**:
+  - **대화방 검색 (`Ctrl + K`)**: 사이드바에서 대화방 필터링
+  - **대화 내 검색 (`Ctrl + F`)**: 현재 방의 메시지 검색
+  - **고급 검색**: 기간 설정(시작일~종료일), 파일/이미지 전용 필터링 검색
 
-## Current Security And API Contracts
+### 4. 화면 및 개인 설정
+- **화면 테마**: 다크 모드, 라이트 모드, 시스템 설정 연동
+- **컬러 팔레트**: Emerald, Ocean, Purple, Rose, Orange, Cyan, Yellow, Indigo, Teal, Pink 등 10종
+- **채팅 배경**: 기본, 도트, 그리드, 그라데이션 패턴
+- **알림 설정**: 모든 메시지 / @멘션만 / 알림 끄기, 알림 소리 On/Off
+- **프로필 관리**: 프로필 사진 업로드 및 기본 아바타 설정, 닉네임/상태 메시지 변경, 비밀번호 변경 및 계정 탈퇴
 
-### 1. Membership-scoped room encryption
+---
 
-- Room keys are generated and stored server-side; clients receive per-member keyrings over authenticated HTTP/socket payloads. This is transport-protected client encryption, not server-blind end-to-end encryption.
-- `POST /api/rooms/<room_id>/members` runs key rotation and member inserts in one SQLite transaction (`invite_members_with_key_rotation`).
-- `POST /api/rooms/<room_id>/leave`, kick flows, and account deletion rotate the room key for surviving members.
-- `GET /api/rooms/<room_id>/messages` now returns:
-  - `encryption_key`
-  - `encryption_keys`
-  - `key_version`
-  - `member_key_version`
-- The `room_security_updated` socket event is the canonical frontend trigger for key refresh.
-- Newly invited members must not see messages older than their `joined_key_version`.
-- The same visibility rule applies to message-adjacent APIs, including room files, downloads, pins, reactions, replies, read receipts, and message edit/delete actions.
+## 📦 설치 및 요구 사항
 
-### 2. Authoritative room metadata updates
+### 시스템 요구 사항
+- **Python**: 3.9 이상
+- **OS**: Windows 10/11 (GUI 및 CLI 완벽 지원), Linux / macOS (CLI 모드 지원)
+- **Node.js** (선택사항, 프론트엔드 정적 코드 검사 시 필요): v18 이상
 
-- Room name changes emit `room_name_updated` from the server.
-- Admin changes emit `admin_updated` from the server.
-- Frontend code should not forge these events optimistically.
-- Socket clients cannot mutate room names or admin roles by emitting those notification event names; the server has no handlers that apply client-forged metadata payloads.
-- `pin_updated`, `poll_created`, `poll_updated`, and `room_members_updated` are client-triggered refresh relays with membership checks and per-user rate limits. Authoritative state still comes from HTTP APIs and server emits.
+### 설치 방법
 
-### 3. File upload and deletion safety
+1. **저장소 클론**
+   ```bash
+   git clone https://github.com/twbeatles/intranet-messenger.git
+   cd intranet-messenger
+   ```
 
-- `POST /api/upload` issues one-time `upload_token` values.
-- File and image messages must be sent through the validated upload-token path.
-- `DELETE /api/rooms/<room_id>/files/<file_id>` removes the linked attachment message and emits the same deletion flow the chat UI already understands.
-- If the deleted file was pinned, the server also emits `pin_updated`.
+2. **파이썬 가상환경 생성 및 활성화 (권장)**
+   ```bash
+   # Windows PowerShell
+   python -m venv venv
+   .\venv\Scripts\Activate.ps1
 
-### 4. Search visibility rules
+   # Linux / macOS
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
 
-- Deleted attachment messages must not reappear in basic or advanced search.
-- Search responses must also respect membership visibility rules tied to `key_version`.
+3. **필수 라이브러리 설치**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Local Setup
+4. **(선택사항) 프론트엔드 도구 설치**
+   ```bash
+   npm install
+   ```
 
-### Python dependencies
+---
+
+## 🖥️ 실행 방법
+
+### 방법 1. GUI 모드로 실행 (Windows 권장)
+PyQt6 기반의 관리 도구 창이 실행되며, 서버 제어 및 모니터링을 시각적으로 수행할 수 있습니다.
 
 ```bash
-pip install -r requirements.txt
+python server.py
 ```
+> **Tip**: 인자 없이 `python server.py`를 실행하면 기본적으로 GUI 모드로 시작됩니다. (PyQt6 미설치 시 자동으로 CLI 모드로 전환됩니다.)
 
-### Frontend tooling dependencies
-
-```bash
-npm install
-```
-
-### Run the app
+### 방법 2. CLI 모드로 실행 (콘솔 / Linux / 백그라운드 서비스)
+GUI 없이 커맨드라인 환경에서 서버를 직접 실행합니다.
 
 ```bash
 python server.py --cli
 ```
+- 기본 실행 주소: `http://localhost:5000` (또는 `http://0.0.0.0:5000`)
+- 종료: 콘솔에서 `Ctrl + C` 입력
 
-Default local URL:
-
-- `http://localhost:5000`
-
-## Verification Commands
-
-### Python checks
-
-```bash
-pytest tests -q
-pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py tests/test_project_audit_remediation.py -q
-pyright app gui
-```
-
-### Frontend checks
-
-```bash
-npm run lint:js
-npm run typecheck:js
-npm run check:js
-```
-
-Notes:
-
-- `jsconfig.json` covers the shared frontend bridge/state files that are most sensitive to load-order and global exposure regressions.
-- Vendor/minified assets are excluded from lint/typecheck.
-- Experimental ES module files under `static/js/experimental/` are linted but excluded from the TypeScript-style `checkJs` pass.
-
-## Packaging
-
-Build with PyInstaller:
+### 방법 3. PyInstaller 단일 실행 파일(EXE) 패키징
+Windows 환경에서 파이썬 설치 없이 단독 실행할 수 있는 EXE 파일로 빌드합니다.
 
 ```bash
 pyinstaller messenger.spec --clean
 ```
+- 빌드 결과물: `dist/사내 메신저 v4.36/` 폴더에 생성됩니다.
 
-The reviewed `messenger.spec` already includes the runtime-split Python packages, socket broadcast helpers, upload-token helpers, and backup documentation needed by the current app layout. The April 27 remediation introduced no new packaged runtime modules or data files.
+---
 
-## Documentation Index
+## 📖 사용자 가이드 (메신저 사용법)
 
-- `README.md`
-- `claude.md`
-- `gemini.md`
-- `docs/BACKUP_RUNBOOK.md`
-- `implementation_gap_review_2026-04-27.md`
-- `PROJECT_AUDIT.md`
-- `pyrightconfig.json`
-- `jsconfig.json`
-- `eslint.config.mjs`
+웹 브라우저(Chrome, Edge, Whale, Firefox 등)를 열고 서버 주소로 접속합니다.  
+- 로컬 PC 접속: `http://localhost:5000`
+- 사내 타 PC 접속: `http://<서버IP주소>:5000`
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  🔒 사내 메신저 웹 UI 구성                                              │
+├───────────────┬────────────────────────────────────────────────────────┤
+│  [대화 목록]  │  [채팅 헤더] 🔒 대화방 이름  |  ⚙ 설정  👤➕ 초대  🚪 나가기 │
+│  🔍 대화 검색  ├────────────────────────────────────────────────────────┤
+│  ───────────  │  📌 [공지 배너] (중요 공지사항 상단 고정 영역)          │
+│  💬 개발팀    ├────────────────────────────────────────────────────────┤
+│  💬 일반 대화  │  [메시지 영역]                                         │
+│               │    - 이전 메시지 무한 스크롤                              │
+│  [온라인]     │    - 스레드 답장 / 이모지 리액션 / 수정 / 삭제          │
+│  🟢 홍길동    │    - 이미지 미리보기 및 파일 다운로드                   │
+│  ───────────  ├────────────────────────────────────────────────────────┤
+│  👤 내 프로필 │  [입력창] 🔒 메시지는 암호화되어 전송됩니다            │
+│  ❓ 🎨 ➕ 🚪  │  😊 이모지 | 📎 파일첨부 | 메시지 입력 (@멘션) | ✉ 전송 │
+└───────────────┴────────────────────────────────────────────────────────┘
+```
+
+### 1. 계정 생성 및 로그인
+1. 접속 화면에서 **회원가입**을 클릭합니다.
+2. 아이디, 비밀번호(8자 이상), 닉네임을 입력하여 계정을 생성합니다.
+3. 로그인 후 메신저 메인 화면으로 이동합니다.
+
+### 2. 대화 시작 및 대화방 관리
+- **새 대화 시작**: 사이드바 하단의 `➕` 버튼 또는 단축키 `Ctrl + N`을 누릅니다.
+  - 1:1 대화: 참여할 사용자 1명을 선택하고 시작합니다.
+  - 그룹 대화: 상단에 **대화방 이름**을 입력하고 여러 명의 참여자를 체크한 뒤 대화를 시작합니다.
+- **멤버 초대**: 대화방 우측 상단의 `👤➕` 아이콘을 눌러 추가 멤버를 초대합니다.
+- **대화방 설정 (`⚙`)**:
+  - **대화방 이름 변경**: 그룹 대화방의 이름을 수정합니다.
+  - **상단 고정**: 자주 찾는 대화방을 목록 맨 위에 고정합니다.
+  - **알림 끄기**: 특정 대화방의 알림을 개별 음소거합니다.
+  - **멤버 보기 / 관리자 설정**: 참여자 목록 확인 및 방장 권한 위임
+
+### 3. 메시지 작성 및 활용
+- **기본 전송**: `Enter` 키로 전송, `Shift + Enter`로 줄바꿈합니다.
+- **@멘션 호출**: `@`를 입력하면 자동완성 목록이 뜨며, 선택 시 해당 사용자에게 강조 알림이 전송됩니다.
+- **답장 및 리액션**:
+  - 메시지에 마우스를 올리고 `↩` 아이콘을 클릭하여 답장합니다.
+  - `😊` 아이콘을 클릭하여 이모지 반응을 남깁니다.
+- **메시지 수정/삭제**: 내가 보낸 메시지의 `✏` 버튼으로 수정, `🗑` 버튼으로 삭제합니다.
+
+### 4. 파일 및 이미지 전송
+- **드래그 앤 드롭**: PC의 파일/사진을 채팅창으로 끌어다 놓으면 즉시 업로드됩니다.
+- **클립보드 이미지**: 화면 캡처 후 `Ctrl + V`를 누르면 즉시 이미지가 전송됩니다.
+- **파일 저장소 확인**: 대화방 메뉴 `⚙` -> **📁 파일 저장소**를 클릭하면 해당 방에 올라온 모든 파일과 사진을 일괄 조회 및 다운로드할 수 있습니다.
+
+### 5. 투표 및 공지사항 활용
+- **투표 만들기**: 대화방 메뉴 `⚙` -> **📋 투표 만들기**를 클릭합니다. 질문, 선택지(2~10개), 복수 선택 여부, 익명 여부를 지정하여 투표를 시작합니다.
+- **공지사항 확인**: 방에 고정된 공지는 상단 핀 배너에 노출되며, 언제든지 확인하거나 접을 수 있습니다.
+
+### 6. 단축키 모음
+| 단축키 | 동작 |
+| :--- | :--- |
+| **`Enter`** | 메시지 전송 |
+| **`Shift + Enter`** | 줄바꿈 (개행) |
+| **`Ctrl + N`** | 새 대화방 생성 모달 열기 |
+| **`Ctrl + K`** | 대화방 검색 포커스 |
+| **`Ctrl + F`** | 현재 대화방 내 메시지 검색 포커스 |
+| **`Ctrl + V`** | 클립보드 이미지 즉시 붙여넣기 및 전송 |
+| **`ESC`** | 열려 있는 모달 / 검색창 / 라이트박스 닫기 |
+| **`← / →`** | 이미지 라이트박스 뷰어에서 이전/다음 이미지 이동 |
+
+---
+
+## 🛠️ 서버 관리자 가이드
+
+Windows GUI 관리 프로그램을 통해 서버의 모든 상태를 손쉽게 제어할 수 있습니다.
+
+```
+┌────────────────────────────────────────────────────────┐
+│ 🔒 사내 메신저 서버 v4.36                🟢 서버 실행 중 │
+├────────────────────────────────────────────────────────┤
+│ [ 제어 ]  [ 통계 ]  [ 로그 ]                            │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ 포트: [ 5000 ]   [✓] HTTPS 사용                    │ │
+│ │ [▶ 서버 시작]   [■ 서버 중지]                      │ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ SSL 인증서: ✅ 인증서 존재함    [🔑 인증서 생성]    │ │
+│ └────────────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ [✓] 프로그램 시작 시 서버 자동 시작                │ │
+│ │ [✓] Windows 시작 시 자동 실행                      │ │
+│ │ [✓] 닫기 버튼 클릭 시 트레이로 최소화              │ │
+│ └────────────────────────────────────────────────────┘ │
+│ 🖥️ 로컬 접속:     http://localhost:5000              │
+│ 🌐 네트워크 접속: http://192.168.0.10:5000             │
+└────────────────────────────────────────────────────────┘
+```
+
+### 1. 주요 탭 기능
+- **제어 탭**:
+  - **포트 변경**: 기본 `5000`번 포트에서 원하는 포트로 즉시 변경
+  - **HTTPS & SSL 인증서**: 자체 서명 인증서를 원클릭으로 생성(`🔑 인증서 생성`)하고 HTTPS 모드로 안전하게 전환
+  - **자동 실행 옵션**: Windows 부팅 시 자동 시작 및 프로그램 시작 시 서버 자동 가동 설정
+  - **시스템 트레이 지원**: 창을 닫아도 트레이 영역에서 백그라운드로 계속 실행
+- **통계 탭**:
+  - 현재 활성 접속자 수 (Active Connections)
+  - 누적 접속 횟수 및 누적 메시지 건수
+  - 서버 연속 가동 시간 (Uptime) 실시간 표시
+- **로그 탭**:
+  - 서버 접속, 메시지 송수신, 오류 등 실시간 로그 스트리밍 확인 및 정리
+
+### 2. 네트워크 방화벽 설정 (사내 공유 시)
+다른 PC에서 메신저 서버에 접속하려면 서버 PC의 Windows 방화벽에서 해당 포트(기본 5000) 인바운드 규칙을 허용해야 합니다.
+```powershell
+# 관리자 권한 PowerShell에서 5000번 포트 인바운드 허용
+New-NetFirewallRule -DisplayName "Intranet Messenger Server" -Direction Inbound -LocalPort 5000 -Protocol TCP -Action Allow
+```
+
+---
+
+## 💾 데이터 백업 및 복원
+
+데이터 손실 방지와 릴리스 전 안전을 위해 SQLite 데이터베이스(`messenger.db`)와 업로드 파일(`uploads/`)을 원클릭으로 백업 및 복원하는 전용 도구를 제공합니다.
+
+### 1. 백업 생성
+```bash
+python scripts/backup_local.py --label before_update
+```
+- **백업 결과물**: `backup/manual/backup_<UTC타임스탬프>_before_update/` 폴더에 DB와 업로드 파일, `manifest.json`이 안전하게 보관됩니다.
+
+### 2. 백업 복원
+> ⚠️ **주의**: 복원 작업은 현재 로컬 DB 및 uploads 폴더를 백업 시점 데이터로 덮어씁니다. 실행 전 서버를 중지하세요.
+
+```bash
+# 복원 적용 (--yes 옵션)
+python scripts/restore_local.py backup/manual/backup_20260225T120000Z_before_update --yes
+```
+- 복원 실행 시 기존 데이터는 자동으로 `pre_restore_snapshot_<타임스탬프>`로 안전 스냅샷이 생성됩니다.
+
+### 3. 복원 무결성 검증
+```bash
+python scripts/verify_restore.py
+```
+- SQLite 무결성(`PRAGMA integrity_check`), 필수 테이블 11종 존재 여부, 사용자/방/메시지 및 파일 개수 통계를 즉시 검증합니다.
+
+---
+
+## ⚙️ 고급 환경 설정
+
+`config.py` 또는 환경 변수(`.env`)를 통해 서버의 동작 방식을 세부 조정할 수 있습니다.
+
+| 환경 변수 / 설정 항목 | 기본값 | 설명 |
+| :--- | :--- | :--- |
+| `DEFAULT_PORT` | `5000` | 웹 메신저 서비스 기본 포트 |
+| `CONTROL_PORT` | `5001` | GUI와 서버 간 통신 전용 로컬 제어 포트 |
+| `USE_HTTPS` | `False` | HTTPS 활성화 여부 |
+| `SESSION_TIMEOUT_HOURS` | `72` | 세션 유지 시간 (기본 3일) |
+| `MAX_CONTENT_LENGTH` | `16MB` | 업로드 최대 파일 크기 (16MB) |
+| `ASYNC_MODE` | `gevent` | 비동기 모드 (`gevent` 권장, `threading`) |
+| `REDIS_URL` | `None` | 멀티 워커/인스턴스 확장 시 Redis 주소 |
+| `STATE_STORE_REDIS_URL` | `None` | 분산 업로드 토큰 / 소켓 가드용 Redis URL |
+| `FEATURE_OIDC_ENABLED` | `False` | 사내 SSO / OIDC 연동 활성화 여부 |
+| `FEATURE_AV_SCAN_ENABLED`| `False` | ClamAV 백신 실시간 파일 검사 연동 여부 |
+| `RETENTION_DAYS` | `0` | 메시지 보존 기간 (일 단위, 0은 영구 보존) |
+
+---
+
+## 🧪 개발 및 검증
+
+코드 품질과 기능 무결성을 유지하기 위한 테스트 및 정적 분석 도구를 지원합니다.
+
+### 1. 백엔드 Python 테스트 및 타입 검사
+```bash
+# 전체 테스트 실행
+pytest tests -q
+
+# 핵심 감사 및 보안 회귀 테스트
+pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py tests/test_project_audit_remediation.py -q
+
+# Pyright 정적 타입 검사
+pyright app gui
+```
+
+### 2. 프론트엔드 JavaScript 검증
+```bash
+# ESLint 코드 스타일 및 린트 검사
+npm run lint:js
+
+# TypeScript/jsconfig 기반 타입 검사
+npm run typecheck:js
+
+# 통합 검증
+npm run check:js
+```
+
+---
+
+## 📁 프로젝트 구조
+
+```
+intranet-messenger/
+├── app/                        # 백엔드 핵심 애플리케이션
+│   ├── bootstrap/             # 런타임 초기화 및 워커 설정
+│   ├── http/                  # REST API 라우트 (auth, rooms, messages, uploads 등)
+│   ├── models/                # SQLite 데이터 모델 및 쿼리 로직
+│   ├── socket_events/         # Socket.IO 실시간 이벤트 핸들러
+│   ├── services/              # 세션 토큰, 브로드캐스트, 파일 처리 서비스
+│   ├── control_api.py         # GUI 제어용 로컬 API
+│   └── factory.py             # Flask 앱 팩토리
+├── gui/                       # PyQt6 기반 서버 관리 프로그램
+│   ├── services/              # 프로세스 제어 및 설정 서비스
+│   ├── styles/                # GUI QSS 스타일시트
+│   ├── widgets/               # 토스트 알림 등 커스텀 위젯
+│   └── window/                # 메인 윈도우 UI
+├── static/                    # 프론트엔드 정적 파일
+│   ├── css/                   # 스타일시트 (테마, 컴포넌트)
+│   └── js/                    # 모듈화된 프론트엔드 스크립트
+│       ├── core/              # 상태 관리, 암호화, 소켓
+│       ├── features/          # 기능별 모듈 (auth, rooms, messages, polls 등)
+│       └── services/          # API, UI 헬퍼
+├── templates/                 # Jinja2 HTML 템플릿
+│   ├── index.html             # 메인 인덱스
+│   └── partials/              # 분할 템플릿 (모달, 쉘, 인증 등)
+├── scripts/                   # 유지보수 및 백업 도구
+│   ├── backup_local.py        # 로컬 백업 생성기
+│   ├── restore_local.py       # 로컬 백업 복원기
+│   └── verify_restore.py      # 복원 검증 스크립트
+├── certs/                     # 자체 서명 SSL 인증서 생성 도구
+├── tests/                     # 단위 및 통합 테스트 스위트
+├── config.py                  # 전역 설정 파일
+├── server.py                  # 서버 진입점 (GUI / CLI)
+├── messenger.spec             # PyInstaller 빌드 명세서
+├── package.json               # 프론트엔드 린터/타입체커 설정
+└── requirements.txt           # 파이썬 의존성 패키지 목록
+```
+
+---
+
+## 📄 라이선스
+
+본 소프트웨어는 사내 내부 업무용으로 제작되었습니다.
