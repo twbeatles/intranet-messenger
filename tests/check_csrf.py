@@ -15,6 +15,7 @@ def check_csrf_after_login():
     # 1. Get initial CSRF
     initial_token = get_csrf_token()
     print(f"Initial CSRF: {initial_token}")
+    assert initial_token is not None
     
     # 2. Login
     username = f"user_{''.join(random.choices(string.ascii_lowercase + string.digits, k=6))}"

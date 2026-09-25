@@ -23,10 +23,10 @@ def test_login_flow():
     m = re.search(r'<meta name="csrf-token" content="([^"]+)">', res.text)
     token = m.group(1) if m else None
     
-    headers = {'X-CSRFToken': token}
     if not token:
         print("FAIL: No CSRF Token")
         return
+    headers = {'X-CSRFToken': token}
 
     # Login
     res = s.post(base_url + '/api/login', json={'username': u, 'password': p}, headers=headers)

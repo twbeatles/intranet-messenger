@@ -70,8 +70,10 @@ def test_concurrent_invites_assign_consistent_joined_key_version(app):
 
     current_version = _room_key_version(room_id)
     assert current_version >= 3
-    assert get_room_member_key_version(room_id, member_a_id) >= 2
-    assert get_room_member_key_version(room_id, member_b_id) >= 2
+    _ver_a = get_room_member_key_version(room_id, member_a_id)
+    assert _ver_a is not None and _ver_a >= 2
+    _ver_b = get_room_member_key_version(room_id, member_b_id)
+    assert _ver_b is not None and _ver_b >= 2
 
     _login(member_a, "audit_mem_a")
     _login(member_b, "audit_mem_b")
