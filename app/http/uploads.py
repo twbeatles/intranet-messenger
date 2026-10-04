@@ -29,7 +29,7 @@ from app.models import (
 from app.services.runtime_config import get_max_upload_size
 from app.services.socket_broadcasts import emit_message_deleted, emit_pin_updated
 from app.services.uploads import normalize_stored_path
-from app.upload_scan import get_scan_job
+from app.upload_scan import cancel_scan_job, get_scan_job, retry_scan_job
 from app.upload_tokens import issue_upload_token
 from app.utils import allowed_file, validate_file_header
 
@@ -159,6 +159,38 @@ def get_upload_job_status(job_id: str):
     elif status in ("infected", "error"):
         payload.update({"error": job.get("result") or "스캔 실패"})
     return jsonify(payload)
+
+
+@uploads_bp.post("/api/upload/jobs/<job_id>/retry")
+def retry_upload_job(job_id: str):
+    """실패한 AV 스캔 job을 다시 시도한다 (Confirmed Gap 해소)."""
+    login_error = require_login()
+    if login_error:
+        return login_error
+
+    success, error = retry_scan_job(job_id, session["user_id"])
+    if not success:
+        status = 404 if "찾을 수 없습니다" in error else 400
+        if "접근 권한" in error:
+            status = 403
+        return jsonify({"error": error}), status
+    return jsonify({"success": True, "job_id": job_id, "scan_status": "pending"})
+
+
+@uploads_bp.delete("/api/upload/jobs/<job_id>")
+def cancel_upload_job(job_id: str):
+    """AV 스캔 job을 취소하고 temp 파일을 정리한다."""
+    login_error = require_login()
+    if login_error:
+        return login_error
+
+    success, error = cancel_scan_job(job_id, session["user_id"])
+    if not success:
+        status = 404 if "찾을 수 없습니다" in error else 400
+        if "접근 권한" in error:
+            status = 403
+        return jsonify({"error": error}), status
+    return jsonify({"success": True, "job_id": job_id, "scan_status": "cancelled"})
 
 
 @uploads_bp.get("/uploads/<path:filename>")

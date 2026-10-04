@@ -54,14 +54,20 @@ def _room_member_ids(room_id: int) -> list[int]:
     return [member["id"] for member in get_room_members(room_id)]
 
 
-def _rotate_and_emit_room_security(room_id: int, user_ids: list[int]) -> None:
+def _rotate_and_emit_room_security(room_id: int, user_ids: list[int]) -> bool:
+    """멤버십 변경 후 키 회전. ISSUE-004: 실패를 호출자에게 반환해 가시화한다."""
     if not user_ids:
-        return
+        return True
     rotation = rotate_room_key(room_id)
     if not rotation:
         logger.warning(f"Failed to rotate room key after membership change: room_id={room_id}")
-        return
+        return False
     emit_room_security_updated(room_id, user_ids)
+    return True
+
+
+def _security_warning_response() -> dict:
+    return {"security_warning": "방 보안 키 갱신에 실패했습니다. 관리자에게 문의하세요."}
 
 
 @rooms_bp.get("/api/users")
@@ -209,10 +215,21 @@ def leave_room_route(room_id: int):
     emit_room_list_updated([user_id], "room_left")
     emit_room_members_updated(room_id)
     remaining_user_ids = _room_member_ids(room_id)
+    security_ok = True
     if remaining_user_ids:
-        _rotate_and_emit_room_security(room_id, remaining_user_ids)
+        security_ok = _rotate_and_emit_room_security(room_id, remaining_user_ids)
         emit_room_list_updated(remaining_user_ids, "membership_changed")
-    return jsonify({"success": True, "left": True, "already_left": False})
+    if not security_ok:
+        log_admin_action(
+            room_id=room_id,
+            actor_user_id=user_id,
+            action="key_rotation_failed",
+            metadata={"source": "leave"},
+        )
+    response = {"success": True, "left": True, "already_left": False}
+    if not security_ok:
+        response.update(_security_warning_response())
+    return jsonify(response)
 
 
 @rooms_bp.delete("/api/rooms/<int:room_id>/members/<int:target_user_id>")
@@ -237,9 +254,18 @@ def kick_member(room_id: int, target_user_id: int):
     emit_room_list_updated([target_user_id], "room_kicked")
     emit_room_members_updated(room_id)
     remaining_user_ids = _room_member_ids(room_id)
+    security_ok = True
     if remaining_user_ids:
-        _rotate_and_emit_room_security(room_id, remaining_user_ids)
+        security_ok = _rotate_and_emit_room_security(room_id, remaining_user_ids)
         emit_room_list_updated(remaining_user_ids, "membership_changed")
+    if not security_ok:
+        log_admin_action(
+            room_id=room_id,
+            actor_user_id=session["user_id"],
+            target_user_id=target_user_id,
+            action="key_rotation_failed",
+            metadata={"source": "kick"},
+        )
     log_admin_action(
         room_id=room_id,
         actor_user_id=session["user_id"],
@@ -247,7 +273,10 @@ def kick_member(room_id: int, target_user_id: int):
         action="kick_member",
         metadata={"source": "api"},
     )
-    return jsonify({"success": True})
+    response = {"success": True}
+    if not security_ok:
+        response.update(_security_warning_response())
+    return jsonify(response)
 
 
 @rooms_bp.put("/api/rooms/<int:room_id>/name")

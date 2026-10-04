@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 _HIDDEN_DELETED_ATTACHMENT_WHERE = "NOT (m.message_type IN ('file', 'image') AND m.file_path IS NULL AND m.content = '[삭제된 메시지]')"
 _VISIBLE_FOR_MEMBER_WHERE = "COALESCE(m.key_version, 1) >= COALESCE(rm.joined_key_version, 1)"
 
+
+def _like_escape(text: str) -> str:
+    """LIKE wildcards are escaped to literals (ISSUE-006)."""
+    return (text or '').replace('\\', '\\\\').replace('%', r'\%').replace('_', r'\_')
+
 server_stats = {
     'start_time': None,
     'total_messages': 0,
@@ -442,9 +447,9 @@ def search_messages(user_id, query, offset=0, limit=50):
                 WHERE rm.user_id = ? AND m.encrypted = 0
                   AND ''' + _VISIBLE_FOR_MEMBER_WHERE + '''
                   AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
-                  AND m.content LIKE ?
+                  AND m.content LIKE ? ESCAPE '\\'
             ''',
-            (user_id, f'%{query}%'),
+            (user_id, f'%{_like_escape(q)}%'),
         )
         total_count = cursor.fetchone()[0]
 
@@ -458,11 +463,11 @@ def search_messages(user_id, query, offset=0, limit=50):
                 WHERE rm.user_id = ? AND m.encrypted = 0
                   AND ''' + _VISIBLE_FOR_MEMBER_WHERE + '''
                   AND ''' + _HIDDEN_DELETED_ATTACHMENT_WHERE + '''
-                  AND m.content LIKE ?
+                  AND m.content LIKE ? ESCAPE '\\'
                 ORDER BY m.created_at DESC
                 LIMIT ? OFFSET ?
             ''',
-            (user_id, f'%{query}%', limit, offset),
+            (user_id, f'%{_like_escape(q)}%', limit, offset),
         )
         messages = [dict(message) for message in cursor.fetchall()]
         return {
@@ -492,9 +497,6 @@ def advanced_search(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        def _like_escape(text: str) -> str:
-            return (text or '').replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-
         def _fts5_available():
             try:
                 cursor.execute("SELECT 1 FROM messages_fts LIMIT 1")

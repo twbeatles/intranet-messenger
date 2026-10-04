@@ -9,12 +9,13 @@ Read these files before changing code:
 
 1. `README.md`
 2. `claude.md`
-3. `implementation_gap_review_2026-04-27.md`
-4. `PROJECT_AUDIT.md`
-5. `docs/BACKUP_RUNBOOK.md`
-6. `pyrightconfig.json`
-7. `jsconfig.json`
-8. `eslint.config.mjs`
+3. `AGENTS.md`
+4. `implementation_gap_review_2026-04-27.md`
+5. `PROJECT_AUDIT.md`
+6. `docs/BACKUP_RUNBOOK.md`
+7. `pyrightconfig.json`
+8. `jsconfig.json`
+9. `eslint.config.mjs`
 
 ## Must-Keep Contracts
 

@@ -223,3 +223,97 @@ def test_handle_room_security_updated_triggers_decrypt_refresh():
 
     assert "refreshPendingMessageDecryption" in messages_runtime
     assert "refreshPendingMessageDecryption()" in socket_runtime
+
+
+def test_concurrent_invites_via_greenlets_keep_key_versions_consistent(app):
+    """ISSUE-001: gevent 그린렛 병렬 초대에서도 버전 일관성 보장."""
+    import gevent
+
+    from app.crypto_manager import CryptoManager
+    from app.models.base import close_thread_db
+
+    # 마스터키를 미리 생성해 병렬 생성 레이스를 제거한다.
+    CryptoManager._get_master_key()
+
+    owner = app.test_client()
+    _register(owner, "audit_gr_owner")
+    member_names = ("audit_gr_m1", "audit_gr_m2", "audit_gr_m3", "audit_gr_m4")
+    for name in member_names:
+        _register(owner, name)
+    _login(owner, "audit_gr_owner")
+    member_ids = [_user_id(owner, name) for name in member_names]
+    room_id = _create_room(owner, name="audit-greenlet-room")
+    before_version = _room_key_version(room_id)
+
+    def invite_one(user_id: int):
+        try:
+            return invite_members_with_key_rotation(room_id, [user_id])
+        finally:
+            close_thread_db()
+
+    jobs = [gevent.spawn(invite_one, user_id) for user_id in member_ids]
+    gevent.joinall(jobs, timeout=60)
+    results = []
+    for job in jobs:
+        assert job.value is not None
+        results.append(job.value)
+    assert all(error_code == "" for _, _, error_code in results)
+    assert all(len(added) == 1 for _, added, _ in results)
+
+    # 병렬 요청은 각각 직렬 rotate되므로 버전이 1씩 증가한다. 핵심은
+    # 실패율 0 + 각 멤버 버전이 유효 범위(before+1 .. current) 안에 있는 것이다.
+    current_version = _room_key_version(room_id)
+    assert current_version == before_version + len(member_ids)
+    for user_id in member_ids:
+        joined_version = get_room_member_key_version(room_id, user_id)
+        assert joined_version is not None
+        assert before_version < joined_version <= current_version
+
+
+def test_single_invite_request_assigns_same_joined_key_version(app):
+    """ISSUE-001: 단일 초대 요청의 다수 멤버는 모두 같은 버전을 받는다."""
+    from app.crypto_manager import CryptoManager
+
+    CryptoManager._get_master_key()
+
+    owner = app.test_client()
+    _register(owner, "audit_same_owner")
+    member_names = ("audit_same_m1", "audit_same_m2", "audit_same_m3")
+    for name in member_names:
+        _register(owner, name)
+    _login(owner, "audit_same_owner")
+    member_ids = [_user_id(owner, name) for name in member_names]
+    room_id = _create_room(owner, name="audit-same-version-room")
+    before_version = _room_key_version(room_id)
+
+    rotation, added, error_code = invite_members_with_key_rotation(room_id, member_ids)
+    assert error_code == ""
+    assert sorted(added) == sorted(member_ids)
+    assert rotation is not None
+    assert rotation["key_version"] == before_version + 1
+    assert _room_key_version(room_id) == before_version + 1
+    for user_id in member_ids:
+        assert get_room_member_key_version(room_id, user_id) == before_version + 1
+
+
+def test_invite_returns_error_when_begin_fails(app):
+    """ISSUE-001: BEGIN 실패를 삼키지 않고 error 코드를 반환한다."""
+    owner = app.test_client()
+    _register(owner, "audit_begin_owner")
+    _register(owner, "audit_begin_member")
+    _login(owner, "audit_begin_owner")
+    member_id = _user_id(owner, "audit_begin_member")
+    room_id = _create_room(owner, name="audit-begin-room")
+    before_version = _room_key_version(room_id)
+
+    conn = get_db()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        rotation, added, error_code = invite_members_with_key_rotation(room_id, [member_id])
+    finally:
+        conn.rollback()
+
+    assert rotation is None
+    assert added == []
+    assert error_code == "error"
+    assert _room_key_version(room_id) == before_version

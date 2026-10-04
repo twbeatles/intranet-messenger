@@ -45,7 +45,9 @@ python scripts/restore_local.py backup/manual/backup_20260225T120000Z_before_rel
 
 Restore behavior:
 
-- The current database and uploads directory are snapshotted as `pre_restore_snapshot_<UTC_TIMESTAMP>`.
+- With `--yes`, the script first refuses when the server control port answers. Re-run with `--force` only when the server is certainly stopped.
+- The target database gets a `PRAGMA wal_checkpoint(TRUNCATE)` and leftover `-wal`/`-shm` files are removed before the copy.
+- The current database and uploads directory are snapshotted as `pre_restore_snapshot_<UTC_TIMESTAMP>` next to the target database (not inside the backup directory).
 - The selected backup content is copied back into the configured runtime paths.
 
 ## Database Verification
@@ -83,7 +85,7 @@ python server.py --cli
 
 ```bash
 pytest tests -q
-pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q
+pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py tests/test_project_audit_remediation.py -q
 ```
 
 ### Frontend regression checks

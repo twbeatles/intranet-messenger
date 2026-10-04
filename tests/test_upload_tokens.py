@@ -70,3 +70,43 @@ def test_purge_expired_upload_tokens_removes_orphan_file(tmp_path, monkeypatch):
     removed = upload_tokens.purge_expired_upload_tokens(upload_folder=str(tmp_path), now=now)
     assert removed == 1
     assert not os.path.exists(orphan_path)
+
+
+def test_purge_expired_upload_tokens_cleans_quarantine_subdir(tmp_path, monkeypatch):
+    """ISSUE-005: quarantine 하위 잔류 temp도 정리, profiles는 제외."""
+    import app.upload_tokens as upload_tokens
+
+    now = time.time()
+    monkeypatch.setattr(upload_tokens, "TOKEN_TTL_SECONDS", 1)
+
+    class _FakeCursor:
+        def execute(self, _query):
+            return None
+
+        def fetchall(self):
+            return []
+
+    class _FakeConn:
+        def cursor(self):
+            return _FakeCursor()
+
+    monkeypatch.setattr(upload_tokens, "get_db", lambda: _FakeConn())
+
+    quarantine_dir = os.path.join(str(tmp_path), "quarantine")
+    os.makedirs(quarantine_dir, exist_ok=True)
+    stuck_path = os.path.join(quarantine_dir, "stuck.tmp")
+    with open(stuck_path, "wb") as handle:
+        handle.write(b"stuck-scan-temp")
+    os.utime(stuck_path, (now - 10, now - 10))
+
+    profiles_dir = os.path.join(str(tmp_path), "profiles")
+    os.makedirs(profiles_dir, exist_ok=True)
+    profile_path = os.path.join(profiles_dir, "avatar.png")
+    with open(profile_path, "wb") as handle:
+        handle.write(b"profile")
+    os.utime(profile_path, (now - 10, now - 10))
+
+    removed = upload_tokens.purge_expired_upload_tokens(upload_folder=str(tmp_path), now=now)
+    assert removed == 1
+    assert not os.path.exists(stuck_path)
+    assert os.path.exists(profile_path)

@@ -29,10 +29,24 @@ _db_lock = threading.Lock()
 _db_initialized = False
 
 
-class _ConnectionLocal(threading.local):
-    def __init__(self):
-        super().__init__()
-        self.connection: sqlite3.Connection | None = None
+try:
+    from gevent.local import local as _GreenletLocalBase
+
+    class _ConnectionLocal(_GreenletLocalBase):  # type: ignore[no-redef]
+        """그린렛별 DB 커넥션 저장소 (gevent 운영 모드용)."""
+
+        def __init__(self):
+            super().__init__()
+            self.connection: sqlite3.Connection | None = None
+
+except ImportError:
+
+    class _ConnectionLocal(threading.local):  # type: ignore[no-redef]
+        """스레드별 DB 커넥션 저장소 (gevent 미설치 환경용)."""
+
+        def __init__(self):
+            super().__init__()
+            self.connection: sqlite3.Connection | None = None
 
 
 _db_local = _ConnectionLocal()
@@ -69,7 +83,11 @@ def _create_connection() -> sqlite3.Connection:
 
 
 def get_db() -> sqlite3.Connection:
-    """데이터베이스 연결 - 스레드별 연결 재사용 (성능 최적화)"""
+    """데이터베이스 연결 - 그린렛/스레드별 연결 재사용 (성능 최적화).
+
+    gevent 운영 모드에서는 한 OS 스레드에서 다수 그린렛이 동작하므로
+    그린렛별 커넥션을 사용해 트랜잭션 인터리빙을 방지한다.
+    """
     if _db_local.connection is None:
         _db_local.connection = _create_connection()
     else:
@@ -87,7 +105,7 @@ def get_db() -> sqlite3.Connection:
 
 
 def close_thread_db():
-    """현재 스레드의 데이터베이스 연결 종료"""
+    """현재 그린렛/스레드의 데이터베이스 연결 종료"""
     if _db_local.connection:
         try:
             _db_local.connection.close()
@@ -131,6 +149,85 @@ def safe_file_delete(file_path: str, max_retries: int = 3) -> bool:
             if attempt < max_retries - 1:
                 time.sleep(0.3)
     return False
+
+
+def _migrate_messages_sender_fk() -> bool:
+    """messages.sender_id FK 제거 (탈퇴자 메시지 보존 허용).
+
+    탈퇴 시 메시지를 익명화하고 users 행을 삭제하므로 sender_id FK가 있으면
+    탈퇴 자체가 FOREIGN KEY 오류로 실패한다. 익명화 메시지는 참조 무결성
+    대상이 아니므로 FK를 제거한다. 독립 커넥션으로 수행하며 멱등이다.
+    """
+    conn = sqlite3.connect(DATABASE_PATH, timeout=30, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_key_list(messages)")
+        has_sender_fk = any(
+            row["from"] == "sender_id" and row["table"] == "users"
+            for row in cursor.fetchall()
+        )
+        if not has_sender_fk:
+            return False
+
+        cursor.execute("PRAGMA foreign_keys=OFF")
+        cursor.execute("BEGIN")
+        try:
+            cursor.execute("DROP TRIGGER IF EXISTS messages_fts_ai")
+            cursor.execute("DROP TRIGGER IF EXISTS messages_fts_ad")
+            cursor.execute("DROP TRIGGER IF EXISTS messages_fts_au")
+            cursor.execute("""
+                CREATE TABLE messages_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    room_id INTEGER NOT NULL,
+                    sender_id INTEGER NOT NULL,
+                    content TEXT,
+                    encrypted INTEGER DEFAULT 1,
+                    message_type TEXT DEFAULT 'text',
+                    file_path TEXT,
+                    file_name TEXT,
+                    reply_to INTEGER,
+                    key_version INTEGER DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (room_id) REFERENCES rooms(id),
+                    FOREIGN KEY (reply_to) REFERENCES messages(id)
+                )
+            """)
+            cursor.execute("""
+                INSERT INTO messages_new (
+                    id, room_id, sender_id, content, encrypted, message_type,
+                    file_path, file_name, reply_to, key_version, created_at
+                )
+                SELECT
+                    id, room_id, sender_id, content, encrypted, message_type,
+                    file_path, file_name, reply_to, key_version, created_at
+                FROM messages
+            """)
+            cursor.execute("DROP TABLE messages")
+            cursor.execute("ALTER TABLE messages_new RENAME TO messages")
+            cursor.execute("COMMIT")
+        except Exception:
+            try:
+                cursor.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+
+        cursor.execute("PRAGMA foreign_key_list(messages)")
+        remaining = [row["from"] for row in cursor.fetchall()]
+        if "sender_id" in remaining:
+            raise RuntimeError("sender FK migration did not remove sender_id FK")
+        logger.info("Migrated messages.sender_id FK (deleted-user messages preserved)")
+        return True
+    finally:
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def init_db():
@@ -214,7 +311,6 @@ def init_db():
                 key_version INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (room_id) REFERENCES rooms(id),
-                FOREIGN KEY (sender_id) REFERENCES users(id),
                 FOREIGN KEY (reply_to) REFERENCES messages(id)
             )
         ''')
@@ -429,6 +525,11 @@ def init_db():
             ''')
         except Exception as e:
             logger.error(f"Key version backfill failed: {e}")
+
+        try:
+            _migrate_messages_sender_fk()
+        except Exception as e:
+            logger.error(f"messages sender FK migration failed: {e}")
         
         # 인덱스 생성
         try:

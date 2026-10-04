@@ -94,6 +94,78 @@ def _update_scan_job(job_id: str, status: str, result: str = "", token: str | No
     conn.commit()
 
 
+def _update_scan_job_if_pending(
+    job_id: str, status: str, result: str = "", token: str | None = None
+) -> bool:
+    """워커 처리 결과가 사용자 취소와 경합해도 취소가 풀리지 않게 한다."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE upload_scan_jobs
+        SET status = ?, result = ?, token = COALESCE(?, token), updated_at = ?
+        WHERE job_id = ? AND status = 'pending'
+        """,
+        (status, result, token, _now_str(), job_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def retry_scan_job(job_id: str, user_id: int) -> tuple[bool, str]:
+    """실패(error)한 스캔 job을 다시 pending으로 되돌려 큐에 넣는다."""
+    job = get_scan_job(job_id)
+    if not job:
+        return False, "스캔 작업을 찾을 수 없습니다."
+    if int(job.get("user_id") or 0) != int(user_id):
+        return False, "접근 권한이 없습니다."
+    if (job.get("status") or "").lower() != "error":
+        return False, "실패한 작업만 다시 시도할 수 있습니다."
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE upload_scan_jobs SET status = 'pending', result = '', updated_at = ? "
+        "WHERE job_id = ? AND status = 'error'",
+        (_now_str(), job_id),
+    )
+    conn.commit()
+    if cursor.rowcount < 1:
+        return False, "작업 상태가 변경되었습니다."
+    _scan_queue.put(job_id)
+    return True, ""
+
+
+def cancel_scan_job(job_id: str, user_id: int) -> tuple[bool, str]:
+    """스캔 job을 취소하고 temp 파일을 정리한다."""
+    job = get_scan_job(job_id)
+    if not job:
+        return False, "스캔 작업을 찾을 수 없습니다."
+    if int(job.get("user_id") or 0) != int(user_id):
+        return False, "접근 권한이 없습니다."
+    status = (job.get("status") or "").lower()
+    if status in ("clean", "cancelled"):
+        return False, "이미 처리된 작업은 취소할 수 없습니다."
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE upload_scan_jobs SET status = 'cancelled', updated_at = ? "
+        "WHERE job_id = ? AND status NOT IN ('clean', 'cancelled')",
+        (_now_str(), job_id),
+    )
+    conn.commit()
+    if cursor.rowcount < 1:
+        return False, "작업 상태가 변경되었습니다."
+    try:
+        from app.services.runtime_paths import get_upload_folder
+
+        abs_temp = resolve_stored_path(get_upload_folder(), job.get("temp_path") or "")
+        if abs_temp:
+            safe_file_delete(abs_temp)
+    except Exception as exc:
+        logger.warning(f"Cancelled scan temp cleanup failed: {exc}")
+    return True, ""
+
+
 def _scan_with_clamav(abs_path: str, host: str, port: int, timeout_seconds: int) -> tuple[bool, str]:
     try:
         with socket.create_connection((host, port), timeout=timeout_seconds) as sock:
@@ -123,6 +195,7 @@ def _process_job(job_id: str):
         return
 
     with app.app_context():
+        abs_temp_for_cleanup = None
         try:
             job = get_scan_job(job_id)
             if not job:
@@ -132,12 +205,15 @@ def _process_job(job_id: str):
 
             upload_root = app.config.get("UPLOAD_FOLDER")
             abs_temp = resolve_stored_path(upload_root, job["temp_path"])
+            abs_temp_for_cleanup = abs_temp
             abs_final = resolve_stored_path(upload_root, job["final_path"])
             os.makedirs(os.path.dirname(abs_final), exist_ok=True)
 
             scanner = (app.config.get("AV_SCANNER") or "clamav").lower()
             if scanner != "clamav":
-                _update_scan_job(job_id, "error", f"unsupported scanner: {scanner}")
+                # ISSUE-005: 지원하지 않는 스캐너여도 temp 파일을 남기지 않는다.
+                safe_file_delete(abs_temp)
+                _update_scan_job_if_pending(job_id, "error", f"unsupported scanner: {scanner}")
                 return
 
             clean, result = _scan_with_clamav(
@@ -150,7 +226,7 @@ def _process_job(job_id: str):
             if not clean:
                 safe_file_delete(abs_temp)
                 status = "infected" if "FOUND" in result else "error"
-                _update_scan_job(job_id, status, result)
+                _update_scan_job_if_pending(job_id, status, result)
                 return
 
             shutil.move(abs_temp, abs_final)
@@ -162,9 +238,13 @@ def _process_job(job_id: str):
                 file_type=job["file_type"],
                 file_size=job.get("file_size") or 0,
             )
-            _update_scan_job(job_id, "clean", "clean", token=token)
+            _update_scan_job_if_pending(job_id, "clean", "clean", token=token)
         except Exception as e:
             logger.error(f"Upload scan worker job error({job_id}): {e}")
+            # ISSUE-005: 예외 경로에서도 temp 파일을 정리한다.
+            # (abs_temp 초기화 전 실패면 삭제할 파일이 없다.)
+            if abs_temp_for_cleanup:
+                safe_file_delete(abs_temp_for_cleanup)
             try:
                 _update_scan_job(job_id, "error", str(e))
             except Exception:

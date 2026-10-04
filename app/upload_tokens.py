@@ -17,9 +17,33 @@ TOKEN_TTL_SECONDS = 300
 
 _TOKEN_PREFIX = "upload_token"
 
+_QUARANTINE_SUBDIR = "quarantine"
+
 
 def _token_key(token: str) -> str:
     return f"{_TOKEN_PREFIX}:{token}"
+
+
+def _iter_purge_candidates(upload_root: str):
+    """만료 정리 대상 파일 경로를 yield한다.
+
+    최상위 파일 + quarantine 하위 파일만 스캔한다. profiles 등 다른 하위
+    디렉토리는 정리 대상이 아니다 (ISSUE-005).
+    """
+    try:
+        top_entries = list(os.scandir(upload_root))
+    except FileNotFoundError:
+        return
+    for entry in top_entries:
+        if entry.is_file():
+            yield entry.path
+    try:
+        quarantine_entries = list(os.scandir(os.path.join(upload_root, _QUARANTINE_SUBDIR)))
+    except FileNotFoundError:
+        return
+    for entry in quarantine_entries:
+        if entry.is_file():
+            yield entry.path
 
 
 def purge_expired_upload_tokens(upload_folder: str | None = None, now: float | None = None):
@@ -38,19 +62,17 @@ def purge_expired_upload_tokens(upload_folder: str | None = None, now: float | N
     except Exception:
         referenced = set()
 
-    for entry in os.scandir(upload_root):
-        if not entry.is_file():
-            continue
+    for file_path in _iter_purge_candidates(upload_root):
         try:
-            if entry.stat().st_mtime > cutoff:
+            if os.path.getmtime(file_path) > cutoff:
                 continue
         except FileNotFoundError:
             continue
 
-        rel_path = entry.name.replace("\\", "/")
+        rel_path = os.path.relpath(file_path, upload_root).replace("\\", "/")
         if rel_path in referenced:
             continue
-        if safe_file_delete(entry.path):
+        if safe_file_delete(file_path):
             deleted += 1
     return deleted
 

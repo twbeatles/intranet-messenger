@@ -1,394 +1,225 @@
 # Project Audit
 
-감사 일자: 2026-06-25  
-감사 범위: 기능 구현 관점 (보안·가시성·비동기·상태 흐름·테스트·문서 정합성)  
-분석 방법: `README.md`, `CLAUDE.md` 선독 → CodeGraph MCP 구조/호출 관계 분석 → pytest·`npm run check:js`·pyright 보조 검증
+감사 일자: 2026-10-04
+감사 범위: 기능 구현·런타임 안정성 (보안 경계, 동시성, 데이터 흐름, 복구, 문서 정합성)
+감사 방식: `README.md`·`CLAUDE.md`·`implementation_gap_review_2026-04-27.md`·`docs/BACKUP_RUNBOOK.md` 선독 → CodeGraph MCP 구조/호출 분석 → `Select-String`·파일 열람으로 보완 → pytest·`npm run check:js`·pyright 실행 검증
+제약 준수: 코드 수정 없음, destructive 명령 없음, production 데이터 변경 없음, 미실행 테스트 기재 없음
 
-## Remediation Status (2026-06-25)
+> 참고: 루트에 2026-06-25자 `PROJECT_AUDIT.md`가 이미 존재했고, 그 문서의 개선 권고(초대 트랜잭션화, Redis 경고/`REQUIRE_REDIS_STATE`, relay rate limit, `refreshPendingMessageDecryption`, experimental race guard 등)가 현재 코드에 반영되어 있음을 확인했다. 본 문서는 그 후속 상태에 대한 새로운 원샷 감사로 기존 문서를 대체한다.
 
-| 항목 | 상태 |
-|------|------|
-| §3.1 초대 트랜잭션화 | ✅ `invite_members_with_key_rotation` |
-| §3.2 Redis 스케일링 가이드/경고 | ✅ `REQUIRE_REDIS_STATE`, worker warnings |
-| §3.3 experimental openRoom race | ✅ `currentOpenRequestId` |
-| §3.4 room_security_updated UI | ✅ `refreshPendingMessageDecryption` |
-| §3.5 socket relay rate limit | ✅ room_members + poll_* |
-| §3.6 E2E 문서 정정 | ✅ README/CLAUDE/gemini |
-| §3.7 테스트 환경 | ✅ encoding exclude, OIDC JWKS HTTP |
-| §3.8 불필요 rotate rollback | ✅ 트랜잭션 rollback + 테스트 |
-| §6 테스트 보강 | ✅ `tests/test_project_audit_remediation.py` |
-| 레거시 격리 | ✅ `app/legacy/README.md` |
-| Playwright E2E | ⏸️ 정적 JS 계약 테스트로 대체 (경량) |
+## Remediation Status (2026-10-04)
 
----
+본 문서의 모든 High-Risk Issues와 확인된 Gap이 아래와 같이 조치되었다.
+
+| 항목 | 상태 | 검증 |
+|------|------|------|
+| ISSUE-001 그린렛-로컬 커넥션 + BEGIN 실패 명시화 | ✅ `app/models/base.py`, `app/models/rooms.py` | `tests/test_project_audit_remediation.py` (그린렛 병렬 + BEGIN 실패 + 단일 요청 동일 버전) |
+| ISSUE-002 탈퇴 첨부 정합성 + sender FK 마이그레이션 | ✅ `app/models/users.py`, `app/models/base.py` | `tests/test_user_deletion.py` (참조 정리 + 구 스키마 마이그레이션) |
+| ISSUE-003 복원 WAL/서버감지/스냅샷 분리 | ✅ `scripts/restore_local.py` | `tests/test_restore_local.py` (신규) |
+| ISSUE-004 rotate 실패 가시화 | ✅ `app/http/rooms.py` (경고 + `key_rotation_failed` audit) | `tests/test_kick_member.py` |
+| ISSUE-005 스캔 temp 정리 + purge quarantine 포함 | ✅ `app/upload_scan.py`, `app/upload_tokens.py` | `tests/test_upload_tokens.py` |
+| ISSUE-006 검색 fallback 이스케이프 | ✅ `app/models/messages.py` | `tests/test_search_limit_clamp.py` |
+| OIDC 연동 계정 탈퇴 경로 | ✅ `app/models/users.py`, `app/http/auth.py` (`oidc_confirm`) | `tests/test_user_deletion.py` |
+| limiter redis 폴백 경고 | ✅ `app/bootstrap/runtime.py` | 로그 경로 (단위 테스트 없음) |
+| 레거시 아카이브 | ✅ `archive/legacy-models/` 이동 + spec 제외 | 전체 스위트 |
+| server.py 배너 + AGENTS.md | ✅ 문구 정정 + `AGENTS.md` 신설 | — |
+| 스캔 job 재시도/취소 API + 프론트 facade | ✅ `app/http/uploads.py`, `static/js/services/upload-service.js` | `tests/test_upload_scan_jobs.py`, smoke 계약 테스트 |
+| 경량 E2E smoke | ✅ `tests/test_e2e_smoke.py` (소켓 클라이언트 기반) | 1 passed |
+
+추가 발견 (감사 문서에 없던 실제 버그): 메시지가 있는 사용자는 `messages.sender_id` FK 때문에 탈퇴 자체가 실패했음. sender FK 제거 마이그레이션으로 해소.
+
+최종 검증 (2026-10-04): `npm run check:js` pass, `pytest tests -q` **134 passed**, targeted 3종 **19 passed**, `pyright app gui` **0 errors, 0 warnings**.
 
 ## 1. Executive Summary
 
-이 프로젝트는 Flask + Socket.IO 기반 사내 메신저로, 2026-04-27 기준 **멤버십 기반 방 키 로테이션·메시지 가시성·서버 권위 소켓 이벤트**가 핵심 계약으로 잘 정리되어 있고, 관련 회귀 테스트도 다수 존재합니다. CodeGraph와 pytest 결과를 종합하면 **핵심 보안 계약 대부분은 구현·테스트로 뒷받침**되고 있습니다.
-
-다만 다음 영역은 실제 운영에서 기능 장애나 보안 경계 약화로 이어질 수 있습니다.
-
-| 영역 | 요약 |
-|------|------|
-| **동시성** | 초대(`invite_member`) 시 키 로테이션과 멤버 추가가 단일 트랜잭션으로 묶이지 않아, 동시 초대 시 `joined_key_version` 불일치 가능 |
-| **수평 확장** | 기본 `StateStore` in-memory + `MESSAGE_QUEUE=None` → 다중 프로세스/다중 인스턴스에서 업로드 토큰·레이트리밋·presence 불일치 |
-| **프론트엔드 이중 경로** | 운영 UI(`static/js/features/`)는 방 전환 race guard가 있으나, experimental 모듈은 미적용 |
-| **테스트 신뢰도** | 전체 107개 중 3개 실패(인코딩 hygiene, OIDC 2건). git 미사용 환경에서 hygiene 테스트가 `node_modules`까지 스캔 |
-| **문서 vs 구현** | README의 “E2E 암호화” 표현은 서버가 평문 키를 보유·전달하는 실제 구조와 차이 있음 |
-
-**감사 시점 위험도: Medium~High** → **2026-06-25 remediation 적용 후: Low~Medium** (단일 프로세스), **Medium** (Redis 없이 다중 워커)
-
----
+- 프로젝트 전체 상태: Flask + Socket.IO(gevent) 실시간 메신저. 멤버십 기반 방 키 로테이션(`messages.key_version >= room_members.joined_key_version`), 서버 권위 소켓 이벤트, 업로드 토큰 1회성 소비, 삭제 첨부 검색 제외 등 핵심 계약이 구현되어 있고 회귀 테스트로 뒷받침된다. 이번 감사 시점 전체 스위트가 녹색이다.
+- 전체 위험도: **단일 프로세스 기준 Medium, gevent 동시 부하 또는 복원 절차 기준 Medium~High**
+- 가장 중요한 문제 3~5개:
+  1. gevent 그린렛이 `threading.local` DB 커넥션을 공유해 초대 원자성 등 트랜잭션 경계가 훼손될 수 있음 (High/Likely)
+  2. 회원 탈퇴 시 첨부 파일 바이트는 삭제되지만 메시지의 `file_path`가 남아 깨진 첨부 참조가 남음 (Medium/Confirmed)
+  3. `scripts/restore_local.py`가 SQLite WAL/`-shm`을 처리하지 않고 실행 중 서버도 검사하지 않음 (Medium/Confirmed)
+  4. 강퇴/나가기 후 키 로테이션 실패가 경고 로그로만 끝나 구 키가 유지됨 (Medium/Likely)
+  5. OIDC 전용 계정은 비밀번호를 몰라 계정 탈퇴·비밀번호 변경이 불가함 (Medium/Confirmed Gap)
+- 데이터 손상/유실 가능성 여부: **있음 (조건부)** — 복원 절차의 WAL 잔류, 탈퇴자의 공유 첨부 바이트 삭제, 동시 쓰기 시 트랜잭션 interleaving이 해당 조건에서 데이터 무결성을 해칠 수 있다. 평상시 단일 사용자 순차 사용에서는 유실 경로가 확인되지 않았다.
+- 가장 먼저 수정해야 할 영역: DB 쓰기 경로의 그린렛-안전성(커넥션 공유 제거 또는 쓰기 직렬화)과 탈퇴 시 첨부 정합성.
 
 ## 2. Project Understanding
 
-### 2.1 프로젝트 목적
-
-- 사내용 실시간 채팅(방/파일/핀/리액션/투표/검색)
-- 선택적 PyInstaller 데스크톱 패키징
-- 멤버십 변경 시 방 암호화 키 로테이션으로 **초대 이전 히스토리 차단**
-- 로컬 SQLite + 파일 업로드 기반 단일 서버 우선 설계
-
-### 2.2 아키텍처 (CodeGraph 기준)
-
-```
-server.py / app/server_launcher.py
-  └─ app.factory.build_app()
-       ├─ app/bootstrap/runtime.py      # Flask 설정, StateStore, 경로
-       ├─ app/bootstrap/socketio_config.py
-       ├─ app/routes → app/http/*       # REST API
-       ├─ app/sockets → app/socket_events/*
-       │    ├─ connection.py           # 연결/세션
-       │    ├─ messages.py             # send/edit/delete/reaction
-       │    ├─ rooms.py                # room_members_updated relay
-       │    ├─ features.py             # pin/poll relay
-       │    └─ presence.py             # typing, profile_updated
-       ├─ app/models/*                  # DB·도메인 (rooms, messages, users…)
-       ├─ app/services/socket_broadcasts.py  # HTTP→Socket 권위 이벤트
-       └─ app/bootstrap/workers.py      # maintenance, upload scan
-
-Frontend (templates/partials/scripts.html)
-  static/js/core|services|features|bootstrap → compatibility shims (rooms.js, messages.js…)
-```
-
-### 2.3 주요 실행 흐름
-
-**A. 앱 기동**  
-`server_launcher.run_server()` → `create_app()` → Socket.IO + Control API(127.0.0.1) + maintenance worker
-
-**B. 메시지 전송**  
-클라이언트 `send_message` → `app/socket_events/messages.py`  
-→ 멤버십·rate limit·(파일 시) `consume_upload_token` → `create_message` → `new_message` broadcast
-
-**C. 멤버십 변경 / 키 로테이션**  
-`POST /api/rooms/<id>/members|leave|kick`, 계정 삭제  
-→ `rotate_room_key()` (invite/leave/kick/delete 잔존 멤버)  
-→ `emit_room_security_updated` (사용자별 keyring payload)  
-→ 프론트 `handleRoomSecurityUpdated`가 in-memory 키 갱신
-
-**D. 메시지 가시성**  
-`messages.key_version >= room_members.joined_key_version`  
-`can_user_see_message`, `get_room_messages`, 검색, 파일/핀/리액션/답장/다운로드 경로에서 공유
-
-**E. 업로드**  
-`POST /api/upload` → `issue_upload_token` (StateStore, TTL 300s)  
-→ socket `send_message`에서 1회성 소비 → maintenance worker가 미참조 orphan 파일 purge
-
-### 2.4 CodeGraph blast radius (변경 시 영향 큰 심볼)
-
-| 심볼 | 위치 | 호출자(요약) | 테스트 커버리지(CodeGraph) |
-|------|------|--------------|---------------------------|
-| `rotate_room_key` | `app/models/rooms.py` | `app/http/rooms.py`, `app/models/users.py` | 직접 단위 테스트 없음(통합 테스트는 존재) |
-| `can_user_see_message` | `app/models/messages.py` | HTTP/socket/upload 7+ 경로 | 직접 단위 테스트 없음 |
-| `consume_upload_token` | `app/upload_tokens.py` | `app/socket_events/messages.py` | `tests/test_upload_tokens.py` |
-| `sync_user_room_membership` | `app/services/socket_broadcasts.py` | auth/rooms HTTP | 직접 테스트 없음 |
-| `openRoom` | `static/js/features/rooms/runtime.js` | chat/rooms UI | 프론트 테스트 없음 |
-
-### 2.5 검증 실행 결과 (2026-06-25)
-
-| 명령 | 결과 |
-|------|------|
-| `pytest tests -q` | **104 passed, 3 failed** |
-| `npm run check:js` | **pass** |
-| `pyright app gui` | **0 errors** |
-
-실패 테스트:
-- `tests/test_encoding_hygiene.py::test_tracked_text_files_do_not_contain_mojibake` — `node_modules/typescript/...` 스캔
-- `tests/test_feature_risk_review_plan.py` — OIDC JWKS `file://` 스킴 미지원 (PyJWT)
-
----
-
-## 3. High-Risk Issues
-
-### 3.1 초대 API의 키 로테이션·멤버 추가 비원자성
-
-* **위치:** `app/http/rooms.py` — `invite_member()`; `app/models/rooms.py` — `rotate_room_key()`, `add_room_member()`
-* **문제:** 초대 시 `rotate_room_key()`가 **즉시 commit**된 뒤, 루프에서 `add_room_member()`를 별도 commit으로 수행합니다. `leave_room_db()`는 `BEGIN IMMEDIATE`를 쓰지만 초대 경로는 트랜잭션 경계가 없습니다.
-* **영향:** 동시 초대 요청 시 키 버전이 연속 증가하면서 일부 초대 대상에게 **낮은 `joined_key_version`**이 기록될 수 있습니다. 의도보다 넓은 과거 메시지 가시성(키 버전 경계 약화) 가능.
-* **근거:**
-
-```174:181:app/http/rooms.py
-    rotation = rotate_room_key(room_id)
-    if not rotation:
-        return jsonify({"error": "방 보안 갱신에 실패했습니다."}), 500
-
-    added_user_ids: list[int] = []
-    for invitee_id in candidate_user_ids:
-        if add_room_member(room_id, invitee_id, joined_key_version=rotation["key_version"]):
-```
-
-```205:227:app/models/rooms.py
-def rotate_room_key(room_id: int, conn=None):
-    ...
-    if own_conn:
-        conn.commit()
-    return {'room_id': room_id, 'key_version': next_version, 'encryption_key': raw_key}
-```
-
-* **권장 수정 방향:** `BEGIN IMMEDIATE` 트랜잭션 안에서 rotate + member insert + (필요 시) 감사 로그를 한 번에 commit. 동시 초대는 row-level 직렬화 또는 idempotency key 검토.
-* **우선순위:** **Critical**
-
----
-
-### 3.2 다중 프로세스 환경에서 StateStore·Socket.IO 단일 노드 가정
-
-* **위치:** `app/state_store.py`, `config.py` (`MESSAGE_QUEUE`, `STATE_STORE_REDIS_URL`), `app/bootstrap/runtime.py`
-* **문제:** Redis 미설정 시 upload token, socket rate limit, presence 카운터가 **프로세스 로컬 메모리**에 저장됩니다. `MESSAGE_QUEUE=None`이면 Socket.IO도 단일 프로세스 브로드캐스트를 가정합니다.
-* **영향:** gevent worker 다중화, PyInstaller + 별도 프로세스, reverse proxy 뒤 다중 인스턴스 시 **토큰 검증 실패, 중복 메시지 처리, presence 오류, 이벤트 미전달**.
-* **근거:** `config.py` 기본값 `MESSAGE_QUEUE = None`, `STATE_STORE_REDIS_URL` 빈 문자열 시 in-memory fallback (`app/state_store.py` 102-123행).
-* **권장 수정 방향:** 다중 워커/인스턴스 배포 시 Redis(`STATE_STORE_REDIS_URL`, `MESSAGE_QUEUE`) 필수화 및 기동 시 경고/실패-fast. README에 운영 조건 명시.
-* **우선순위:** **High**
-
----
-
-### 3.3 Experimental 프론트엔드의 방 전환 race 미방어
-
-* **위치:** `static/js/experimental/modules/chat.js` — `openRoom()`
-* **문제:** 운영 경로(`static/js/features/rooms/runtime.js`)는 `currentOpenRequestId`로 stale 응답을 무시하지만, experimental 모듈은 **요청 ID 가드 없이** `currentRoom`과 메시지를 즉시 갱신합니다.
-* **영향:** 빠른 방 전환 시 **이전 방 메시지/키가 현재 방 UI에 잠깐 또는 지속적으로 표시**될 수 있음. 잘못된 `message_read`, 캐시 오염 가능.
-* **근거:**
-
-```265:363:static/js/features/rooms/runtime.js
-        var requestId = ++currentOpenRequestId;
-        ...
-            if (requestId !== currentOpenRequestId) {
-                if (window.DEBUG) console.log('Ignoring stale openRoom response');
-                return;
-            }
-```
-
-```9:44:static/js/experimental/modules/chat.js
-export async function openRoom(room) {
-    ...
-    state.currentRoom = room;
-    ...
-    const result = await RoomAPI.getMessages(room.id);
-    state.currentRoomKey = result.encryption_key;
-```
-
-* **권장 수정 방향:** experimental 경로에 동일한 request token 패턴 적용, 또는 experimental을 비활성/제거하고 단일 런타임 유지.
-* **우선순위:** **High** (experimental 경로를 실제로 로드하는 배포에서만; 기본 `scripts.html`은 features 경로 사용)
-
----
-
-### 3.4 `room_security_updated` 수신 후 UI 복호화 재시도 없음
-
-* **위치:** `static/js/services/socket/runtime.js` — `handleRoomSecurityUpdated()`
-* **문제:** 키 갱신 시 `currentRoomKey`/`currentRoomKeys`만 갱신하고, 이미 렌더된 **lazy decrypt 대기 메시지 재처리나 메시지 리로드가 없음**.
-* **영향:** 키 로테이션 직후 화면에 `[암호화된 메시지]` placeholder가 남거나, 신규 키로 보낸 메시지 복호화가 지연될 수 있음(스크롤/재입장 전까지).
-* **근거:**
-
-```844:851:static/js/services/socket/runtime.js
-function handleRoomSecurityUpdated(data) {
-    if (!data || !data.room_id) return;
-    if (currentRoom && currentRoom.id === data.room_id) {
-        currentRoomKey = data.encryption_key || currentRoomKey;
-        currentRoomKeys = data.encryption_keys || currentRoomKeys || {};
-        currentRoom.key_version = data.key_version || currentRoom.key_version;
-    }
-}
-```
-
-* **권장 수정 방향:** 키 갱신 후 `decryptPendingInMessageEl` 일괄 실행 또는 현재 방 메시지 부분 리렌더.
-* **우선순위:** **Medium**
-
----
-
-### 3.5 클라이언트 트리거 소켓 relay 이벤트의 DoS/스팸 여지
-
-* **위치:** `app/socket_events/features.py` (`pin_updated`, `poll_created`, `poll_updated`), `app/socket_events/rooms.py` (`room_members_updated`)
-* **문제:** 방 멤버가 소켓 emit → 서버 relay 패턴입니다. `pin_updated`만 rate limit이 있고, `room_members_updated`·poll relay는 **멤버십 검사 외 제한이 약함**.
-* **영향:** 악의적/버그 클라이언트가 방 전체에 불필요한 refresh 이벤트를 유발 → 핀/투표/멤버 UI 반복 로드, 서버·클라이언트 부하.
-* **근거:** `tests/test_feature_risk_review_plan.py`는 `pin_updated` rate limit을 검증하지만, `room_members_updated` 멤버 relay 스팸 테스트는 없음. `reaction_updated`/`poll_updated`는 DB canonical payload로 위조 방지됨(양호).
-* **권장 수정 방향:** relay 이벤트는 HTTP 성공 후 **서버만 emit**하도록 점진 통일하거나, 모든 relay에 per-user rate limit 적용.
-* **우선순위:** **Medium**
-
----
-
-### 3.6 README “E2E 암호화”와 실제 키 관리 모델 불일치
-
-* **위치:** `README.md`; `app/models/rooms.py` — `get_room_security_bundle()`; `app/http/messages.py` — `get_messages()`
-* **문제:** 서버가 방 키를 DB에 저장하고 API/socket으로 **평문 키·keyring을 클라이언트에 전달**합니다. 진정한 E2E(서버가 평문을 모름)가 아닙니다.
-* **영향:** 문서 기대치와 달리 **서버/DB 유출 시 메시지 복호화 가능**. 보안 검토·컴플라이언스 설명 오류.
-* **근거:** `get_room_security_bundle`이 `encryption_key`, `encryption_keys` 반환; README “end-to-end message encryption support”.
-* **권장 수정 방향:** 문서를 “전송 구간 TLS + 서버 관리형 방 키 기반 클라이언트 암호화”로 정정. E2E 목표 시 키를 서버 밖에서만 유도하도록 설계 변경(별도 프로젝트).
-* **우선순위:** **Medium** (기능 버그라기보다 계약/기대치 문제)
-
----
-
-### 3.7 테스트 스위트 환경 취약성
-
-* **위치:** `tests/test_encoding_hygiene.py`; `tests/test_feature_risk_review_plan.py` (OIDC)
-* **문제:**
-  - git 미사용 시 `git ls-files` 실패 → repo 전체 `rglob`으로 **`node_modules`까지 스캔**하여 false positive
-  - OIDC 테스트가 `file://` JWKS URI 사용 → 현재 PyJWT에서 실패
-* **영향:** CI/로컬 검증 신뢰도 저하, 회귀 놓침.
-* **근거:** 2026-06-25 pytest 3 failures; workspace가 git repo가 아님.
-* **권장 수정 방향:** hygiene 스캔에 `node_modules`, `.codegraph`, `uploads` 등 exclude; OIDC 테스트는 mock JWKS HTTP 서버 사용.
-* **우선순위:** **Medium**
-
----
-
-### 3.8 초대 실패 시 불필요한 키 로테이션
-
-* **위치:** `app/http/rooms.py` — `invite_member()`
-* **문제:** `candidate_user_ids`가 있으면 무조건 rotate 후, `add_room_member`가 전부 실패해도(이론상 드묾) 이미 키는 증가합니다.
-* **영향:** 잔존 멤버에게 **의미 없는 키 로테이션** → 클라이언트 keyring 갱신 부담, 감사/지원 혼란.
-* **근거:** 174-187행 rotate 선행, `added_user_ids` 빈 경우 183-187에서 security emit만 수행.
-* **권장 수정 방향:** 멤버 추가 확정 후 rotate, 또는 트랜잭션 롤백.
-* **우선순위:** **Low~Medium**
-
----
-
-## 4. Potential Functional Gaps
-
-아래 항목 중 **(추정)** 표시는 코드에서 직접 재현하지 않았거나 요구사항 문맥이 불명확한 경우입니다.
-
-### 4.1 확인된 갭
-
-| 항목 | 설명 |
-|------|------|
-| 동시 초대 통합 테스트 부재 | leave/kick/invite 가시성 테스트는 있으나 **병렬 초대** 시나리오 없음 |
-| 프론트엔드 자동화 테스트 부재 | `openRoom` stale guard, `handleRoomSecurityUpdated` 등 JS 핵심 로직은 eslint/tsc만 존재 |
-| `handleRoomSecurityUpdated` 후 복호화 갱신 | §3.4 — 키 수신 후 UI 동기화 미완 |
-| 다중 인스턴스 운영 가이드 | Redis/Message queue 설정은 config에 주석 수준 — **필수 조건이 강제되지 않음 (추정: 운영 문서 갭)** |
-
-### 4.2 설계상 의도이나 문서화 필요
-
-| 항목 | 설명 |
-|------|------|
-| `pin_updated` 클라이언트 relay | HTTP 후 클라이언트가 refresh 트리거 — `tests/test_feature_risk_review_plan.py`로 의도 확인됨. 다만 README의 “server-authoritative” 범위에 포함 여부 불명확 |
-| `room_name_updated` 클라이언트 emit | 서버 핸들러 없음 → DB 변조 없음(테스트 확인). 다른 클라이언트에게 forged 이벤트 전달도 없음 — **문서는 “변조 불가”로 정확하나 “클라이언트 emit 무시” 표현이 더 명확 (추정)** |
-| `editRoomName` 로컬 optimistic UI | HTTP 성공 시 로컬 이름 즉시 반영(`static/js/features/rooms/runtime.js`). socket 이벤트와 이중 경로 — 단일 사용자 UX는 양호, 다중 탭 간 불일치 가능 **(추정)** |
-
-### 4.3 추가 기능 가능성 (추정)
-
-| 항목 | 이유 |
-|------|------|
-| 초대/강퇴 **진행 중** UI 락 | `isOpeningRoom`은 있으나 초대 API in-flight 중 중복 클릭 방지는 제한적 **(추정)** |
-| 업로드 AV 스캔 실패 시 사용자 복구 UX | quarantine/scan job 경로 존재 — job stuck 시 재시도/취소 API 노출 여부 미확인 **(추정)** |
-| 메시지 편집 충돌 처리 | 동시 편집 시 last-write-wins — 버전 충돌 알림 없음 **(추정)** |
-| 계정 삭제 후 파일/메시지 보존 정책 | `delete_user` + key rotate는 구현 — attachment 물리 삭제 범위는 운영 정책 의존 **(추정)** |
-
-### 4.4 문서·구현 정합성 (양호한 부분)
-
-- `room_security_updated` canonical 이벤트 — HTTP membership flow와 테스트 일치
-- 삭제된 첨부 메시지 검색 제외 — `_HIDDEN_DELETED_ATTACHMENT_WHERE` 공유
-- `reaction_updated` / `poll_updated` — 클라이언트 payload 무시, DB canonical 재방송 (테스트 존재)
-- 업로드 토큰 1회성 소비 — `tests/test_upload_tokens.py`
-- pyright·`npm run check:js` 통과
-
-### 4.5 레거시·부채
-
-- `app/legacy/models_monolith.py` 잔존 — CodeGraph가 `add_room_member` duplicate 정의 참조. 런타임은 `app/models/rooms.py` 사용하나 **유지보수 혼선 (추정)**
-- `config.py`의 `PASSWORD_SALT` 하드코딩 — 실제 런타임은 `app/bootstrap/runtime.py`에서 파일 기반 salt 로드로 대체
-
----
-
-## 5. Recommended Fix Plan
-
-### 1단계 — 즉시 수정 (Critical / 운영 사고 예방)
-
-1. **`invite_member` 트랜잭션화**  
-   `rotate_room_key` + `add_room_member`(복수) + 실패 시 rollback을 `BEGIN IMMEDIATE`로 묶기.
-2. **동시 초대 회귀 테스트 추가**  
-   두 클라이언트가 동시에 서로 다른 사용자 초대 → 모든 신규 멤버의 `joined_key_version == rooms.key_version` 검증.
-3. **배포 모드 명시**  
-   단일 프로세스 전제를 README/운영 문서에 명시. 다중 워커 사용 시 Redis 필수 체크리스트 추가.
-
-### 2단계 — 안정성 개선 (High / Medium)
-
-1. **StateStore + Socket.IO Redis 경로 검증 테스트**  
-   upload token cross-process, rate limit, broadcast 통합 테스트.
-2. **`handleRoomSecurityUpdated` UI 동기화**  
-   키 갱신 후 pending decrypt 재실행 또는 메시지 영역 soft refresh.
-3. **소켓 relay 이벤트 rate limit 통일**  
-   `room_members_updated`, `poll_*`에 per-user limit; 가능하면 서버 emit-only로 축소.
-4. **테스트 환경 수정**  
-   encoding hygiene exclude 목록; OIDC mock JWKS.
-5. **experimental `openRoom` 가드**  
-   features/runtime과 동일 패턴 이식 또는 experimental 비활성.
-
-### 3단계 — 구조 개선 (Low / 장기)
-
-1. **문서 정정**  
-   “E2E” → “서버 관리형 방 키 + 클라이언트 암호화” 용어 통일 (`README.md`, `CLAUDE.md` 동기화 규칙 준수).
-2. **레거시 monolith 제거 또는 격리**  
-   `app/legacy/models_monolith.py` archive — import 경로 단일화.
-3. **프론트엔드 통합 테스트 도입**  
-   Playwright 등으로 방 전환·키 로테이션·핀 삭제 시나리오 smoke.
-4. **초대 API idempotency**  
-   동일 사용자 중복 초대 요청 시 불필요 rotate 방지.
-
----
-
-## 6. Test Recommendations
-
-### 6.1 반드시 추가할 테스트
-
-| 테스트 | 목적 |
-|--------|------|
-| `test_concurrent_invites_assign_consistent_joined_key_version` | §3.1 race 재현/방지 |
-| `test_invite_rotate_rolls_back_when_all_adds_fail` | §3.8 불필요 rotate 방지 |
-| `test_upload_token_shared_across_threads_with_redis` | §3.2 다중 워커 토큰 일관성 (Redis fixture) |
-| `test_room_security_updated_triggers_decrypt_refresh` | §3.4 프론트 (Playwright 또는 JS unit) |
-
-### 6.2 기존 스위트 보강
-
-| 영역 | 제안 |
-|------|------|
-| `can_user_see_message` | 파라미터화 단위 테스트 — file/pin/reaction/HTTP 403 경계 |
-| `rotate_room_key` | 직접 단위 테스트 + conn 인자 공유 트랜잭션 |
-| `purge_expired_upload_tokens` | referenced 파일·토큰 만료·mtime 경계 추가 케이스 |
-| Socket relay | `room_members_updated` 멤버 스팸 rate limit |
-| encoding hygiene | `EXCLUDE_DIRS = {"node_modules", ".git", "uploads", "backup"}` |
-| OIDC | `pytest.mark.skipif` 또는 httpx mock JWKS |
-
-### 6.3 회귀 유지 권장 (이미 양호)
-
-- `tests/test_implementation_gap_remediation.py`
-- `tests/test_feature_risk_review_implementation.py`
-- `tests/test_upload_tokens.py`
-- `tests/test_feature_risk_review_plan.py` (OIDC 제외 시)
-
-### 6.4 검증 파이프라인 (CLAUDE.md 기준 유지)
-
-```bash
-npm run check:js
-pytest tests -q
-pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py -q
-pyright app gui
-```
-
-현재 환경 갭:
-- **pytest 3건 실패** — 위 §3.7 수정 전까지 전체 green 아님
-- **git 미초기화** — encoding hygiene false positive 유발
-
----
-
-## 부록: 감사 시 참조한 핵심 파일
-
-- 문서: `README.md`, `CLAUDE.md`, `implementation_gap_review_2026-04-27.md`
-- 백엔드: `app/http/rooms.py`, `app/models/rooms.py`, `app/models/messages.py`, `app/socket_events/messages.py`, `app/socket_events/features.py`, `app/upload_tokens.py`, `app/state_store.py`
-- 프론트: `static/js/features/rooms/runtime.js`, `static/js/services/socket/runtime.js`, `static/js/experimental/modules/chat.js`
-- 테스트: `tests/test_implementation_gap_remediation.py`, `tests/test_feature_risk_review_implementation.py`, `tests/test_upload_tokens.py`, `tests/test_feature_risk_review_plan.py`
+- 프로젝트 목적: 사내 실시간 채팅(방/파일/핀/리액션/투표/검색/멘션), PyQt6 서버 관리 GUI, PyInstaller 단일 실행 배포, SQLite + 로컬 `uploads/` 기반 단일 서버 우선 설계. 방 키는 서버가 관리하고 멤버 범위로 keyring을 전달하는 모델(서버-블라인드 E2E가 아님).
+- 주요 entrypoint: `server.py` (GUI 기본, `--cli` 서버, `--worker` 런처) → `app/__init__.py::create_app()` → `app/factory.py::build_app()`.
+- 핵심 모듈:
+  - `app/bootstrap/` — `runtime.py`(Flask/세션/StateStore/Redis 경고), `socketio_config.py`, `workers.py`(maintenance + AV 스캔 워커), `hooks.py`(세션 강제·teardown·보안 헤더)
+  - `app/http/` — `auth.py`(가입/로그인/탈퇴), `rooms.py`(방/초대/강퇴/나가기), `messages.py`(조회/수정/삭제/검색/리액션), `uploads.py`(업로드/다운로드/파일 삭제), `collaboration.py`(핀/투표), `public.py`(OIDC)
+  - `app/socket_events/` — `messages.py`(send/edit/delete/reaction), `rooms.py`·`features.py`(relay + rate limit), `presence.py`, `connection.py`, `shared.py`(세션 토큰·rate limit)
+  - `app/models/` — `rooms.py`(키 로테이션·`invite_members_with_key_rotation`), `messages.py`(가시성·검색), `users.py`(인증·탈퇴), `files.py`, `base.py`(연결·init·정리)
+  - `app/upload_tokens.py` + `app/state_store.py`(TTL 300초 1회성 토큰), `app/crypto_manager.py`(마스터키 기반 방 키 암호화), `app/oidc.py`
+- 데이터 저장 방식: SQLite(WAL) 단일 파일 + `uploads/`(최상위 첨부, `profiles/`, `quarantine/`), Flask-Session 파일 캐시, StateStore(기본 in-memory, Redis 선택).
+- 외부 의존성: Flask-SocketIO/gevent, pycryptodome, bcrypt, PyJWT(선택 OIDC), ClamAV(선택, TCP), Redis(선택, 다중 워커용).
+- 핵심 실행 흐름:
+  - `POST /api/upload → issue_upload_token(StateStore, TTL 300s) → socket send_message에서 consume(1회성) → create_message(+room_files) → new_message broadcast`
+  - `초대/나가기/강퇴/탈퇴 → rotate_room_key → emit room_security_updated(사용자별 keyring) → 프론트 키 갱신 + pending 복호화 재시도`
+  - `조회/검색/파일/핀/리액션/답장/읽음/다운로드/수정·삭제 = messages.key_version >= joined_key_version + 삭제첨부 제외 공유 조건`
+  - `server.py --cli → create_app → init_db → maintenance worker → socketio.run`
+
+## 3. Audit Coverage & Limitations
+
+- 실제 확인한 주요 모듈: `app/http`(auth/rooms/messages/uploads), `app/models`(rooms/messages/users/files/base), `app/socket_events`(messages/features/rooms/shared), `app/upload_tokens.py`, `app/state_store.py`, `app/crypto_manager.py`, `app/oidc.py`, `app/bootstrap`(runtime/workers/hooks), `scripts/backup_local.py`·`restore_local.py`, `config.py`·`server.py`·`messenger.spec`, 프론트 소켓 런타임/초대·보안 핸들러(발췌).
+- CodeGraph로 분석한 호출 관계: entrypoint→factory→bootstrap/routes/sockets, `invite_members_with_key_rotation`·`rotate_room_key`·`can_user_see_message`·`consume_upload_token`·`sync_user_room_membership`·`get_db` blast radius, 레거시 `models_monolith` 중복 정의 존재 확인.
+- 실행한 테스트(모두 당일 실행, 결과 인용):
+  - `python -m pytest tests -q` → **115 passed** (147.9s, gevent monkey-patch 경고 1건만 기록, 기능 영향 없음)
+  - `pytest tests/test_feature_risk_review_implementation.py tests/test_upload_tokens.py tests/test_project_audit_remediation.py -q` → **15 passed**
+  - `npm run check:js` (eslint + tsc) → **pass**
+  - `pyright app gui` → **0 errors, 0 warnings**
+- 확인하지 못한 환경/외부 서비스: Redis 다중 워커 실제 구성, ClamAV 실연동 스캔, OIDC 실제 IdP, PyQt6 GUI 실기동(헤드리스), PyInstaller 빌드 산출물, gevent 동시 부하 재현, Windows 부팅 자동실행/방화벽 경로.
+- CodeGraph 또는 분석상의 한계: `muse.search`가 `static/js`에서 무응답이라 프론트 확인은 `Select-String`으로 대체했다. 동시성 이슈(ISSUE-001)는 코드 메커니즘까지만 확정하고 런타임 재현은 하지 않아 Likely로 표기했다. `app/legacy/models_monolith.py`는 런타임 미사용으로 보고 dead-code 취급하되 risk로 과장하지 않았다.
+
+## 4. High-Risk Issues
+
+### [ISSUE-001] gevent 그린렛 간 `threading.local` 커넥션 공유로 트랜잭션 경계 훼손 가능
+
+* **위치:** `app/models/base.py` — `_ConnectionLocal(threading.local)`, `get_db()` / `app/__init__.py` — `monkey.patch_all()` / `app/models/rooms.py` — `invite_members_with_key_rotation()`
+* **우선순위:** High
+* **신뢰도:** Likely
+* **문제:** CLI(권장 운영 모드)에서는 gevent monkey patch가 적용되고, `get_db()`는 `threading.local` 커넥션을 반환한다. gevent는 한 OS 스레드에서 다수 그린렛을 돌리므로 동시 요청/소켓 이벤트가 같은 `sqlite3` 커넥션 객체를 공유할 수 있다. `check_same_thread=False` + `busy_timeout`은 잠금 대기만 완화할 뿐 같은 커넥션 위의 인터리빙은 막지 못한다. 그린렛 B가 그린렛 A의 초대 트랜잭션 도중 `get_db()`를 얻으면 A의 커넥션을 재사용해 B의 `commit()`이 A의 부분 트랜잭션을 조기 확정하거나, B의 `BEGIN IMMEDIATE`가 "cannot start a transaction within a transaction"으로 실패하는데 초대/나가기 코드는 이를 bare `except: pass`로 삼켜 경계가 깨진 채 진행한다.
+* **발생 조건:** gevent 모드(CLI)에서 DB 쓰기가 겹칠 때 — 동시 초대, 초대+메시지 전송, maintenance purge와 업로드 경합 등.
+* **영향:** 2026-06-25 remediation으로 확보한 초대 원자성(`BEGIN IMMEDIATE` + 단일 commit)이 무력화되어 `joined_key_version` 불일치(과거 히스토리 과다 노출) 또는 "Recursive use of cursors" 계열 메시지 저장 실패가 가능.
+* **근거:** `base.py:32-38`(threading.local), `app/__init__.py:25-32`(CLI에서 patch 적용, GUI에서만 SKIP), `rooms.py:260-308`(`BEGIN IMMEDIATE` + swallow + 공유 `conn.commit()`), `hooks.py:58-60`(teardown은 요청 종료 후 정리라 동시 진행 중 공유를 막지 못함).
+* **반증 확인:** `busy_timeout=30000`·WAL·teardown 정리를 확인했으나 이들은 잠금/사후 정리에만 유효하고 동일 커넥션 인터리빙은 막지 못한다. 테스트가 전부 순차 실행이라 녹색 스위트는 반증이 아니다. GUI 모드(PyQt, gevent 미적용·실스레드)에서는 `threading.local`이 정상 동작하므로 해당 모드는 영향 제외.
+* **호출/영향 범위:** CodeGraph 기준 `get_db` 호출자 80+ (`rooms`·`messages`·`users`·`files`·`polls`·토큰 purge·maintenance). 쓰기 트랜잭션 전역에 영향.
+* **권장 수정 방향:** 쓰기 경로 직렬화(단일 writer 락) 또는 그린렛-로컬 커넥션(gevent.local/요청별 커넥션)으로 교체. `BEGIN IMMEDIATE` 실패 swallow를 제거하고 실패 시 명시 롤백+에러 반환.
+* **필요한 회귀 테스트 (구현 시 정정):** 병렬 초대 요청은 각각 직렬 rotate되므로 멤버별 버전이 다를 수 있다. 정확한 계약은 ① 단일 요청 다수 초대 → 전원 동일 버전(`test_single_invite_request_assigns_same_joined_key_version`), ② 병렬 요청 → 실패율 0 + 각 버전이 유효 범위 내(`test_concurrent_invites_via_greenlets_keep_key_versions_consistent`), ③ BEGIN 실패 → `error` 코드(`test_invite_returns_error_when_begin_fails`)이다.
+
+### [ISSUE-002] 회원 탈퇴 시 공유 첨부의 바이트는 지워지는데 메시지 참조는 남아 깨진 첨부가 됨
+
+* **위치:** `app/models/users.py` — `delete_user()` (451~465행)
+* **우선순위:** Medium
+* **신뢰도:** Confirmed
+* **문제:** 탈퇴 처리에서 `DELETE FROM room_files WHERE uploaded_by` + 디스크 파일 삭제를 수행하지만, `messages` 행의 `file_path`·`file_name`은 그대로 두고 content만 익명화한다. 공유방에 남는 메시지는 존재하지 않는 파일을 계속 가리킨다.
+* **발생 조건:** 파일을 올린 사용자가 탈퇴하고, 그 파일 메시지가 있는 공유방에 다른 멤버가 남아 있을 때 (항상).
+* **영향:** 잔존 멤버의 공유 첨부 유실 + 깨진 첨부 UI. 다운로드는 `room_files` 조회에서 404로 우아하게 실패하므로 크래시는 없다.
+* **근거:** `users.py:451-465`(room_files 삭제 후 messages는 content만 갱신), `uploads.py:198-212`(room_files 행 없으면 404).
+* **반증 확인:** `delete_message`·`delete_room_file`은 messages까지 함께 정리함을 확인 — 탈퇴 경로만 불일치. 파일 서랍(`get_room_files`)은 room_files 기준이라 일관되나 채팅 메시지 렌더와 불일치한다.
+* **호출/영향 범위:** `auth.py::delete_account` → `delete_user` → 잔존 멤버의 `get_room_messages`·다운로드 경로.
+* **권장 수정 방향:** 탈퇴 시 해당 사용자의 파일 메시지도 `delete_message`와 동일하게 `[삭제된 메시지]` + `file_path/file_name = NULL`로 정리하거나, 정책상 보존이면 바이트 삭제를 중단하고 소유권을 방(또는 null)으로 이전.
+* **필요한 회귀 테스트:** 파일 올린 사용자 탈퇴 후 잔존 멤버 조회 → 메시지 `file_path IS NULL` + 디스크 파일 부재 + 다운로드 404를 assert.
+
+### [ISSUE-003] 복원 스크립트가 WAL/`-shm`을 처리하지 않고 실행 중 서버도 검사하지 않음
+
+* **위치:** `scripts/restore_local.py` — `main()` (58~79행)
+* **우선순위:** Medium
+* **신뢰도:** Confirmed
+* **문제:** `--yes` 복원이 `messenger.db` 파일만 `copy2`로 덮어쓰고 `-wal`/`-shm` 잔존 파일을 제거하지 않는다. 안전 스냅샷도 `messenger.db`만 복사한다. 서버 실행 중 복원 여부를 검사하지 않고(미확인 시 경고 문구만 출력, `--yes`면 무조건 진행), WAL 체크포인트도 수행하지 않는다.
+* **발생 조건:** WAL 파일이 남아 있는 상태(루트에 `messenger.db-wal` 존재 확인됨)에서 복원하거나, 서버를 끄지 않고 `--yes` 복원할 때.
+* **영향:** 오래된 WAL 프레임이 복원된 DB에 적용되거나 무결성 오류 → 복원 후 데이터 불일치·시작 실패. 백업 쪽(`backup_sqlite`)은 SQLite online backup API라 안전하고, 문제는 복원 방향에만 있다.
+* **근거:** `restore_local.py:65-73`(db 파일만 복사, wal/shm 언급 없음), 루트 `messenger.db-wal` 실존, `verify_restore.py`는 사후 검사만 담당.
+* **반증 확인:** `BACKUP_RUNBOOK.md`가 "서버 중지 후 복원"을 안내하나 스크립트가 강제하지 않으므로 운용자 실수 경로가 열려 있다. `shutil.copytree`의 uploads 복원은 원자적이지 않으나 DB 정합성만큼 치명적이지 않아 본 이슈의 부기로 둔다.
+* **호출/영향 범위:** 수동 복원 절차 전체(DB + uploads + 스냅샷). 복원 검증을 통과해도 WAL 잔류는 `integrity_check`에서 잡히지 않을 수 있다.
+* **권장 수정 방향:** 복원 전 실행 중 서버 감지(Control 포트/락 파일) 시 중단, 복원 전후 `PRAGMA wal_checkpoint(TRUNCATE)` + `-wal`/`-shm` 제거, 스냅샷을 백업 디렉토리 밖(형제 디렉토리)으로 분리.
+* **필요한 회귀 테스트:** WAL이 있는 DB에 대한 복원 드라이런 → 복원 후 `-wal`/`-shm` 부재 + `integrity_check == ok` + 복원 전 스냅샷이 백업본과 동일함을 assert.
+
+### [ISSUE-004] 강퇴/나가기 후 키 로테이션 실패가 경고 로그로만 끝나 구 키가 유지됨
+
+* **위치:** `app/http/rooms.py` — `_rotate_and_emit_room_security()` (57~64행), `leave_room_route`·`kick_member`
+* **우선순위:** Medium
+* **신뢰도:** Likely
+* **문제:** 멤버십 삭제 commit 이후 별도 트랜잭션으로 rotate하는데, 실패 시 `logger.warning`만 남기고 HTTP는 이미 성공 반환됐다. 재시도·관리자 알림·실패 표기가 없다.
+* **발생 조건:** rotate 중 DB 오류 등 드문 실패. 또는 emit 단계 실패(소켓 미수신 — 클라이언트는 재입장 전까지 구 키).
+* **영향:** 나간 멤버가 아는 구 키로 방이 계속 운영됨. 나간 멤버의 API/소켓 접근 자체는 차단되므로(멤버십 동기화·`room_access_revoked`), 새 암호문을 입수할 경로는 없어 실질 노출은 제한적이나, 보안 계약("잔존 멤버 대상 rotate") 위반 상태가 조용히 지속된다.
+* **근거:** `rooms.py:57-64`(실패 시 조기 return), leave/kick은 삭제-회전 2트랜잭션 분리.
+* **반증 확인:** 접근 차단은 별도 경로로 동작함을 확인해 탈퇴자 열람 가능성은 반증됨. 남은 것은 키 위생 실패의 불가시성이다.
+* **호출/영향 범위:** leave·kick·(탈퇴 후 accounts 경로의 best-effort rotate 포함, `users.py:472-478` — 반환값 미검사).
+* **권장 수정 방향:** rotate 실패 시 500이 아닌 "성공 + 보안 경고" 상태로 반환하거나 admin audit 로그에 기록하고, maintenance에서 `key_version` 정합성 재검사 후 경고.
+* **필요한 회귀 테스트:** rotate를 강제 실패시킨 강퇴 → 응답에 경고 표기(또는 audit 로그 기록) + 이후 rotate 성공 시 복구를 assert.
+
+### [ISSUE-005] AV 스캔 예외 경로의 quarantine 임시 파일이 영구 잔류함
+
+* **위치:** `app/upload_scan.py` — `_process_job()` (166~171행) / `app/upload_tokens.py` — `purge_expired_upload_tokens()` (41~54행)
+* **우선순위:** Low
+* **신뢰도:** Confirmed
+* **문제:** 스캔 결과 `not clean`이면 temp를 삭제하지만, 그 바깥 예외(`shutil.move` 실패 등) 경로에서는 temp 파일을 삭제하지 않고 job만 `error`로 둔다. purge는 최상위 파일만 `scandir`하므로 `quarantine/` 하위 temp는 영원히 정리되지 않는다.
+* **발생 조건:** AV 활성화 + 스캔 워커 예외 발생 시.
+* **영향:** 디스크 서서히 증가. 보안·정합성 영향 없음.
+* **근거:** `upload_scan.py:150-171`(두 경로의 삭제 여부 차이), `upload_tokens.py:41`(비재귀 스캔), `uploads.py:86-89`(temp가 quarantine 하위).
+* **반증 확인:** 프로필 이미지 교체(`profile.py:106-110`)는 구 파일 삭제를 확인 — 본 건은 스캔 예외 경로에만 해당.
+* **호출/영향 범위:** AV 활성화 배포의 `uploads/quarantine/` 디스크 사용량.
+* **권장 수정 방향:** 예외 경로에서도 temp 삭제 시도 + purge가 `quarantine/` 하위를 포함하도록 확장(단 `profiles/`는 제외 유지).
+* **필요한 회귀 테스트:** `_process_job`에 강제 예외 주입 → temp 파일 부재 assert. quarantine에 오래된 temp 배치 후 purge → 삭제됨 assert.
+
+### [ISSUE-006] 일반 검색 fallback의 LIKE 와일드카드 미이스케이프 과다 매칭
+
+* **위치:** `app/models/messages.py` — `search_messages()` (436~466행)
+* **우선순위:** Low
+* **신뢰도:** Confirmed
+* **문제:** FTS 미사용 fallback이 `f'%{query}%'`를 그대로 바인딩해 `%`·`_` 입력이 와일드카드로 동작한다. 같은 파일의 `advanced_search`는 `_like_escape`로 이스케이프하므로 두 경로가 불일치한다.
+* **발생 조건:** FTS 테이블 부재 + `%`/`_` 포함 검색어.
+* **영향:** 검색 결과 과다 노출(단 멤버십·가시성 필터 안이므로 권한 밖 노출은 없음). SQL 인젝션은 아님(파라미터 바인딩).
+* **근거:** `messages.py:447`·`465` vs `495-496`의 이스케이프 유무 차이.
+* **반증 확인:** 권한 경계는 유지됨을 확인 — 정확도 문제로 한정.
+* **호출/영향 범위:** `/api/search` 경유 일반 검색(advanced_search는 정상).
+* **권장 수정 방향:** fallback에도 `_like_escape` 적용 + `ESCAPE '\'` 절 추가.
+* **필요한 회귀 테스트:** `%`·`_`·`\` 포함 검색어 → 리터럴 일치만 반환 assert.
+
+## 5. Potential Functional Gaps
+
+- **Confirmed Gap — OIDC 전용 계정은 탈퇴·비밀번호 변경이 불가:** `delete_account`(`auth.py:118-153`)와 `change_password`가 현재 비밀번호 검증을 요구하고, `get_or_create_oidc_user`(`users.py:294-359`)는 무작위 비밀번호 해시를 부여한다. OIDC 사용자는 비밀번호를 알 수 없어 두 API를 사용할 수 없고, 대체 경로(연동 해제·관리자 탈퇴)도 없다.
+- **Confirmed Gap — 동시성 회귀 테스트 부재:** leave/kick/invite 가시성·원자성 단위 테스트는 있으나 병렬 초대·병렬 메시지 전송 시나리오는 `tests/` 어디에도 없다(디렉토리 목록 및 CodeGraph 호출자 기준). ISSUE-001의 재현 커버리지가 없는 상태다.
+- **Confirmed Gap — 스캔 실패 job 재시도 API 부재:** `GET /api/upload/jobs/<id>`는 `infected`·`error` 조회만 제공하고 재시도/취소 엔드포인트가 없다. AV 오탐·clamd 일시 장애 시 사용자는 같은 파일을 처음부터 다시 업로드해야 한다.
+- **Likely Gap — rate limit의 침묵 메모리 폴백:** `RATELIMIT_STORAGE_URI`가 redis 스킴인데 `redis` import 실패 시 `runtime.py:153-157`에서 경고 없이 `memory://`로 전환된다. StateStore 쪽은 경고/`REQUIRE_REDIS_STATE` fail-fast가 있으나 limiter 쪽은 없어, 다중 워커에서 로그인·업로드 제한이 워커별로 따로 적용될 수 있다.
+- **추정 — 암호화 메시지 서버 검색 제외:** `search_messages`·`advanced_search`가 `m.encrypted = 0`만 검색하고 암호문은 제외한다(코드 내 note 명시). 서버가 키를 보유한 구조상 기술적으로 가능하나 현재 설계상 의도이므로 버그가 아니라 UX 제약으로 기록한다. 초대 전 히스토리가 검색에서 빠지는 것은 동일 visibility 규칙의 당연한 결과다.
+- **추정 — 메시지 동시 편집 last-write-wins:** `edit_message`에 버전·충돌 감지가 없어 두 단말 동시 편집 시 조용히 덮어쓴다. 빈도·피해가 낮아 구조 개선 단계로 둔다.
+
+## 6. Documentation Mismatches
+
+- **`server.py:83` CLI 배너의 "E2E (종단간 암호화)" 표기 잔존 (Confirmed):** README의 E2E 표현은 remediation에서 정정됐고 `claude.md`·`gemini.md`도 "not server-blind E2E"로 명시했으나, `python server.py --cli` 시작 배너는 여전히 `암호화: E2E (종단간 암호화)`를 출력한다. 실제 모델(서버 관리형 방 키 + 평문 keyring 전달)과 배치된다. Low.
+- **`AGENTS.md` 부재 (Confirmed → 해소):** 2026-10-04 조치로 `AGENTS.md`를 신설하고 `claude.md`·`gemini.md`의 문서 목록에도 반영했다. Low.
+- **구 `PROJECT_AUDIT.md`(2026-06-25)의 "115개 중 3개 실패" 서술이 현재와 불일치:** 당시 결과(`test_encoding_hygiene`·OIDC 2건 실패)는 remediation으로 해소되어 본 감사에서 **115 passed**를 확인했다. 본 문서로 대체되면서 해소된다. 정보성.
+- **없음이 확인된 항목:** `messenger.spec`의 hiddenimports·포장 데이터(`app.*` + `docs/BACKUP_RUNBOOK.md`)는 현행 런타임과 일치한다. BACKUP_RUNBOOK의 테이블 목록·스모크 체크 항목은 현재 스키마·계약과 일치한다.
+
+## 7. Recommended Fix Plan
+
+### Phase 1 — Immediate
+
+1. ISSUE-001: 쓰기 직렬화(단일 writer 락) 또는 그린렛-로컬 커넥션 도입 + `BEGIN` 실패 swallow 제거. 병행해서 동시 초대 회귀 테스트 추가.
+2. ISSUE-002: 탈퇴 시 파일 메시지 정리 정책 확정(메시지 정리 또는 바이트 보존+소유권 이전) 후 동일 변경셋에 회귀 테스트.
+3. ISSUE-003: `restore_local.py`에 실행 중 서버 감지·WAL 체크포인트/`-wal`·`-shm` 제거·스냅샷 분리. 다음 릴리스 전 복원 드라이런 필수.
+
+### Phase 2 — Stability
+
+1. ISSUE-004: rotate 실패 가시화(audit 로그 + 응답 경고) 및 maintenance 정합성 검사.
+2. ISSUE-005: 스캔 예외 경로 temp 정리 + purge의 `quarantine/` 포함.
+3. ISSUE-006: 검색 fallback 이스케이프 통일.
+4. OIDC 계정 탈퇴/비밀번호 경로(연동 계정용 확인 절차 또는 관리자 탈퇴) 신설.
+5. limiter redis 폴백에 StateStore와 동일한 경고 로그 추가.
+
+### Phase 3 — Structural
+
+1. `app/legacy/models_monolith.py` 아카이브(현행 `app/models/*` 단일화, import 경로 정리) — 유지보수 혼선 제거.
+2. `server.py` 배너 문구와 `AGENTS.md`(또는 소문자 문서로의 리다이렉트) 정리.
+3. 스캔 job 재시도/취소 API + 프론트 복구 UX.
+4. Playwright 등 경량 E2E smoke(방 전환·키 로테이션·핀-파일 삭제 동기화) — JS 핵심 계약이 eslint/tsc에만 의존 중.
+
+## 8. Test Recommendations
+
+- **Unit:** `rotate_room_key(conn=...)` 공유-트랜잭션 단위 테스트(외부 conn 주입 시 commit/rollback을 호출자가 전담함을 assert). `can_user_see_message` 파라미터화(초대 전/후, 삭제 첨부, 탈퇴자). `_like_escape` 포함 검색 동등성(FTS vs fallback).
+- **Integration:** 동시 초대 N건 → 단일 `key_version` 증가 + `joined_key_version` 일치. 탈퇴→잔존 멤버 메시지·다운로드 정합성. WAL 존재 상태에서 복원 스크립트 실행(임시 디렉토리). rotate 강제 실패 주입 강퇴 → 경고/audit 기록. quarantine temp 예외 주입 → 잔류 없음.
+- **End-to-End:** 초대→신규 멤버의 초대 전 히스토리 비가시→신규 메시지 가시 전구간. 파일 업로드→토큰 재사용 거부→메시지 실패 시 orphan 정리. 핀-파일 삭제 시 `message_deleted` + `pin_updated` 동시 수신.
+- **Concurrency:** gevent 그린렛 8~16 병렬 초대·전송 100회 → 실패율 0 + 버전 단조성. maintenance purge와 업로드 경합.
+- **Regression:** 기존 `test_project_audit_remediation.py`·`test_upload_tokens.py`·`test_implementation_gap_remediation.py` 유지. `test_user_deletion.py`에 첨부 케이스 추가.
+- **Platform-specific:** Windows(GUI, gevent 미적용) vs Linux(CLI, gevent) 동일 시나리오 비교 — ISSUE-001이 gevent 경로에만 있는지 확인. 한글 파일명·보안솔트 경로(`runtime_paths`)의 OS별 동작.
+
+## 9. Final Assessment
+
+| 영역 | 평가 | 근거 |
+|------|------|------|
+| Functional Correctness | Acceptable | 핵심 계약(가시성·토큰·서버 권위 이벤트) 구현+회귀 테스트. 탈퇴 첨부·OIDC 탈퇴 등 조건부 결함 잔존 |
+| Runtime Stability | Needs Work | gevent+threading.local 공유(ISSUE-001)가 동시 부하에서 트랜잭션을 위협. 순차 사용은 안정 |
+| Data Integrity | Needs Work | 복원 WAL(ISSUE-003)·탈퇴 첨부(ISSUE-002)가 조건부 무결성 위험. 백업 방향은 안전 |
+| Error Resilience | Acceptable | 소켓·HTTP 예외 처리·rate limit·세션 무효화가 전반적으로 갖춰짐. rotate 실패 불가시성(ISSUE-004)이 감점 |
+| Cross-platform Robustness | Acceptable | Windows GUI/CLI 분기·UTF-8 표준출력·경로 헬퍼 존재. GUI 실기동·빌드 산출물은 미검증 |
+| Test Confidence | Good | 115 passed + targeted 15 passed + eslint/tsc + pyright 무오류. 동시성·복원 스크립트 커버리지만 부족 |
+
+**실제로 먼저 수정할 문제 3개:**
+
+1. **[ISSUE-001] gevent 커넥션 공유** — 유일한 High. remediation 원자성을 무력화할 수 있는 구조 문제라 최우선.
+2. **[ISSUE-002] 탈퇴 시 첨부 정합성** — 확정적 데이터 유실(공유 첨부)이라 조건 명확·수정 범위 작음.
+3. **[ISSUE-003] 복원 스크립트 WAL 처리** — 복원은 드물지만 실패 시 복구 자체가 깨지는 경로라 릴리스 전 필수.

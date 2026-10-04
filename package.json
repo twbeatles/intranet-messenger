@@ -1,7 +1,7 @@
 {
   "name": "intranet-messenger",
   "private": true,
-  "version": "4.36.3",
+  "version": "4.36.4",
   "description": "Frontend lint and typecheck tooling for intranet-messenger.",
   "engines": {
     "node": ">=20"

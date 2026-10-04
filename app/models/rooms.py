@@ -260,8 +260,9 @@ def invite_members_with_key_rotation(room_id: int, user_ids: list[int]):
     conn = get_db()
     try:
         conn.execute("BEGIN IMMEDIATE")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error(f"Invite begin transaction failed: {exc}")
+        return None, [], "error"
 
     try:
         cursor = conn.cursor()
@@ -509,8 +510,9 @@ def leave_room_db(room_id, user_id):
     conn = get_db()
     try:
         conn.execute("BEGIN IMMEDIATE")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error(f"Leave begin transaction failed: {exc}")
+        return False
 
     cursor = conn.cursor()
     try:

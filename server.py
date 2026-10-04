@@ -80,7 +80,7 @@ def run_server_cli():
     print(f"{'='*50}")
     print(f"서버 주소: {protocol}://0.0.0.0:{DEFAULT_PORT}")
     print(f"로컬 접속: {protocol}://localhost:{DEFAULT_PORT}")
-    print(f"암호화: E2E (종단간 암호화)")
+    print(f"암호화: 서버 관리형 방 키 + 클라이언트 암호화 (서버-블라인드 E2E 아님)")
     if ssl_context:
         print(f"SSL: 활성화 (자체 서명 인증서)")
     else:

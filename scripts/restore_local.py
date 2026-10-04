@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import socket
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,47 @@ def _import_defaults():
     return Path(DATABASE_PATH), Path(UPLOAD_FOLDER)
 
 
+def _control_port() -> int:
+    try:
+        from config import CONTROL_PORT
+
+        return int(CONTROL_PORT)
+    except Exception:
+        return 5001
+
+
+def _is_server_running(port: int, timeout: float = 2.0) -> bool:
+    """제어 포트에 TCP 연결이 되면 서버 실행 중으로 판단한다."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _checkpoint_and_clear_wal(db_path: Path) -> bool:
+    """WAL 체크포인트 후 -wal/-shm 잔존 파일을 제거한다. 실패 시 False."""
+    import sqlite3
+
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[ERROR] WAL checkpoint failed: {exc}")
+        return False
+    for suffix in ("-wal", "-shm"):
+        try:
+            Path(str(db_path) + suffix).unlink(missing_ok=True)
+        except Exception as exc:
+            print(f"[ERROR] Failed to remove {db_path}{suffix}: {exc}")
+            return False
+    return True
+
+
 def _fail(message: str) -> int:
     print(f"[ERROR] {message}")
     return 1
@@ -33,6 +75,7 @@ def main() -> int:
     parser.add_argument("--db-path", default=str(default_db), help="Target SQLite DB path")
     parser.add_argument("--uploads-dir", default=str(default_uploads), help="Target uploads directory")
     parser.add_argument("--yes", action="store_true", help="Apply restore without confirmation prompt")
+    parser.add_argument("--force", action="store_true", help="Bypass the running-server check (use only when the server is certainly stopped)")
     args = parser.parse_args()
 
     backup_dir = Path(args.backup_dir).resolve()
@@ -55,8 +98,17 @@ def main() -> int:
         print("       Re-run with --yes to execute restore.")
         return 2
 
+    if not args.force and _is_server_running(_control_port()):
+        print("[ERROR] Server appears to be running. Stop the server first,")
+        print("        or re-run with --force only when it is certainly stopped.")
+        return 1
+
+    if target_db.exists() and not _checkpoint_and_clear_wal(target_db):
+        return _fail("WAL checkpoint before restore failed; restore aborted without changes.")
+
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    safety_root = backup_dir / f"pre_restore_snapshot_{ts}"
+    # ISSUE-003: 스냅샷을 백업 디렉토리 안이 아닌 대상 옆(형제 디렉토리)에 분리한다.
+    safety_root = target_db.parent / f"pre_restore_snapshot_{ts}"
     safety_root.mkdir(parents=True, exist_ok=True)
 
     target_db.parent.mkdir(parents=True, exist_ok=True)

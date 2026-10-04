@@ -19,3 +19,14 @@ def test_index_referenced_assets_exist(client):
             missing.append(relative_path)
 
     assert not missing, f"missing static assets: {missing}"
+
+
+def test_upload_service_exposes_scan_retry_cancel_facade():
+    """스캔 재시도/취소 facade와 API 경로가 프론트에 연결되어 있다."""
+    project_root = Path(__file__).resolve().parents[1]
+    service = (project_root / "static/js/services/upload-service.js").read_text(encoding="utf-8")
+
+    assert "retryUploadScanJob" in service
+    assert "cancelUploadScanJob" in service
+    assert "/api/upload/jobs/" in service
+    assert "MessengerUpload" in service

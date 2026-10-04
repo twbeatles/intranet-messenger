@@ -68,6 +68,7 @@ When contracts, build steps, or recovery expectations change, update the matchin
 - `README.md`
 - `claude.md`
 - `gemini.md`
+- `AGENTS.md`
 - `docs/BACKUP_RUNBOOK.md`
 - `implementation_gap_review_2026-04-27.md`
 - `PROJECT_AUDIT.md`

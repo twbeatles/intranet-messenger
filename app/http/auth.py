@@ -127,7 +127,12 @@ def delete_account():
 
     password = data.get("password")
     if not password:
-        return jsonify({"error": "비밀번호를 입력해 주세요."}), 400
+        # OIDC 연동 계정은 비밀번호를 모르므로 명시적 확인으로 대체한다.
+        from app.models.users import get_user_sso_providers
+
+        providers = get_user_sso_providers(session["user_id"])
+        if not providers or not data.get("oidc_confirm"):
+            return jsonify({"error": "비밀번호를 입력해 주세요."}), 400
 
     conn = get_db()
     cursor = conn.cursor()

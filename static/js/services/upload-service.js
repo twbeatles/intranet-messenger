@@ -86,7 +86,10 @@
                     }
 
                     if (typeof global.showToast === 'function') {
-                        global.showToast((data && data.error) || '파일 검사에 실패했습니다.', 'error');
+                        var retryHint = (status === 'error')
+                            ? ' 다시 시도하려면 MessengerUpload.retryUploadScanJob("' + jobId + '")를 호출하세요.'
+                            : ' 악성으로 판정된 파일은 다시 업로드해주세요.';
+                        global.showToast(((data && data.error) || '파일 검사에 실패했습니다.') + retryHint, 'error');
                     }
                     finish();
                 })
@@ -238,7 +241,40 @@
         }
     }
 
+    function getCsrfToken() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : null;
+    }
+
+    function retryUploadScanJob(jobId) {
+        return fetch('/api/upload/jobs/' + encodeURIComponent(jobId) + '/retry', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: (function () {
+                var headers = {};
+                var token = getCsrfToken();
+                if (token) headers['X-CSRFToken'] = token;
+                return headers;
+            })()
+        }).then(function (res) { return res.json(); });
+    }
+
+    function cancelUploadScanJob(jobId) {
+        return fetch('/api/upload/jobs/' + encodeURIComponent(jobId), {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: (function () {
+                var headers = {};
+                var token = getCsrfToken();
+                if (token) headers['X-CSRFToken'] = token;
+                return headers;
+            })()
+        }).then(function (res) { return res.json(); });
+    }
+
     global.MessengerUpload = {
+        retryUploadScanJob: retryUploadScanJob,
+        cancelUploadScanJob: cancelUploadScanJob,
         getUploadMaxSizeBytes: getUploadMaxSizeBytes,
         inferMessageType: inferMessageType,
         emitUploadedFileMessage: emitUploadedFileMessage,

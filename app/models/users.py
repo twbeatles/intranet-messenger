@@ -359,8 +359,27 @@ def get_or_create_oidc_user(
         return None
 
 
-def delete_user(user_id, password):
-    """회원 탈퇴"""
+def get_user_sso_providers(user_id: int) -> list:
+    """해당 사용자의 연동 SSO 제공자 목록 (OIDC 확인 절차용)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT provider FROM sso_identities WHERE user_id = ?",
+            (user_id,),
+        )
+        return [row["provider"] for row in cursor.fetchall()]
+    except Exception as exc:
+        logger.error(f"Get user SSO providers error: {exc}")
+        return []
+
+
+def delete_user(user_id, password=None):
+    """회원 탈퇴.
+
+    password가 None이면 OIDC 등 SSO 연동 계정에 한해 비밀번호 확인을 면제한다.
+    (연동 계정은 알 수 없는 무작위 해시가 저장되어 있어 비밀번호 확인이 불가함)
+    """
     import os
 
     from app.models.base import safe_file_delete
@@ -375,7 +394,10 @@ def delete_user(user_id, password):
         if not user:
             return False, "사용자를 찾을 수 없습니다."
             
-        if not verify_password(password, user['password_hash']):
+        if password is None:
+            if not get_user_sso_providers(user_id):
+                return False, "비밀번호를 입력해 주세요."
+        elif not verify_password(password, user['password_hash']):
             return False, "비밀번호가 일치하지 않습니다."
         
         # 프로필 이미지 삭제
@@ -458,9 +480,15 @@ def delete_user(user_id, password):
                 logger.warning(f"File deletion failed during user delete: {e}")
         cursor.execute("DELETE FROM room_files WHERE uploaded_by = ?", (user_id,))
         
-        # 메시지 익명화
+        # 메시지 익명화 (첨부 메시지의 파일 참조도 함께 정리)
+        # ISSUE-002: room_files 행과 바이트는 위에서 삭제되므로
+        # 메시지 쪽의 file_path/file_name을 남기면 깨진 첨부 참조가 된다.
         cursor.execute("""
-            UPDATE messages SET content = '[탈퇴한 사용자의 메시지]', encrypted = 0 
+            UPDATE messages
+            SET content = '[탈퇴한 사용자의 메시지]',
+                encrypted = 0,
+                file_path = NULL,
+                file_name = NULL
             WHERE sender_id = ?
         """, (user_id,))
         

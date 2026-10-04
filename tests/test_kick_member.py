@@ -154,3 +154,45 @@ def test_kick_nonmember(client):
     # 방에 없는 사용자 강퇴 시도
     response = client.delete(f'/api/rooms/{room_id}/members/2')
     assert response.status_code == 400
+
+
+def test_kick_reports_security_warning_when_rotation_fails(client, monkeypatch):
+    """ISSUE-004: rotate 실패 시 강퇴는 성공하되 경고와 audit 로그가 남는다."""
+    import app.http.rooms as rooms_http
+    from app.models import get_admin_audit_logs
+
+    client.post('/api/register', json={
+        'username': 'secwarn_admin',
+        'password': 'password123',
+        'nickname': 'Admin'
+    })
+    client.post('/api/register', json={
+        'username': 'secwarn_target',
+        'password': 'password123',
+        'nickname': 'Target'
+    })
+    client.post('/api/register', json={
+        'username': 'secwarn_other',
+        'password': 'password123',
+        'nickname': 'Other'
+    })
+    client.post('/api/login', json={
+        'username': 'secwarn_admin',
+        'password': 'password123'
+    })
+
+    response = client.post('/api/rooms', json={
+        'name': 'Secwarn Room',
+        'members': [1, 2, 3]
+    })
+    room_id = response.json['room_id']
+
+    monkeypatch.setattr(rooms_http, "rotate_room_key", lambda room_id: None)
+
+    response = client.delete(f'/api/rooms/{room_id}/members/2')
+    assert response.status_code == 200
+    assert response.json['success'] is True
+    assert 'security_warning' in response.json
+
+    logs = get_admin_audit_logs(room_id=room_id)
+    assert any(log['action'] == 'key_rotation_failed' for log in logs)

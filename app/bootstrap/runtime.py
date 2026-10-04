@@ -154,6 +154,12 @@ def build_flask_app():
         try:
             import redis  # type: ignore # noqa: F401
         except Exception:
+            # Likely Gap(감사): 경고 없이 memory로 전환되면 다중 워커에서
+            # rate limit이 워커별로 따로 적용된다. StateStore와 동일하게 경고한다.
+            app.logger.warning(
+                "redis package unavailable; rate-limit storage falls back to memory://. "
+                "Per-worker limits may diverge in multi-worker deployments."
+            )
             app.config["RATELIMIT_STORAGE_URI"] = "memory://"
 
     session_dir = get_session_dir()

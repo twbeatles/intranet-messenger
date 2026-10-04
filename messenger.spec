@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# 사내 메신저 v4.36.3 PyInstaller 빌드 명세서
+# 사내 메신저 v4.36.4 PyInstaller 빌드 명세서
 # 2026-04-14 runtime/path + room membership contract sync 반영
 # 경량화 최적화 버전
 
@@ -155,7 +155,6 @@ a = Analysis(
         'app.models.files',
         'app.models.reactions',
         'app.models.admin_audit',
-        'app.legacy.models_monolith',
 
         # Redis (optional runtime backend)
         # 인증서 생성 경로 (GUI/CLI 공용)
@@ -227,7 +226,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='사내메신저v4.36.3',
+    name='사내메신저v4.36.4',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,  # 심볼 제거 (Windows에서는 False 권장)
