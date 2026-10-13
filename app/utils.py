@@ -91,10 +91,17 @@ def _load_bcrypt() -> ModuleType | None:
         return None
 
 
+# bcrypt가 한 번에 처리할 수 있는 최대 비밀번호 길이 (바이트).
+# bcrypt 5.0부터 72바이트 초과 입력은 ValueError를 발생시킨다 (이전에는 조용히 잘라냄).
+MAX_BCRYPT_PASSWORD_BYTES = 72
+
+
 def hash_password(password: str) -> str:
     """비밀번호를 해시한다. 가능하면 bcrypt를 사용한다."""
     bcrypt_module = _load_bcrypt()
     if bcrypt_module is not None:
+        if len(password.encode("utf-8")) > MAX_BCRYPT_PASSWORD_BYTES:
+            raise ValueError("비밀번호는 72바이트를 초과할 수 없습니다.")
         return bcrypt_module.hashpw(password.encode("utf-8"), bcrypt_module.gensalt()).decode("utf-8")
 
     salt = _get_salt()
@@ -133,6 +140,8 @@ def validate_password(password: str) -> tuple[bool, str]:
         return False, "비밀번호에는 영문자가 포함되어야 합니다."
     if not any(c.isdigit() for c in password):
         return False, "비밀번호에는 숫자가 포함되어야 합니다."
+    if len(password.encode("utf-8")) > MAX_BCRYPT_PASSWORD_BYTES:
+        return False, "비밀번호는 72바이트를 초과할 수 없습니다."
     return True, ""
 
 

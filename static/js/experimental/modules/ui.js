@@ -192,7 +192,7 @@ export function appendMessage(msg) {
     div.dataset.messageId = msg.id;
     div.dataset.senderId = msg.sender_id;
 
-    let content = '';
+    let content;
     if (msg.message_type === 'image') {
         content = `<img src="/uploads/${msg.file_path}" class="message-image" onclick="window.UI.openLightbox(this.src)">`;
     } else if (msg.message_type === 'file') {

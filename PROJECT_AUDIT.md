@@ -223,3 +223,14 @@
 1. **[ISSUE-001] gevent 커넥션 공유** — 유일한 High. remediation 원자성을 무력화할 수 있는 구조 문제라 최우선.
 2. **[ISSUE-002] 탈퇴 시 첨부 정합성** — 확정적 데이터 유실(공유 첨부)이라 조건 명확·수정 범위 작음.
 3. **[ISSUE-003] 복원 스크립트 WAL 처리** — 복원은 드물지만 실패 시 복구 자체가 깨지는 경로라 릴리스 전 필수.
+
+## Addendum — 의존성 전면 업그레이드 (2026-10-13)
+
+본 감사(2026-10-04) 이후 의존성 전면 업그레이드를 수행했다. 원샷 스냅샷인 본문은 수정하지 않고 결과만 아래에 기록한다.
+
+- Python: `requirements.txt` 하한을 실측 최신·테스트 통과 버전으로 상향(Flask 3.1, Flask-SocketIO 5.7, cryptography 50, bcrypt 5.0, redis 8.0 등). `pip install --dry-run` 해결 확인.
+- bcrypt 5.0 breaking change(72바이트 초과 시 `ValueError`, 이전에는 잘라냄) 대응: `app/utils.py`에 72바이트 상한 가드(`validate_password` 400 거부 + `hash_password` 명시적 예외, 로그인은 401로 안전 실패), 회귀 테스트 `tests/test_password_bcrypt_limit.py` 8건 추가.
+- redis 8.1: 실서버 없이 StateStore 메모리 백엔드·접속 실패 폴백 경로를 프로브로 검증.
+- Node: `eslint`·`@eslint/js` 9→10, `globals` 15→17. ESLint 10 신규 추천 규칙이 지적한 1건(`static/js/experimental/modules/ui.js` 죽은 초기화) 수정 후 `npm run check:js` 통과. TypeScript는 5.9.3에 고정 — 6.0.3 시험 시 `module: none` deprecation 에러가 발생해 `jsconfig.json` 의미 변경이 필요했고, 7.0에서는 해당 옵션 폐지 + JS API 미제공이라 린트/타입체크 전용 의존성에겐 위험 대비 이득이 적어 보류.
+- 검증: `pytest -q` **137 passed, 4 failed** — 실패 4건은 업그레이드 전 기준선과 동일 ID(gevent 2건 + 복원 스크립트 2건)라 회귀 없음. 기준선 대비 순증은 신규 bcrypt 테스트 8건.
+- 잔여 리스크: gevent 26.9(최신)와 Python 3.15의 `ThreadPoolExecutor` 충돌 2건은 업그레이드로 해결 불가(Python 3.14 계열 또는 gevent 후속 릴리스 대기). bcrypt 4.x 시절 72바이트 초과 비밀번호 가입자는 잘린 해시로 로그인 불가 → 비밀번호 재설정 필요. Redis 실서버 연동은 미검증.
