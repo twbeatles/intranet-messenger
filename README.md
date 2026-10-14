@@ -3,10 +3,10 @@
 [![Python Version](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)](https://github.com)
 [![Framework](https://img.shields.io/badge/Flask-Socket.IO-000000?logo=flask&logoColor=white)](https://flask-socketio.readthedocs.io/)
-[![UI](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)](https://riverbankcomputing.com/software/pyqt/)
+[![UI](https://img.shields.io/badge/GUI-PySide6-41CD52?logo=qt&logoColor=white)](https://wiki.qt.io/Qt_for_Python)
 
 > **사내망 및 폐쇄망 환경을 위한 고성능 실시간 메신저 & 서버 관리 플랫폼**  
-> 전송 구간 암호화 및 방 단위 키 버전 관리, 웹 UI, 파일 저장소, 투표, 공지 배너, PyQt6 서버 GUI 모니터링 기능을 제공합니다.
+> 전송 구간 암호화 및 방 단위 키 버전 관리, 웹 UI, 파일 저장소, 투표, 공지 배너, PySide6 서버 GUI 모니터링 기능을 제공합니다.
 
 ---
 
@@ -32,7 +32,7 @@
   - 사용자/방 단위 암호화 키 관리 및 멤버 초대/퇴장 시 원자적 키 갱신(Key Rotation)을 지원합니다.
   - 새로 가입한 멤버는 이전 대화 내역에 접근할 수 없도록 권한이 제어됩니다.
   - HTTPS/SSL 자체 서명 인증서 원클릭 생성 및 적용을 지원합니다.
-- **서버 관리 GUI (PyQt6)**:
+- **서버 관리 GUI (PySide6)**:
   - Windows 시스템 트레이 상주, 실시간 서버 로그 및 접속자/트래픽 통계 대시보드를 제공합니다.
   - 원클릭 서버 실행/중지, Windows 부팅 시 자동 시작, 포트 점유 프로세스 자동 정리 기능이 내장되어 있습니다.
 - **풍부한 협업 도구**: 파일/이미지 드래그 앤 드롭 및 붙여넣기, 라이트박스 뷰어, 채팅방 파일 저장소, 실시간 투표, 공지사항 상단 고정, @멘션, 이모지 리액션, 메시지 답장/수정/삭제를 지원합니다.
@@ -124,12 +124,12 @@
 ## 🖥️ 실행 방법
 
 ### 방법 1. GUI 모드로 실행 (Windows 권장)
-PyQt6 기반의 관리 도구 창이 실행되며, 서버 제어 및 모니터링을 시각적으로 수행할 수 있습니다.
+PySide6 기반의 관리 도구 창이 실행되며, 서버 제어 및 모니터링을 시각적으로 수행할 수 있습니다.
 
 ```bash
 python server.py
 ```
-> **Tip**: 인자 없이 `python server.py`를 실행하면 기본적으로 GUI 모드로 시작됩니다. (PyQt6 미설치 시 자동으로 CLI 모드로 전환됩니다.)
+> **Tip**: 인자 없이 `python server.py`를 실행하면 기본적으로 GUI 모드로 시작됩니다. (PySide6 미설치 시 자동으로 CLI 모드로 전환됩니다.)
 
 ### 방법 2. CLI 모드로 실행 (콘솔 / Linux / 백그라운드 서비스)
 GUI 없이 커맨드라인 환경에서 서버를 직접 실행합니다.
@@ -358,7 +358,7 @@ intranet-messenger/
 │   ├── services/              # 세션 토큰, 브로드캐스트, 파일 처리 서비스
 │   ├── control_api.py         # GUI 제어용 로컬 API
 │   └── factory.py             # Flask 앱 팩토리
-├── gui/                       # PyQt6 기반 서버 관리 프로그램
+├── gui/                       # PySide6 기반 서버 관리 프로그램
 │   ├── services/              # 프로세스 제어 및 설정 서비스
 │   ├── styles/                # GUI QSS 스타일시트
 │   ├── widgets/               # 토스트 알림 등 커스텀 위젯

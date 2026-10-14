@@ -10,9 +10,9 @@ import socket
 import sys
 from datetime import datetime
 
-from PyQt6.QtCore import QSettings, QTimer, Qt
-from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSettings, QTimer, Qt
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QGroupBox,

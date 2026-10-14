@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt
-from PyQt6.QtWidgets import QGraphicsOpacityEffect, QLabel
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QLabel
 
 
 class ToastWidget(QLabel):

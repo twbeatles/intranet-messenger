@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-PyQt6 GUI - 서버 관리 창 v4.2
+PySide6 GUI - 서버 관리 창 v4.2
 - HiDPI 디스플레이 지원
 - 토스트 알림 시스템
 - 체크박스/버튼 UI 개선
@@ -16,11 +16,11 @@ import threading
 import urllib.error
 import urllib.request
 
-# HiDPI 지원 (PyQt6 import 전에 설정)
+# HiDPI 지원 (PySide6 import 전에 설정)
 os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
 os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 # 프로젝트 루트에서 import
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -144,8 +144,8 @@ def kill_process_on_port(port: int) -> bool:
 
 class ServerThread(QThread):
     """Flask 서버를 별도 subprocess에서 실행하고 모니터링"""
-    log_signal = pyqtSignal(str)
-    stats_signal = pyqtSignal(dict)
+    log_signal = Signal(str)
+    stats_signal = Signal(dict)
     
     def __init__(self, host='0.0.0.0', port=5000, use_https=False):
         super().__init__()
