@@ -3,6 +3,8 @@
 # 2026-04-14 runtime/path + room membership contract sync 반영
 # 경량화 최적화 버전
 
+import os
+import sys
 import importlib.util
 
 # Reviewed on 2026-04-16 for room-key rotation, upload-token cleanup, and
@@ -206,6 +208,15 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Python 3.15 abi3t: cryptography _rust.pyd links python3t.dll
+# (<prefix>\abi3t-compat), which PyInstaller does not auto-collect.
+# Without it the frozen exe dies with "DLL load failed while importing _rust".
+_py3t_dll = os.path.join(sys.base_prefix, 'abi3t-compat', 'python3t.dll')
+_py3t_dest = 'python3t.dll'
+if os.path.isfile(_py3t_dll) and not any(
+        (b[0] or '').lower() == _py3t_dest for b in a.binaries):
+    a.binaries.append((_py3t_dest, _py3t_dll, 'BINARY'))
 
 # 바이너리에서 불필요한 파일 제거 (경량화)
 a.binaries = [x for x in a.binaries if not x[0].startswith('libopenblas')]
