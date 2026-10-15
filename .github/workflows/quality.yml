@@ -1,0 +1,48 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests -q -p no:cacheprovider --ignore=tests/test_room_auth_boundaries.py --ignore=tests/test_recovery_integrity.py
+
+  network-e2e:
+    # P0: permission boundaries + backup/restore integrity on isolated
+    # loopback resources only (no production DB/uploads, no external IdP/AV).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/test_room_auth_boundaries.py tests/test_recovery_integrity.py tests/test_project_audit_remediation.py tests/test_restore_local.py tests/test_user_deletion.py tests/test_upload_tokens.py tests/test_message_interleaving.py -q -p no:cacheprovider
+      - run: python -m pip install playwright requests python-socketio
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest tests/test_browser_e2e.py -q -p no:cacheprovider
+        env:
+          RUN_LIVE_E2E: "1"
+
+  js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check:js
