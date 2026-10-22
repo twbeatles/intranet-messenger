@@ -20,7 +20,14 @@ import time
 from pathlib import Path
 
 import pytest
-import requests
+
+# requests/python-socketio/playwright are E2E-only deps: they are installed
+# in the network-e2e CI job, not in requirements.txt. importorskip keeps
+# `pytest tests` (unit job, fresh dev checkouts) green via skip-at-collection
+# instead of ModuleNotFoundError breaking the whole run.
+requests = pytest.importorskip(
+    "requests", reason="E2E-only dep (network-e2e job installs it)"
+)
 
 pytestmark = pytest.mark.browser
 

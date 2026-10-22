@@ -15,7 +15,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python -m pytest tests -q -p no:cacheprovider --ignore=tests/test_room_auth_boundaries.py --ignore=tests/test_recovery_integrity.py
+      # unit runs everything except the network/browser E2E selection, which
+      # needs E2E-only deps (requests/python-socketio/playwright + Chromium)
+      # installed in the network-e2e job. -m "not browser" future-proofs this
+      # against new browser-marked modules; the explicit --ignore keeps this
+      # file out even if its marker is ever dropped.
+      - run: python -m pytest tests -q -p no:cacheprovider -m "not browser" --ignore=tests/test_room_auth_boundaries.py --ignore=tests/test_recovery_integrity.py --ignore=tests/test_browser_e2e.py
 
   network-e2e:
     # P0: permission boundaries + backup/restore integrity on isolated
