@@ -1,5 +1,5 @@
-import sqlite3
 import os
+import sqlite3
 
 db_path = 'messenger.db'
 print(f"DB Path: {os.path.abspath(db_path)}")

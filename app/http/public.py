@@ -7,9 +7,17 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
-from app.http.common import require_login
 from app.models import get_or_create_oidc_user, get_user_by_id, log_access
 from app.oidc import (
     build_authorize_redirect,

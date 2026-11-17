@@ -30,9 +30,7 @@ _configure_utf8_stdio()
 if len(sys.argv) <= 1 or sys.argv[1] != '--cli':
     os.environ['SKIP_GEVENT_PATCH'] = '1'
 
-from config import (
-    USE_HTTPS, DEFAULT_PORT, SSL_CERT_PATH, SSL_KEY_PATH, SSL_DIR
-)
+from config import DEFAULT_PORT, SSL_CERT_PATH, SSL_DIR, SSL_KEY_PATH, USE_HTTPS
 
 
 def check_ssl_certificates():
@@ -76,15 +74,15 @@ def run_server_cli():
     
     protocol = "https" if ssl_context else "http"
     print(f"\n{'='*50}")
-    print(f"사내 메신저 서버 v4.36")
+    print("사내 메신저 서버 v4.36")
     print(f"{'='*50}")
     print(f"서버 주소: {protocol}://0.0.0.0:{DEFAULT_PORT}")
     print(f"로컬 접속: {protocol}://localhost:{DEFAULT_PORT}")
-    print(f"암호화: 서버 관리형 방 키 + 클라이언트 암호화 (서버-블라인드 E2E 아님)")
+    print("암호화: 서버 관리형 방 키 + 클라이언트 암호화 (서버-블라인드 E2E 아님)")
     if ssl_context:
-        print(f"SSL: 활성화 (자체 서명 인증서)")
+        print("SSL: 활성화 (자체 서명 인증서)")
     else:
-        print(f"SSL: 비활성화")
+        print("SSL: 비활성화")
     print(f"{'='*50}\n")
     
     try:
@@ -119,6 +117,7 @@ def run_server_cli():
 def run_server_gui():
     """GUI 모드로 서버 실행"""
     from PySide6.QtWidgets import QApplication
+
     from gui.server_window import ServerWindow
     
     qt_app = QApplication(sys.argv)

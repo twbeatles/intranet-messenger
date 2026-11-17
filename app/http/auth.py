@@ -10,7 +10,15 @@ from flask_wtf.csrf import generate_csrf
 
 from app.extensions import csrf, limiter
 from app.http.common import parse_json_payload, require_login
-from app.models import authenticate_user, change_password, create_user, delete_user, get_db, get_room_members, log_access
+from app.models import (
+    authenticate_user,
+    change_password,
+    create_user,
+    delete_user,
+    get_db,
+    get_room_members,
+    log_access,
+)
 from app.services.socket_broadcasts import (
     emit_room_access_revoked,
     emit_room_list_updated,

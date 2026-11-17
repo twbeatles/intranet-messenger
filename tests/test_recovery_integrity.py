@@ -53,7 +53,7 @@ def _find_backup_dir(output_root: Path):
 
 def _make_room_with_attachment(client, app, owner_name: str, viewer_name: str,
                                room_name: str, payload: bytes):
-    from tests.test_feature_risk_review_plan import _create_room, _login, _register
+    from tests.test_feature_risk_review_plan import _login, _register
 
     _register(client, owner_name)
     _register(client, viewer_name)

@@ -9,7 +9,6 @@ from flask import jsonify, redirect, request, session
 
 from app.models import get_user_session_token
 
-
 PUBLIC_SESSION_EXEMPT_PATHS = {
     "/api/login",
     "/api/register",

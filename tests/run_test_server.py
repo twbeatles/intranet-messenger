@@ -1,6 +1,7 @@
-from app import create_app
-import sys
 import os
+import sys
+
+from app import create_app
 
 # Fix path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

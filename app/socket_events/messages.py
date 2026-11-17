@@ -24,7 +24,12 @@ from app.models import (
     safe_file_delete,
 )
 from app.services.runtime_paths import get_upload_folder
-from app.socket_events.shared import check_send_message_rate_limit, emit_error, ensure_session_token, parse_positive_int
+from app.socket_events.shared import (
+    check_send_message_rate_limit,
+    emit_error,
+    ensure_session_token,
+    parse_positive_int,
+)
 from app.socket_events.state import get_user_room_ids
 from app.upload_tokens import consume_upload_token, get_upload_token_failure_reason
 

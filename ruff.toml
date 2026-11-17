@@ -1,0 +1,19 @@
+# intranet-messenger Ruff 단계적 도입 — S1_BASE (2026-11-16)
+# E402: 진입점 sys.path/env 부트스트랩 후 import는 실행 순서 의존이라 이동 불가.
+# F401(debug_*.py): import 성공 여부 자체가 진단 신호인 probe 스크립트라 바인딩 미사용이 의도.
+# E722 1건(legacy archive)은 except Exception으로 축소 (DB 롤백 Best-effort 경로).
+line-length = 88
+preview = false
+exclude = [".venv"]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]
+fixable = []
+
+[lint.per-file-ignores]
+"app/server_launcher.py" = ["E402"]
+"gui/services/process_control.py" = ["E402"]
+"gui/window/main_window.py" = ["E402"]
+"server.py" = ["E402"]
+"tests/debug_import.py" = ["F401"]
+"tests/debug_test_imports.py" = ["F401"]

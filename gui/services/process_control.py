@@ -25,7 +25,7 @@ from PySide6.QtCore import QThread, Signal
 # 프로젝트 루트에서 import
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
-from config import APP_NAME, VERSION, DEFAULT_PORT, CONTROL_PORT, BASE_DIR, USE_HTTPS, SSL_CERT_PATH, SSL_KEY_PATH, SSL_DIR
+from config import BASE_DIR, CONTROL_PORT
 
 
 def _create_no_window_flag() -> int:
@@ -294,10 +294,10 @@ class ServerThread(QThread):
                     
                     time.sleep(1) # 1초 간격 통계 갱신
                     
-                except Exception as e:
+                except Exception:
                     consecutive_errors += 1
                     if consecutive_errors >= 10:
-                        self.log_signal.emit(f"모니터링 연결 지연...")
+                        self.log_signal.emit("모니터링 연결 지연...")
                         consecutive_errors = 0
                     time.sleep(2)
                     
@@ -324,7 +324,7 @@ class ServerThread(QThread):
                     if '/control/stats' in line or '/control/logs' in line:
                         continue
                     self.log_signal.emit(line)
-        except Exception as e:
+        except Exception:
             pass # 프로세스 종료 시 발생 가능
 
     def stop(self):

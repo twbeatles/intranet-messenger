@@ -3,14 +3,14 @@
 사용자 관리 모듈
 """
 
-import sqlite3
 import logging
+import re
+import secrets
+import sqlite3
 import threading
 import time
-import secrets
-import re
 
-from app.models.base import get_db, close_thread_db
+from app.models.base import get_db
 from app.services.runtime_paths import get_upload_folder
 from app.utils import hash_password, verify_password
 

@@ -2,9 +2,6 @@
 """
 권한 검증 테스트
 """
-import pytest
-
-
 def test_invite_nonexistent_user(client):
     """존재하지 않는 사용자 초대 시도"""
     # 사용자 등록 및 로그인

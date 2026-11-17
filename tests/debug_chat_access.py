@@ -1,7 +1,9 @@
 
-import sqlite3
 import os
+import sqlite3
+
 from config import DATABASE_PATH
+
 
 def check_db_integrity():
     print(f"Checking database at: {DATABASE_PATH}")

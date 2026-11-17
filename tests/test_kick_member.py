@@ -2,9 +2,6 @@
 """
 멤버 강퇴 기능 테스트
 """
-import pytest
-
-
 def test_kick_member_success(client):
     """관리자가 멤버를 강퇴하는 테스트"""
     # 두 사용자 등록

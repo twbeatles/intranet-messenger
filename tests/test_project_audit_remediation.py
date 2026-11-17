@@ -5,9 +5,12 @@ from __future__ import annotations
 import concurrent.futures
 from pathlib import Path
 
-import pytest
-
-from app.models import get_db, get_room_member_key_version, invite_members_with_key_rotation, rotate_room_key
+from app.models import (
+    get_db,
+    get_room_member_key_version,
+    invite_members_with_key_rotation,
+    rotate_room_key,
+)
 from app.models.messages import can_user_see_message, create_message
 from tests.test_feature_risk_review_plan import (
     _create_room,
@@ -16,7 +19,6 @@ from tests.test_feature_risk_review_plan import (
     _login,
     _register,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

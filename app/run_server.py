@@ -4,12 +4,11 @@
 PySide6와 gevent의 충돌을 피하기 위해 별도 프로세스에서 서버를 실행합니다.
 """
 
+import logging
 import os
 import sys
-import time
 import threading
-import logging
-from multiprocessing import Queue
+import time
 
 
 def _configure_utf8_stdio():
@@ -64,9 +63,10 @@ def run_server_process(log_queue, host, port, use_https, ssl_paths=None):
         sys.path.insert(0, current_dir)
     
     try:
+        from datetime import datetime
+
         from app import create_app
         from app.models import server_stats
-        from datetime import datetime
         
         # 3. 앱 생성
         app, socketio = create_app()

@@ -3,8 +3,6 @@
 사용자 삭제 및 데이터 정리 테스트
 """
 import pytest
-import os
-import tempfile
 
 
 def test_user_deletion_cleanup(client, app):

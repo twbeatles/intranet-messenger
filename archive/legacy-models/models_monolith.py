@@ -3,8 +3,8 @@
 데이터베이스 모델 및 CRUD 함수
 """
 
-import sqlite3
 import logging
+import sqlite3
 import threading
 import time
 from contextlib import contextmanager
@@ -12,12 +12,12 @@ from typing import Iterator
 
 # config 임포트 (PyInstaller 호환)
 try:
-    from config import DATABASE_PATH, PASSWORD_SALT, UPLOAD_FOLDER
+    from config import DATABASE_PATH, UPLOAD_FOLDER
 except ImportError:
-    import sys
     import os
+    import sys
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from config import DATABASE_PATH, PASSWORD_SALT, UPLOAD_FOLDER
+    from config import DATABASE_PATH, UPLOAD_FOLDER
 
 from app.utils import E2ECrypto, hash_password, verify_password
 
@@ -502,7 +502,7 @@ def cleanup_empty_rooms():
         # [v4.31] 오류 시 롤백
         try:
             conn.rollback()
-        except:
+        except Exception:
             pass
         logger.error(f"Cleanup empty rooms error: {e}")
         return 0
@@ -1091,7 +1091,7 @@ def get_server_stats():
 
 def create_message(room_id, sender_id, content, message_type='text', file_path=None, file_name=None, reply_to=None, encrypted=True):
     """메시지 생성"""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     
     # 한국 시간 (KST, GMT+9)
     kst = timezone(timedelta(hours=9))
@@ -1437,7 +1437,7 @@ def create_poll(
     """
     # [v4.21] 옵션 검증 - models.py 레벨에서도 검증
     if not options:
-        logger.warning(f"Poll creation failed: no options provided")
+        logger.warning("Poll creation failed: no options provided")
         return None
     
     # 빈 옵션 필터링 및 최대 10개 제한

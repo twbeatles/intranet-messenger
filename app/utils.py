@@ -18,11 +18,10 @@ import sys
 from types import ModuleType
 from typing import Any
 
-from flask import current_app
-
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
+from flask import current_app
 
 try:
     from config import ALLOWED_EXTENSIONS

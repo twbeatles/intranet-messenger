@@ -1,5 +1,6 @@
 import requests
 
+
 def test_login_flow():
     s = requests.Session()
     base_url = 'http://127.0.0.1:5000'

@@ -73,7 +73,7 @@ def _resilient(fn, what: str):
     # never retried.
     try:
         return fn()
-    except (requests.ConnectionError, requests.ReadTimeout) as exc:
+    except (requests.ConnectionError, requests.ReadTimeout):
         time.sleep(0.5)
         try:
             return fn()

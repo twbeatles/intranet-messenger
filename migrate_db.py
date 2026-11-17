@@ -1,7 +1,8 @@
 
 import sqlite3
-import os
+
 from config import DATABASE_PATH
+
 
 def migrate_db():
     print(f"Migrating database at: {DATABASE_PATH}")

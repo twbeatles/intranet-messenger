@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 
-import json
-import os
 import time
 
 import jwt
 import pytest
 from jwt.utils import base64url_encode
-
-from tests._temp_paths import make_temp_file
 
 
 def _register(client, username: str, password: str = "Password123!", nickname: str | None = None):
@@ -497,6 +493,6 @@ def test_oidc_exchange_rejects_invalid_signature(app, monkeypatch):
     monkeypatch.setattr(oidc, "_fetch_json", fake_fetch_json)
     monkeypatch.setattr(oidc, "_post_form", lambda *args, **kwargs: {"id_token": token})
 
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError):
         oidc.exchange_code_for_userinfo(app, code="abc", redirect_uri="https://app/cb", expected_nonce="nonce-3")
 

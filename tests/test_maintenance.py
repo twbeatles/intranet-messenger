@@ -2,14 +2,13 @@
 """
 유지보수 함수 테스트
 """
-import pytest
 from datetime import datetime, timedelta
 
 
 def test_close_expired_polls(app):
     """만료된 투표 자동 마감 테스트"""
     with app.app_context():
-        from app.models import get_db, create_poll, get_poll, close_expired_polls
+        from app.models import close_expired_polls, get_db
         
         # 테스트 데이터 준비: 만료된 투표 생성
         conn = get_db()
@@ -45,7 +44,7 @@ def test_close_expired_polls(app):
         conn.close()
         
         # 만료 투표 정리 실행
-        count = close_expired_polls()
+        close_expired_polls()
         
         # 검증: 만료된 투표만 closed=1로 변경되어야 함
         conn = get_db()
@@ -63,7 +62,7 @@ def test_close_expired_polls(app):
 def test_cleanup_old_access_logs(app):
     """오래된 접속 로그 정리 테스트"""
     with app.app_context():
-        from app.models import get_db, cleanup_old_access_logs
+        from app.models import cleanup_old_access_logs, get_db
         
         conn = get_db()
         cursor = conn.cursor()

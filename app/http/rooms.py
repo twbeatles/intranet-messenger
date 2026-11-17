@@ -14,7 +14,6 @@ from flask import Blueprint, jsonify, make_response, request, session
 from app.http.common import parse_json_payload, require_login, truthy_param
 from app.models import (
     create_room,
-    invite_members_with_key_rotation,
     get_admin_audit_logs,
     get_all_users,
     get_online_users,
@@ -23,9 +22,9 @@ from app.models import (
     get_room_members,
     get_user_by_id,
     get_user_rooms,
+    invite_members_with_key_rotation,
     is_room_admin,
     is_room_member,
-    kick_member as kick_member_db,
     leave_room_db,
     log_admin_action,
     mute_room,
@@ -33,6 +32,9 @@ from app.models import (
     rotate_room_key,
     set_room_admin,
     update_room_name,
+)
+from app.models import (
+    kick_member as kick_member_db,
 )
 from app.services.socket_broadcasts import (
     emit_admin_updated,

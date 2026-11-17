@@ -8,7 +8,6 @@ import sqlite3
 import sys
 from pathlib import Path
 
-
 REQUIRED_TABLES = {
     "users",
     "rooms",

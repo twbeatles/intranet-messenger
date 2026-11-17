@@ -2,7 +2,6 @@
 """
 대화방 API 테스트
 """
-import pytest
 
 
 def test_create_room(client):

@@ -14,7 +14,6 @@ from app.extensions import limiter
 from app.http.common import parse_json_payload, require_login
 from app.http.route_deps import get_routes_shim
 from app.models import (
-    advanced_search,
     can_user_see_message,
     delete_message,
     edit_message,

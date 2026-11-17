@@ -42,7 +42,7 @@ import logging
 import signal
 import threading
 
-from config import DEFAULT_PORT, CONTROL_PORT, USE_HTTPS, SSL_CERT_PATH, SSL_KEY_PATH
+from config import CONTROL_PORT, DEFAULT_PORT, SSL_CERT_PATH, SSL_KEY_PATH, USE_HTTPS
 
 
 def setup_logging():
@@ -68,7 +68,12 @@ def start_control_server(logger):
     """GUI용 Control API를 별도 포트(127.0.0.1:CONTROL_PORT)에서 실행."""
     try:
         from flask import Flask
-        from app.control_api import control_bp, init_control_logging, get_or_create_control_token
+
+        from app.control_api import (
+            control_bp,
+            get_or_create_control_token,
+            init_control_logging,
+        )
         from config import BASE_DIR
 
         # 토큰 파일을 미리 생성해 GUI가 읽을 수 있게 함
@@ -114,9 +119,10 @@ def run_server(port=DEFAULT_PORT, use_https=USE_HTTPS, enable_control=True):
         logger.info("threading 모드로 서버 시작 (gevent 미설치)")
     
     # Flask 앱 생성
+    from datetime import datetime
+
     from app import create_app
     from app.models import server_stats
-    from datetime import datetime
     
     app, socketio = create_app()
     server_stats['start_time'] = datetime.now()

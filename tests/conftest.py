@@ -1,6 +1,7 @@
 import os
-import sys
 import shutil
+import sys
+
 import pytest
 
 from tests._temp_paths import make_temp_dir, make_temp_file
@@ -31,6 +32,7 @@ def app():
     
     # models 모듈 재로드하여 새 DB 경로 적용
     import importlib
+
     import app.models.base as base_module
     importlib.reload(base_module)
     

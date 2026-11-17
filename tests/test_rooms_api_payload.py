@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import pytest
 
 
 def _register(client, username, password="Password123!", nickname=None):

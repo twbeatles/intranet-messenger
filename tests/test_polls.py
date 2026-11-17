@@ -2,7 +2,7 @@
 """
 투표 기능 테스트
 """
-import pytest
+
 
 
 def test_create_poll(client):

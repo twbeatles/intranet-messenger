@@ -5,7 +5,9 @@ Socket event package.
 
 
 def register_socket_events(socketio):
-    from app.socket_events.register import register_socket_events as _register_socket_events
+    from app.socket_events.register import (
+        register_socket_events as _register_socket_events,
+    )
 
     return _register_socket_events(socketio)
 

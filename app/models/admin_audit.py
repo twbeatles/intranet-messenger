@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+
 from app.models.base import get_db
 
 logger = logging.getLogger(__name__)

@@ -3,9 +3,6 @@
 관리자 강퇴 보호 테스트
 [v4.10] 관리자가 다른 관리자를 강퇴할 수 없음을 확인
 """
-import pytest
-
-
 def test_kick_admin_by_admin(client):
     """관리자가 다른 관리자를 강퇴하려고 할 때 - 실패해야 함"""
     # 두 사용자 등록

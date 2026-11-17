@@ -2,9 +2,6 @@
 """
 관리자 보호 테스트 - 마지막 관리자 해제 방지, 자동 위임, 공지 삭제 권한
 """
-import pytest
-
-
 def test_cannot_remove_last_admin(client):
     """마지막 관리자 해제 시 400 에러 반환 확인"""
     # 사용자 등록

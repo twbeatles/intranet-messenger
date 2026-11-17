@@ -3,22 +3,22 @@
 데이터베이스 연결 및 초기화 모듈
 """
 
-import sqlite3
 import logging
+import os
+import sqlite3
 import threading
 import time
-import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Iterator
 
 # config 임포트 (PyInstaller 호환)
 try:
-    from config import DATABASE_PATH, UPLOAD_FOLDER, RETENTION_DAYS
+    from config import DATABASE_PATH, RETENTION_DAYS, UPLOAD_FOLDER
 except ImportError:
     import sys
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    from config import DATABASE_PATH, UPLOAD_FOLDER, RETENTION_DAYS
+    from config import DATABASE_PATH, RETENTION_DAYS, UPLOAD_FOLDER
 
 logger = logging.getLogger(__name__)
 

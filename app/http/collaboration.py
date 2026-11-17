@@ -7,18 +7,23 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, session
 
 from app.extensions import limiter
-from app.http.common import json_error, parse_int_from_json, parse_json_payload, require_login
+from app.http.common import (
+    json_error,
+    parse_int_from_json,
+    parse_json_payload,
+    require_login,
+)
 from app.http.route_deps import get_routes_shim
 from app.models import (
     can_user_see_message,
     close_poll,
     create_poll,
+    get_message_room_id,
     get_pinned_messages,
     get_poll,
-    get_message_room_id,
     get_room_polls,
     get_user_votes,
     is_room_admin,

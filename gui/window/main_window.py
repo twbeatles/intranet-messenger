@@ -10,7 +10,7 @@ import socket
 import sys
 from datetime import datetime
 
-from PySide6.QtCore import QSettings, QTimer, Qt
+from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -32,7 +32,15 @@ from PySide6.QtWidgets import (
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
 
-from config import APP_NAME, DEFAULT_PORT, SSL_CERT_PATH, SSL_DIR, SSL_KEY_PATH, USE_HTTPS, VERSION
+from config import (
+    APP_NAME,
+    DEFAULT_PORT,
+    SSL_CERT_PATH,
+    SSL_DIR,
+    SSL_KEY_PATH,
+    USE_HTTPS,
+    VERSION,
+)
 from gui.services.process_control import ServerThread
 from gui.services.settings_service import (
     is_windows_startup_enabled,

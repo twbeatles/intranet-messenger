@@ -11,7 +11,12 @@ from flask import current_app, session
 from flask_socketio import emit
 
 from app.models import is_room_member
-from app.socket_events.shared import check_event_rate_limit, emit_error, ensure_session_token, parse_positive_int
+from app.socket_events.shared import (
+    check_event_rate_limit,
+    emit_error,
+    ensure_session_token,
+    parse_positive_int,
+)
 
 logger = logging.getLogger(__name__)
 

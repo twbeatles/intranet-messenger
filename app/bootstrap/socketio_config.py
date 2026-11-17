@@ -10,7 +10,14 @@ from importlib import import_module
 from flask_socketio import SocketIO
 
 try:
-    from config import ASYNC_MODE, MAX_HTTP_BUFFER_SIZE, MESSAGE_QUEUE, PING_INTERVAL, PING_TIMEOUT, SOCKETIO_CORS_ALLOWED_ORIGINS
+    from config import (
+        ASYNC_MODE,
+        MAX_HTTP_BUFFER_SIZE,
+        MESSAGE_QUEUE,
+        PING_INTERVAL,
+        PING_TIMEOUT,
+        SOCKETIO_CORS_ALLOWED_ORIGINS,
+    )
 except ImportError:
     from config import *  # type: ignore  # noqa: F403,F401
 
@@ -38,8 +45,8 @@ def create_socketio(app, *, gevent_available: bool, logger):
 
     if async_mode is None:
         try:
-            import simple_websocket  # noqa: F401
             import engineio.async_drivers.threading  # noqa: F401
+            import simple_websocket  # noqa: F401
 
             async_mode = "threading"
             logger.info("threading 비동기 모드 활성화 (동시 접속 제한적)")

@@ -1,7 +1,8 @@
 
-import requests
 import os
 import re
+
+import requests
 
 # Create a dummy image file
 with open('test_profile.jpg', 'wb') as f:

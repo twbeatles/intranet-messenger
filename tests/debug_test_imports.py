@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 # Emulate conftest.py path hack
 current_dir = os.path.dirname(os.path.abspath(__file__))

@@ -11,9 +11,19 @@ import time
 from flask import session
 from flask_socketio import emit
 
-from app.models import can_user_see_message, get_message_room_id, get_user_by_id, is_room_member, update_last_read
+from app.models import (
+    can_user_see_message,
+    get_message_room_id,
+    get_user_by_id,
+    is_room_member,
+    update_last_read,
+)
 from app.socket_events.shared import ensure_session_token
-from app.socket_events.state import TYPING_RATE_LIMIT, typing_last_emit, typing_rate_lock
+from app.socket_events.state import (
+    TYPING_RATE_LIMIT,
+    typing_last_emit,
+    typing_rate_lock,
+)
 
 logger = logging.getLogger(__name__)
 

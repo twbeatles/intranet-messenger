@@ -8,7 +8,13 @@ from __future__ import annotations
 import os
 import time
 
-from app.models import cleanup_empty_rooms, cleanup_old_access_logs, cleanup_retention_data, close_expired_polls, init_db
+from app.models import (
+    cleanup_empty_rooms,
+    cleanup_old_access_logs,
+    cleanup_retention_data,
+    close_expired_polls,
+    init_db,
+)
 from app.upload_tokens import purge_expired_upload_tokens
 
 

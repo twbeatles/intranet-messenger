@@ -1,14 +1,14 @@
 
-import sqlite3
-import os
-import sys
 import base64
 import logging
+import os
+import sqlite3
+import sys
 
 # Setup path to import app modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import DATABASE_PATH
 from app.crypto_manager import CryptoManager
+from config import DATABASE_PATH
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)

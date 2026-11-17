@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import logging
 
-from flask import current_app, request, session
+from flask import current_app, request
 from flask_socketio import disconnect, emit
 
-from app.services.text_hygiene import sanitize_client_message
 from app.services.session_tokens import is_session_token_valid
+from app.services.text_hygiene import sanitize_client_message
 from app.state_store import state_store
 
 logger = logging.getLogger(__name__)
@@ -57,4 +57,4 @@ def check_event_rate_limit(event: str, user_id: int, per_minute: int) -> bool:
 
 
 def request_sid() -> str:
-    return getattr(request, "sid")
+    return getattr(request, "sid")  # noqa: B009 -- flask Request 스텁에 없음; 직접 접근 pyright 회귀 실증됨
